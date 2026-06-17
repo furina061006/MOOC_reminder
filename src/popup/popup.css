@@ -400,6 +400,11 @@ body {
   color: #ddd;
 }
 
+.footer-actions {
+  display: flex;
+  gap: 6px;
+}
+
 /* ─── Dark Mode ────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   body {

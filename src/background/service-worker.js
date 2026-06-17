@@ -32,29 +32,75 @@ const DEFAULT_SETTINGS = {
 chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('[MOOC Reminder] Extension installed/updated:', details.reason);
 
-  // Initialize storage with defaults (preserving existing data on update)
-  const existing = await chrome.storage.local.get([
-    KEYS.HOMEWORK_ITEMS,
-    KEYS.COURSES,
-    KEYS.USER_SETTINGS
-  ]);
-
-  await chrome.storage.local.set({
-    [KEYS.HOMEWORK_ITEMS]: existing[KEYS.HOMEWORK_ITEMS] || [],
-    [KEYS.COURSES]: existing[KEYS.COURSES] || [],
-    [KEYS.LAST_SYNC]: null,
-    [KEYS.SYNC_ERRORS]: [],
-    [KEYS.USER_SETTINGS]: existing[KEYS.USER_SETTINGS] || DEFAULT_SETTINGS
-  });
-
-  // Set up periodic alarms
+  await validateAndRepairStorage();
   setupAlarms();
 });
 
-chrome.runtime.onStartup.addListener(() => {
-  console.log('[MOOC Reminder] Browser started, setting up alarms');
+chrome.runtime.onStartup.addListener(async () => {
+  console.log('[MOOC Reminder] Browser started, validating storage and setting up alarms');
+  await validateAndRepairStorage();
   setupAlarms();
 });
+
+// ─── Storage Validation ─────────────────────────────────
+
+async function validateAndRepairStorage() {
+  try {
+    const data = await chrome.storage.local.get([
+      KEYS.HOMEWORK_ITEMS,
+      KEYS.COURSES,
+      KEYS.USER_SETTINGS
+    ]);
+
+    let needsRepair = false;
+
+    // Check homework_items
+    const items = data[KEYS.HOMEWORK_ITEMS];
+    if (items !== undefined && !Array.isArray(items)) {
+      console.warn('[MOOC Reminder] Corrupted homework_items detected, resetting');
+      needsRepair = true;
+    }
+
+    // Check courses
+    const courses = data[KEYS.COURSES];
+    if (courses !== undefined && !Array.isArray(courses)) {
+      console.warn('[MOOC Reminder] Corrupted courses detected, resetting');
+      needsRepair = true;
+    }
+
+    if (needsRepair) {
+      await chrome.storage.local.set({
+        [KEYS.HOMEWORK_ITEMS]: [],
+        [KEYS.COURSES]: [],
+        [KEYS.LAST_SYNC]: null,
+        [KEYS.SYNC_ERRORS]: [],
+        [KEYS.USER_SETTINGS]: data[KEYS.USER_SETTINGS] || DEFAULT_SETTINGS
+      });
+      console.log('[MOOC Reminder] Storage repaired — all data reset');
+    } else {
+      // Ensure defaults exist for new installs
+      await chrome.storage.local.set({
+        [KEYS.HOMEWORK_ITEMS]: Array.isArray(items) ? items.filter(Boolean) : [],
+        [KEYS.COURSES]: Array.isArray(courses) ? courses.filter(Boolean) : [],
+        [KEYS.LAST_SYNC]: (await chrome.storage.local.get(KEYS.LAST_SYNC))[KEYS.LAST_SYNC] || null,
+        [KEYS.SYNC_ERRORS]: [],
+        [KEYS.USER_SETTINGS]: data[KEYS.USER_SETTINGS] || DEFAULT_SETTINGS
+      });
+    }
+  } catch (e) {
+    console.error('[MOOC Reminder] Storage validation failed, full reset:', e.message);
+    try {
+      await chrome.storage.local.clear();
+      await chrome.storage.local.set({
+        [KEYS.HOMEWORK_ITEMS]: [],
+        [KEYS.COURSES]: [],
+        [KEYS.LAST_SYNC]: null,
+        [KEYS.SYNC_ERRORS]: [],
+        [KEYS.USER_SETTINGS]: DEFAULT_SETTINGS
+      });
+    } catch {}
+  }
+}
 
 // ─── Alarms ─────────────────────────────────────────────
 
@@ -150,14 +196,14 @@ const MESSAGE_HANDLERS = {
 
   // Popup requests homework data
   async GET_HOMEWORK() {
-    const items = await getHomeworkItems();
+    const items = await getHomeworkItems();  // already sanitized by getHomeworkItems
     const courses = await getCourses();
     const lastSync = await getLastSync();
     const settings = await getUserSettings();
 
     return {
-      items: items.filter(i => !i.checkedOff),  // unfinished only
-      allItems: items,                            // including completed
+      items: items.filter(i => i && !i.checkedOff),  // unfinished only
+      allItems: items,                                 // including completed
       courses,
       lastSync,
       settings
@@ -178,6 +224,19 @@ const MESSAGE_HANDLERS = {
     return { success: true, remaining: active.length };
   },
 
+  // Popup clears all cached data
+  async RESET_DATA() {
+    await chrome.storage.local.set({
+      [KEYS.HOMEWORK_ITEMS]: [],
+      [KEYS.COURSES]: [],
+      [KEYS.LAST_SYNC]: null,
+      [KEYS.SYNC_ERRORS]: []
+    });
+    await updateBadgeFromStorage();
+    console.log('[MOOC Reminder] All data reset');
+    return { success: true };
+  },
+
   // Refresh badge only
   async REFRESH_BADGE() {
     await updateBadgeFromStorage();
@@ -193,6 +252,9 @@ async function reconcileHomeworkData(course, newItems) {
   let updated = 0;
 
   for (const newItem of newItems) {
+    // Skip null/undefined entries from content script
+    if (!newItem || typeof newItem !== 'object') continue;
+
     // Ensure UID exists
     if (!newItem.uid) {
       console.warn('[MOOC Reminder] Skipping item without UID:', newItem.title);
@@ -419,16 +481,23 @@ async function triggerManualScrape() {
 
 async function getHomeworkItems() {
   const result = await chrome.storage.local.get(KEYS.HOMEWORK_ITEMS);
-  return result[KEYS.HOMEWORK_ITEMS] || [];
+  const raw = result[KEYS.HOMEWORK_ITEMS];
+  // Filter out corrupted entries that may have been stored from previous crashes
+  const items = Array.isArray(raw) ? raw.filter(Boolean) : [];
+  return items;
 }
 
 async function setHomeworkItems(items) {
-  await chrome.storage.local.set({ [KEYS.HOMEWORK_ITEMS]: items });
+  // Never store null/undefined entries
+  const clean = Array.isArray(items) ? items.filter(Boolean) : [];
+  await chrome.storage.local.set({ [KEYS.HOMEWORK_ITEMS]: clean });
 }
 
 async function getCourses() {
   const result = await chrome.storage.local.get(KEYS.COURSES);
-  return result[KEYS.COURSES] || [];
+  const raw = result[KEYS.COURSES];
+  const courses = Array.isArray(raw) ? raw.filter(Boolean) : [];
+  return courses;
 }
 
 async function upsertCourse(course) {

@@ -31,30 +31,13 @@
   // ─── Configuration ────────────────────────────────────
   const SELECTOR_CONFIG_PATH = 'src/content/selectors.json';
 
-  // ── 爬取范围: 只爬取"测验与作业"和"考试"两个板块 ──
-  // icourse163.org 的实际路由可能是以下任一种（因课程类型/版本而异）
+  // ── 爬取范围: 所有 /learn/* 页面，用截止日期过滤噪音 ──
+  // 不依赖精确路由匹配（icourse163.org 路由因课程版本而异）
+  // 改为：在所有 learn 页面试着爬，但只保留有截止日期的条目
+  // 这样 "测验与作业" 的标题（无截止日期）会被自然过滤掉
 
-  // 允许爬取的路由 (前缀匹配)
   const ALLOWED_ROUTES = [
-    '/learn/quiz',        // 测验与作业
-    '/learn/quiz?type',   // 测验与作业详情
-    '/learn/test',        // 测验与作业 (变体)
-    '/learn/testlist',    // 测验与作业列表
-    '/learn/exam',        // 考试
-    '/learn/exam?type',   // 考试详情
-    '/learn/examlist'     // 考试列表
-  ];
-
-  // 明确禁止爬取的路由 (优先级高于 ALLOWED)
-  const BLOCKED_ROUTES = [
-    '/learn/content',     // 课件 — 不爬
-    '/learn/announce',    // 公告 — 不爬
-    '/learn/forum',       // 讨论区 — 不爬
-    '/learn/discuss',     // 讨论区 — 不爬
-    '/learn/score',       // 成绩 — 不爬
-    '/learn/setting',     // 设置 — 不爬
-    '/learn/ppt',         // 课件PPT — 不爬
-    '/learn/video'        // 视频 — 不爬
+    '/learn/'   // 匹配所有 learn 子页面
   ];
 
   // ─── State ────────────────────────────────────────────
@@ -77,11 +60,9 @@
     currentRoute = getCurrentHashRoute();
 
     // Diagnostic: log route detection status
-    console.log('[MOOC Reminder] Initialized. Current route:', `"${currentRoute}"`);
-    console.log('[MOOC Reminder] Allowed routes:', ALLOWED_ROUTES.join(', '));
-    console.log('[MOOC Reminder] Blocked routes:', BLOCKED_ROUTES.join(', '));
-    console.log('[MOOC Reminder] Route allowed:', isHomeworkRelevantRoute(currentRoute));
-    console.log('[MOOC Reminder] Full URL:', window.location.href);
+    console.log('[MOOC Reminder] Initialized. Route:', `"${currentRoute}"`, '| Allowed:', isHomeworkRelevantRoute(currentRoute));
+    console.log('[MOOC Reminder] URL:', window.location.href);
+    console.log('[MOOC Reminder] Strategy: scrape all /learn/ pages, filter by deadline presence');
 
     // Start observers
     setupUrlObserver();
@@ -520,10 +501,14 @@
     else if (/考试|exam/i.test(text)) type = 'exam';
     else if (/讨论|discussion/i.test(text)) type = 'discussion';
 
-    // Detect status
+    // Detect status — use broader check that includes score and 互评
     const isDone = checkCompleted(el, text);
+    const hasScore = (score !== null && totalScore !== null);
+    const isPeerReviewDone = /已互评|互评已完成|已评价|已评分|互评结束/i.test(text);
+    const effectivelyDone = isDone || hasScore || isPeerReviewDone;
+
     let status = 'unfinished';
-    if (isDone) status = 'completed';
+    if (effectivelyDone) status = 'completed';
     else if (/已提交|submitted/i.test(text)) status = 'submitted';
 
     // Extract deadline
@@ -545,6 +530,18 @@
     let title = text.split(/截止|deadline|due|提交|submitted/i)[0].trim();
     if (!title || title.length < 2) title = text.substring(0, 40);
 
+    // ── Filter: skip section headers (no deadline + looks like a label) ──
+    if (!deadlineRaw && !hasScore) {
+      // Known section headers on icourse163.org
+      if (/^(测验与作业|考试|课件|公告|讨论区|评分标准|课程介绍)\s*$/.test(title)) {
+        return null;
+      }
+      // Generic: very short text without deadline is probably a header
+      if (title.length <= 6 && /^[一-龥\s]+$/.test(title)) {
+        return null;
+      }
+    }
+
     return {
       uid,
       courseId: urlMeta.courseId,
@@ -557,10 +554,10 @@
       courseName: courseMeta.courseName,
       schoolName: courseMeta.schoolName,
       status,
-      checkedOff: isDone, // auto-check if already completed
+      checkedOff: effectivelyDone,
       manuallyCheckedOff: false,
-      autoDetectedCompleted: isDone,
-      completionReason: isDone ? 'auto' : null,
+      autoDetectedCompleted: effectivelyDone,
+      completionReason: effectivelyDone ? 'auto' : null,
       deadline,
       deadlineRaw,
       firstSeen: new Date().toISOString(),
@@ -598,7 +595,11 @@
     }
 
     // Check text patterns
-    const completeTextPatterns = ['已完成', '已提交', '已批阅', '已通过', '得分'];
+    const completeTextPatterns = [
+      '已完成', '已提交', '已批阅', '已通过', '得分',
+      '已互评', '互评已完成', '已评价', '已评分',
+      '成绩', '查看成绩', '查看分数'
+    ];
     if (typeof text === 'string') {
       for (const pattern of completeTextPatterns) {
         if (text.includes(pattern)) return true;
@@ -684,18 +685,9 @@
   function isHomeworkRelevantRoute(route) {
     if (!route) return false;
 
-    // Blocked routes take priority — NEVER scrape these
-    if (BLOCKED_ROUTES.some(r => route.startsWith(r))) {
-      console.debug('[MOOC Reminder] Route blocked:', route);
-      return false;
-    }
-
-    // Must match an allowed route
-    const allowed = ALLOWED_ROUTES.some(r => route.startsWith(r));
-    if (!allowed) {
-      console.debug('[MOOC Reminder] Route not in allowlist:', route);
-    }
-    return allowed;
+    // Any /learn/ page is potentially relevant
+    // The buildHomeworkItem deadline filter will skip non-homework items
+    return ALLOWED_ROUTES.some(r => route.startsWith(r));
   }
 
   function parseCourseUrl(url) {
