@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "MOOC Reminder",
+  "version": "1.0.0",
+  "description": "追踪中国大学MOOC未完成作业，通过扩展徽章提醒",
+  "permissions": [
+    "storage",
+    "alarms",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.icourse163.org/learn/*",
+    "https://www.icourse163.org/spoc/learn/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/content/selectors.json",
+        "src/content/scrapers/*.js",
+        "src/content/observers/*.js",
+        "src/shared/*.js"
+      ],
+      "matches": [
+        "https://www.icourse163.org/*"
+      ]
+    }
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.icourse163.org/learn/*",
+        "https://www.icourse163.org/spoc/learn/*"
+      ],
+      "js": ["src/content/main.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "src/assets/icons/icon16.png",
+      "48": "src/assets/icons/icon48.png",
+      "128": "src/assets/icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "src/assets/icons/icon16.png",
+    "48": "src/assets/icons/icon48.png",
+    "128": "src/assets/icons/icon128.png"
+  }
+}

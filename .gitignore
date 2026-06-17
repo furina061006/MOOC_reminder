@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+.claude/logs/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+dist/
+build/
+mooc-reminder.zip
+
+# Environment
+.env
+.env.local
+
+# Local settings (may contain sensitive paths)
+.claude/settings.local.json

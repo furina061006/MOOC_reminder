@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MOOC Reminder — Selector Calibrator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; max-width: 900px; margin: 0 auto; background: #f8f9fa; color: #333; }
+    h1 { font-size: 20px; margin-bottom: 16px; }
+    .section { background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .section h2 { font-size: 14px; margin-bottom: 12px; color: #555; }
+    .test-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .test-row label { font-size: 12px; width: 150px; flex-shrink: 0; color: #666; }
+    .test-row input { flex: 1; padding: 6px 10px; border: 1px solid #e0e0e0; border-radius: 4px; font-family: monospace; font-size: 12px; }
+    .test-row .result { width: 60px; text-align: center; font-size: 12px; font-weight: 600; }
+    .result.found { color: #28a745; } .result.not-found { color: #dc3545; }
+    button { padding: 8px 18px; background: #007BFF; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-right: 8px; }
+    button:hover { background: #0069d9; }
+    button.secondary { background: #6c757d; }
+    button.secondary:hover { background: #5a6268; }
+    textarea { width: 100%; min-height: 400px; font-family: monospace; font-size: 12px; padding: 12px; border: 1px solid #e0e0e0; border-radius: 4px; }
+    .status { font-size: 12px; padding: 8px 12px; border-radius: 4px; margin-top: 8px; }
+    .status.ok { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+    #export-area { margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>🔧 MOOC Reminder — Selector Calibrator</h1>
+  <p style="font-size:12px;color:#999;margin-bottom:16px;">
+    在 icourse163.org 课程页面的 DevTools Console 中粘贴运行此工具，
+    或使用下面的模拟页面 URL 加载。
+  </p>
+
+  <div class="section">
+    <h2>1. 目标页面</h2>
+    <div class="test-row">
+      <label>测试 URL:</label>
+      <input id="test-url" type="text" value="tests/mock-icourse163.html" placeholder="输入 icourse163.org 课程页面URL">
+    </div>
+    <div style="margin-top:8px;">
+      <button onclick="openTestPage()">打开测试页</button>
+      <button class="secondary" onclick="useCurrentPage()">使用当前页面</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>2. 选择器测试</h2>
+    <div id="selector-tests">
+      <div class="test-row">
+        <label>课程名:</label>
+        <input class="sel-input" data-key="courseName" type="text" value=".m-courseInfo h1, .course-title, .j-course-title, h1">
+        <span class="result" id="r-courseName">-</span>
+      </div>
+      <div class="test-row">
+        <label>学校名:</label>
+        <input class="sel-input" data-key="schoolName" type="text" value=".course-school, .j-school-name, [class*='school']">
+        <span class="result" id="r-schoolName">-</span>
+      </div>
+      <div class="test-row">
+        <label>章节容器:</label>
+        <input class="sel-input" data-key="chapterContainer" type="text" value=".j-chapterlist, .chapter-list, [class*='chapter']">
+        <span class="result" id="r-chapterContainer">-</span>
+      </div>
+      <div class="test-row">
+        <label>章节项目:</label>
+        <input class="sel-input" data-key="chapterItems" type="text" value=".j-chapter-item, .m-chapter-item, [class*='chapterItem'], [class*='chapter-item']">
+        <span class="result" id="r-chapterItems">-</span>
+      </div>
+      <div class="test-row">
+        <label>课时项目:</label>
+        <input class="sel-input" data-key="lessonItems" type="text" value=".j-lesson, .j-lesson-item, .m-lesson-item, [class*='lesson']">
+        <span class="result" id="r-lessonItems">-</span>
+      </div>
+      <div class="test-row">
+        <label>作业项目:</label>
+        <input class="sel-input" data-key="homeworkRow" type="text" value=".j-test-item, .m-test-item, .j-homework-item, [class*='testItem'], [class*='homeworkItem']">
+        <span class="result" id="r-homeworkRow">-</span>
+      </div>
+      <div class="test-row">
+        <label>作业标题:</label>
+        <input class="sel-input" data-key="homeworkTitle" type="text" value=".j-test-title, .j-homework-title, a[href*='content'], a">
+        <span class="result" id="r-homeworkTitle">-</span>
+      </div>
+      <div class="test-row">
+        <label>截止日期:</label>
+        <input class="sel-input" data-key="deadline" type="text" value="[class*='deadline'], [class*='end-time'], [class*='dtime'], .j-deadline">
+        <span class="result" id="r-deadline">-</span>
+      </div>
+    </div>
+    <button onclick="testAllSelectors()" style="margin-top:12px;">测试所有选择器</button>
+  </div>
+
+  <div class="section">
+    <h2>3. 结果导出</h2>
+    <button onclick="exportConfig()">导出 selectors.json</button>
+    <button class="secondary" onclick="copyToClipboard()">复制到剪贴板</button>
+    <div id="status-area"></div>
+    <div id="export-area" style="display:none;">
+      <h3 style="font-size:13px;margin:12px 0 8px;">生成的 selectors.json:</h3>
+      <textarea id="export-output" readonly></textarea>
+    </div>
+  </div>
+
+  <script>
+    const SELECTOR_KEYS = ['courseName', 'schoolName', 'chapterContainer', 'chapterItems', 'lessonItems', 'homeworkRow', 'homeworkTitle', 'deadline'];
+
+    function openTestPage() {
+      const url = document.getElementById('test-url').value;
+      window.open(url, '_blank');
+    }
+
+    function useCurrentPage() {
+      alert('请将此页面作为浏览器扩展的 popup 使用。选择器测试需要在实际的 icourse163.org 页面上运行。\n\n请打开 icourse163.org 课程页面，在 DevTools Console 中运行 tests/debug-helper.js。');
+    }
+
+    function testAllSelectors() {
+      // This function works when loaded in the context of an icourse163.org page
+      // via DevTools console. When used from this HTML page, show instructions.
+      const isOnMOOC = window.location.href.includes('icourse163.org');
+
+      if (!isOnMOOC) {
+        document.getElementById('status-area').innerHTML =
+          '<div class="status error">⚠️ 此页面不是 icourse163.org。请在 MOOC 课程页面的 DevTools Console 中运行 debug-helper.js。</div>';
+        return;
+      }
+
+      // Test each selector
+      for (const key of SELECTOR_KEYS) {
+        const input = document.querySelector(`.sel-input[data-key="${key}"]`);
+        const resultEl = document.getElementById(`r-${key}`);
+        if (!input || !resultEl) continue;
+
+        const selectors = input.value.split(',').map(s => s.trim());
+        let found = false;
+
+        for (const sel of selectors) {
+          try {
+            const els = document.querySelectorAll(sel);
+            if (els.length > 0) {
+              found = true;
+              resultEl.textContent = `✅ ${els.length}`;
+              resultEl.className = 'result found';
+              resultEl.title = `Matched: "${sel}" → ${els[0].textContent?.trim().substring(0, 50)}`;
+              break;
+            }
+          } catch {}
+        }
+
+        if (!found) {
+          resultEl.textContent = '❌ 0';
+          resultEl.className = 'result not-found';
+          resultEl.title = 'No selector matched';
+        }
+      }
+
+      document.getElementById('status-area').innerHTML =
+        '<div class="status ok">✅ 选择器测试完成。绿色=匹配成功，红色=需调整。</div>';
+    }
+
+    function exportConfig() {
+      const exportObj = {
+        version: 1,
+        lastUpdated: new Date().toISOString().split('T')[0],
+        description: 'Calibrated selectors for icourse163.org',
+        coursePage: {},
+        homeworkDetection: {
+          homeworkRow: {},
+          homeworkTitle: {},
+          deadline: {},
+          statusIndicator: {
+            completed: {
+              classPatterns: ['done', 'finished', 'completed', 'is-pass', 'is-done', 'status-done'],
+              textPatterns: ['已完成', '已提交', '已批阅', '已通过', '得分']
+            },
+            submitted: {
+              classPatterns: ['submitted'],
+              textPatterns: ['已提交', '待批阅']
+            },
+            unfinished: {
+              classPatterns: ['undone', 'todo', 'pending'],
+              textPatterns: ['未完成', '待提交', '去完成']
+            }
+          },
+          homeworkTypeIndicator: {
+            homework: ['作业', '课后作业'],
+            quiz: ['测验', '单元测验'],
+            exam: ['考试', '期末考试'],
+            discussion: ['讨论', '课堂交流']
+          }
+        }
+      };
+
+      // Fill from inputs
+      const coursePageKeys = ['courseName', 'schoolName', 'chapterContainer', 'chapterItems', 'lessonItems'];
+      for (const key of coursePageKeys) {
+        const input = document.querySelector(`.sel-input[data-key="${key}"]`);
+        if (input?.value) {
+          const sels = input.value.split(',').map(s => s.trim());
+          exportObj.coursePage[key] = {
+            primary: sels[0],
+            fallback: sels.slice(1)
+          };
+        }
+      }
+
+      const hwKeys = ['homeworkRow', 'homeworkTitle', 'deadline'];
+      for (const key of hwKeys) {
+        const input = document.querySelector(`.sel-input[data-key="${key}"]`);
+        if (input?.value) {
+          const sels = input.value.split(',').map(s => s.trim());
+          exportObj.homeworkDetection[key] = {
+            primary: sels[0],
+            fallback: sels.slice(1)
+          };
+        }
+      }
+
+      document.getElementById('export-output').value = JSON.stringify(exportObj, null, 2);
+      document.getElementById('export-area').style.display = 'block';
+      document.getElementById('status-area').innerHTML =
+        '<div class="status ok">✅ selectors.json 已生成。复制内容到 src/content/selectors.json。</div>';
+    }
+
+    function copyToClipboard() {
+      const textarea = document.getElementById('export-output');
+      if (!textarea.value) {
+        exportConfig();
+      }
+      navigator.clipboard.writeText(textarea.value).then(() => {
+        document.getElementById('status-area').innerHTML =
+          '<div class="status ok">✅ 已复制到剪贴板！</div>';
+      });
+    }
+
+    // Auto-test on load if on MOOC page
+    if (window.location.href.includes('icourse163.org')) {
+      document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(testAllSelectors, 2000);
+      });
+    }
+  </script>
+</body>
+</html>
