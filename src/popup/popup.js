@@ -446,7 +446,7 @@ function createHomeworkItem(item) {
   meta.appendChild(typeBadge);
 
   // Homework phase badge (互评/提交阶段)
-  if (item.type === 'homework' && item.hwPhase) {
+  if (item.type === 'homework') {
     var phaseEl = document.createElement('span');
     phaseEl.className = 'item-type';
     if (item.hwPhase === 'peerreview') {
@@ -461,6 +461,10 @@ function createHomeworkItem(item) {
       phaseEl.textContent = '已出成绩';
       phaseEl.style.background = '#d4edda';
       phaseEl.style.color = '#155724';
+    } else {
+      phaseEl.textContent = '需提交';
+      phaseEl.style.background = '#e2e3e5';
+      phaseEl.style.color = '#383d41';
     }
     meta.appendChild(phaseEl);
   }
