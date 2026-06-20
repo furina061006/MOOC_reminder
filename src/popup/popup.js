@@ -478,14 +478,6 @@ function createHomeworkItem(item) {
 
   meta.appendChild(deadlineEl);
 
-  // Completion badge
-  if (isDone && item.completionReason) {
-    const badge = document.createElement('span');
-    badge.className = 'item-completion-badge ' + item.completionReason;
-    badge.textContent = item.completionReason === 'manual' ? '手动标记' : '自动检测';
-    meta.appendChild(badge);
-  }
-
   content.appendChild(titleEl);
   content.appendChild(meta);
   el.appendChild(cb);
