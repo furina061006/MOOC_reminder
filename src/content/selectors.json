@@ -28,23 +28,31 @@
 
   "homeworkDetection": {
     "quizExamPage": {
-      "description": "测验与作业 (/learn/quiz) 和 考试 (/learn/exam) 页面的专用选择器",
+      "description": "测验与作业 和 考试 页面的实际选择器（从真实页面HTML确认）",
       "listContainer": {
-        "primary": ".j-quizlist, .m-quizlist, .j-testlist, .m-testlist, .j-test-list, .j-examlist, .m-examlist, .j-exam-list",
-        "fallback": ["[class*='quizlist']", "[class*='testlist']", "[class*='test-list']", "[class*='examlist']", "[class*='exam-list']", ".j-list-container", ".m-list-container"]
-      },
-      "tableRow": {
-        "primary": ".j-quizlist table tr, .m-quizlist table tr, .j-testlist table tr, .j-examlist table tr, table.j-table tr, table tbody tr",
-        "fallback": ["table tr:has(td)", "tr[class*='row']", "tr[class*='item']", "table.j-table tbody tr td"]
+        "primary": ".m-chapterQuizHwItem",
+        "fallback": ["[class*='quizHwItem']", "[class*='quiz-list']", "[class*='exam-list']"]
       },
       "listItem": {
-        "primary": ".j-quiz-item, .m-quiz-item, .j-test-item, .m-test-item, .j-testitem, .j-exam-item, .m-exam-item",
-        "fallback": ["[class*='quizItem']", "[class*='testItem']", "[class*='testitem']", "[class*='examItem']", "[class*='listItem']", "[class*='list-item']"]
+        "primary": ".u-quizHwListItem",
+        "fallback": ["[class*='quizHwListItem']", "[class*='quizItem']", "[class*='testItem']"]
+      },
+      "title": {
+        "primary": ".j-name",
+        "fallback": ["h4", "[class*='name']"]
+      },
+      "deadline": {
+        "primary": ".j-submitTime",
+        "fallback": ["[class*='submitTime']", "[class*='deadline']", "[class*='end-time']"]
+      },
+      "score": {
+        "primary": ".j-validScore",
+        "fallback": ["[class*='validScore']", "[class*='score']"]
+      },
+      "button": {
+        "primary": ".j-quizBtn",
+        "fallback": ["a[class*='quizBtn']", "a[class*='btn-default']"]
       }
-    },
-    "homeworkRow": {
-      "primary": ".j-test-item, .m-test-item, .j-quiz-item, .m-quiz-item, .j-exam-item, .m-exam-item, .j-homework-item, .m-homework-item, [class*='testItem'], [class*='homeworkItem']",
-      "fallback": ["[class*='test']", "[class*='homework']", "[class*='exam']", "[class*='quiz']", "a[href*='test']", "a[href*='content']"]
     },
     "homeworkTitle": {
       "primary": ".j-test-title, .j-homework-title, .m-test-title, [class*='test-title'], [class*='hwt-title']",

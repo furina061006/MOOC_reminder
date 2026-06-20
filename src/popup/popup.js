@@ -63,7 +63,7 @@ const state = {
   allItems: [],
   courses: [],
   lastSync: null,
-  filter: 'unfinished',
+  filter: 'unfinished',  // 'unfinished' | 'completed' | 'all'
   sortBy: 'deadline',
   collapsedCourses: new Set()
 };
@@ -199,10 +199,10 @@ function setupEventListeners() {
   safeOn(dom.resetDataBtn,    'click', handleResetData);
 
   safeOn(dom.filterSelect, 'change', (e) => {
-    try { state.filter = e.target.value; render(); } catch {}
+    try { state.filter = e.target.value; applyFilter(); render(); } catch {}
   });
   safeOn(dom.sortSelect, 'change', (e) => {
-    try { state.sortBy = e.target.value; render(); } catch {}
+    try { state.sortBy = e.target.value; sortItems(); render(); } catch {}
   });
 }
 
@@ -237,15 +237,16 @@ async function loadData() {
 function applyFilter() {
   const safe = Array.isArray(state.allItems) ? state.allItems.filter(Boolean) : [];
 
+  // 都不含过期的
   switch (state.filter) {
+    case 'completed':
+      state.items = safe.filter(i => i && i.checkedOff && !isOverdue(i));
+      break;
     case 'all':
-      state.items = [...safe];
+      state.items = safe.filter(i => i && !isOverdue(i));
       break;
-    case 'overdue':
-      state.items = safe.filter(i => i && !i.checkedOff && isOverdue(i));
-      break;
-    default:
-      state.items = safe.filter(i => i && !i.checkedOff);
+    default:  // 'unfinished'
+      state.items = safe.filter(i => i && !i.checkedOff && !isOverdue(i));
       break;
   }
 
