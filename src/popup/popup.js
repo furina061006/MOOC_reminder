@@ -445,28 +445,15 @@ function createHomeworkItem(item) {
 
   meta.appendChild(typeBadge);
 
-  // Homework phase badge (互评/提交阶段)
-  if (item.type === 'homework') {
-    var phaseEl = document.createElement('span');
-    phaseEl.className = 'item-type';
-    if (item.hwPhase === 'peerreview') {
-      phaseEl.textContent = '互评中';
-      phaseEl.style.background = '#fff3cd';
-      phaseEl.style.color = '#856404';
-    } else if (item.hwPhase === 'submit') {
-      phaseEl.textContent = '待提交';
-      phaseEl.style.background = '#cce5ff';
-      phaseEl.style.color = '#004085';
-    } else if (item.hwPhase === 'results') {
-      phaseEl.textContent = '已出成绩';
-      phaseEl.style.background = '#d4edda';
-      phaseEl.style.color = '#155724';
-    } else {
-      phaseEl.textContent = '需提交';
-      phaseEl.style.background = '#e2e3e5';
-      phaseEl.style.color = '#383d41';
-    }
-    meta.appendChild(phaseEl);
+  // 手动勾选提醒：自动检测不到完成状态的都加个标签
+  if (!item.checkedOff && item.type !== 'quiz') {
+    var manualEl = document.createElement('span');
+    manualEl.className = 'item-type';
+    manualEl.textContent = '手动';
+    manualEl.style.background = '#e2e3e5';
+    manualEl.style.color = '#6c757d';
+    manualEl.style.fontSize = '10px';
+    meta.appendChild(manualEl);
   }
 
   meta.appendChild(deadlineEl);
