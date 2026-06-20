@@ -445,15 +445,23 @@ function createHomeworkItem(item) {
 
   meta.appendChild(typeBadge);
 
-  // 手动勾选提醒：自动检测不到完成状态的都加个标签
-  if (!item.checkedOff && item.type !== 'quiz') {
-    var manualEl = document.createElement('span');
-    manualEl.className = 'item-type';
-    manualEl.textContent = '手动';
-    manualEl.style.background = '#e2e3e5';
-    manualEl.style.color = '#6c757d';
-    manualEl.style.fontSize = '10px';
-    meta.appendChild(manualEl);
+  // 阶段/提醒标签
+  if (!item.checkedOff) {
+    var tipEl = document.createElement('span');
+    tipEl.className = 'item-type';
+    tipEl.style.fontSize = '10px';
+    if (item.type === 'homework' && item.hwPhase === 'peerreview') {
+      tipEl.textContent = '互评中';
+      tipEl.style.background = '#fff3cd';
+      tipEl.style.color = '#856404';
+    } else if (item.type !== 'quiz') {
+      tipEl.textContent = '手动';
+      tipEl.style.background = '#e2e3e5';
+      tipEl.style.color = '#6c757d';
+    } else {
+      tipEl = null;
+    }
+    if (tipEl) meta.appendChild(tipEl);
   }
 
   meta.appendChild(deadlineEl);
