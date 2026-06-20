@@ -445,35 +445,33 @@ function createHomeworkItem(item) {
 
   meta.appendChild(typeBadge);
 
-  // 阶段/提醒标签
-  if (!item.checkedOff) {
-    if (item.type === 'quiz') {
-      var autoEl = document.createElement('span');
-      autoEl.className = 'item-type';
-      autoEl.textContent = '自动检测';
-      autoEl.style.fontSize = '10px';
-      autoEl.style.background = '#d4edda';
-      autoEl.style.color = '#155724';
-      meta.appendChild(autoEl);
-    }
-    if (item.type !== 'quiz') {
-      var mnEl = document.createElement('span');
-      mnEl.className = 'item-type';
-      mnEl.textContent = '手动✓';
-      mnEl.style.fontSize = '10px';
-      mnEl.style.background = '#e2e3e5';
-      mnEl.style.color = '#6c757d';
-      meta.appendChild(mnEl);
-    }
-    if (item.type === 'homework' && item.hwPhase === 'peerreview') {
-      var prEl = document.createElement('span');
-      prEl.className = 'item-type';
-      prEl.textContent = '互评中';
-      prEl.style.fontSize = '10px';
-      prEl.style.background = '#fff3cd';
-      prEl.style.color = '#856404';
-      meta.appendChild(prEl);
-    }
+  // 阶段/提醒标签（已完成的也显示，样式和未完成一样）
+  if (item.type === 'quiz') {
+    var autoEl = document.createElement('span');
+    autoEl.className = 'item-type';
+    autoEl.textContent = '自动检测';
+    autoEl.style.fontSize = '10px';
+    autoEl.style.background = '#d4edda';
+    autoEl.style.color = '#155724';
+    meta.appendChild(autoEl);
+  }
+  if (item.type !== 'quiz') {
+    var mnEl = document.createElement('span');
+    mnEl.className = 'item-type';
+    mnEl.textContent = '手动确认';
+    mnEl.style.fontSize = '10px';
+    mnEl.style.background = '#e2e3e5';
+    mnEl.style.color = '#6c757d';
+    meta.appendChild(mnEl);
+  }
+  if (item.type === 'homework' && item.hwPhase === 'peerreview') {
+    var prEl = document.createElement('span');
+    prEl.className = 'item-type';
+    prEl.textContent = '互评中';
+    prEl.style.fontSize = '10px';
+    prEl.style.background = '#fff3cd';
+    prEl.style.color = '#856404';
+    meta.appendChild(prEl);
   }
 
   meta.appendChild(deadlineEl);
