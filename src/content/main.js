@@ -490,11 +490,37 @@
     // Generate UID
     const uid = `${urlMeta.courseId}_tid${urlMeta.termId}_ch${chapterId}_le${lessonId}_hw${homeworkId}`;
 
-    // Detect type
+    // Detect type (优先用按钮文字判断)
+    var btnEl = el.querySelector('.j-quizBtn');
+    var btnText = btnEl ? (btnEl.textContent || '') : '';
     let type = 'homework';
-    if (/测验|quiz/i.test(text)) type = 'quiz';
-    else if (/考试|exam/i.test(text)) type = 'exam';
+    if (btnText.indexOf('测验') >= 0 || /测验|quiz/i.test(text)) type = 'quiz';
+    else if (btnText.indexOf('考试') >= 0 || /考试|exam/i.test(text)) type = 'exam';
     else if (/讨论|discussion/i.test(text)) type = 'discussion';
+
+    // ── 作业多阶段处理（提交/互评/成绩） ──
+    var homeworkPhase = null;
+    var homeworkPhaseDeadline = null;
+    if (type === 'homework' || btnText.indexOf('作业') >= 0) {
+      var phaseEls = el.querySelectorAll('.j-phase');
+      for (var pi = 0; pi < phaseEls.length; pi++) {
+        if (phaseEls[pi].className.indexOf('current') >= 0) {
+          var phaseText = (phaseEls[pi].textContent || '');
+          if (phaseText.indexOf('作业提交阶段') >= 0) {
+            homeworkPhase = 'submit';
+            var st = phaseEls[pi].querySelector('.j-submitTime');
+            if (st) homeworkPhaseDeadline = (st.textContent || '').trim();
+          } else if (phaseText.indexOf('作业批改阶段') >= 0 || phaseText.indexOf('互评') >= 0) {
+            homeworkPhase = 'peerreview';
+            var ee = phaseEls[pi].querySelector('.j-evalEnd');
+            if (ee) homeworkPhaseDeadline = (ee.textContent || '').trim();
+          } else if (phaseText.indexOf('成绩公布阶段') >= 0) {
+            homeworkPhase = 'results';
+          }
+          break;
+        }
+      }
+    }
 
     // Extract score
     const scoreMatch = text.match(/(\d{1,3}(?:\.\d+)?)\s*[\/分]\s*(\d{1,3}(?:\.\d+)?)(?![\/\-年.\d])/);
@@ -514,7 +540,16 @@
     const isDone = checkCompleted(el, text);
     const hasScore = (score !== null && totalScore !== null && score > 0);
     const isPeerReviewDone = /^已互评$|互评已完成|^已评价$|^已评分$|互评结束|已完成互评|互评已结束|互评得分|同伴互评.*已完成/i.test(text);
-    const effectivelyDone = isDone || hasScore || isPeerReviewDone;
+
+    // 作业在互评阶段：提交截止过了也不算完成，除非互评完毕
+    var effectivelyDone;
+    if (homeworkPhase === 'peerreview') {
+      effectivelyDone = isPeerReviewDone || hasScore;
+    } else if (homeworkPhase === 'results') {
+      effectivelyDone = true;
+    } else {
+      effectivelyDone = isDone || hasScore || isPeerReviewDone;
+    }
 
     // 诊断：为什么标记为完成（title 在下方声明，所以此处不用 title）
     if (effectivelyDone) {
@@ -529,8 +564,14 @@
     if (effectivelyDone) status = 'completed';
     else if (/已提交|submitted/i.test(text)) status = 'submitted';
 
-    // Extract deadline
-    const deadlineRaw = extractDeadlineText(el);
+    // Extract deadline（作业优先用当前阶段的截止时间）
+    var dlRaw = null;
+    if (homeworkPhaseDeadline) {
+      dlRaw = homeworkPhaseDeadline;
+    } else {
+      dlRaw = extractDeadlineText(el);
+    }
+    const deadlineRaw = dlRaw;
     let deadline = null;
     if (deadlineRaw) {
       deadline = parseChineseDateInline(deadlineRaw);
