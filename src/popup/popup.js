@@ -64,7 +64,6 @@ const state = {
   courses: [],
   lastSync: null,
   filter: 'unfinished',  // 'unfinished' | 'completed' | 'all'
-  sortBy: 'deadline',
   collapsedCourses: new Set()
 };
 
@@ -83,7 +82,6 @@ function initDomRefs() {
   dom.emptyRefreshBtn = safeQuery('#empty-refresh-btn');
   dom.resetDataBtn    = safeQuery('#reset-data-btn');
   dom.filterSelect    = safeQuery('#filter-select');
-  dom.sortSelect      = safeQuery('#sort-select');
   dom.totalCount      = safeQuery('#total-count');
   dom.syncTime        = safeQuery('#sync-time');
   dom.countOverdue    = safeQuery('#count-overdue');
@@ -199,9 +197,6 @@ function setupEventListeners() {
   safeOn(dom.filterSelect, 'change', (e) => {
     try { state.filter = e.target.value; applyFilter(); render(); } catch {}
   });
-  safeOn(dom.sortSelect, 'change', (e) => {
-    try { state.sortBy = e.target.value; sortItems(); render(); } catch {}
-  });
 }
 
 // ─── Data Loading ──────────────────────────────────────
@@ -248,38 +243,8 @@ function applyFilter() {
       break;
   }
 
-  try { sortItems(); } catch {}
 }
 
-function sortItems() {
-  if (!Array.isArray(state.items)) { state.items = []; return; }
-  state.items = state.items.filter(Boolean);
-
-  const byDeadline = (a, b) => {
-    const da = a?.deadline, db = b?.deadline;
-    if (!da && !db) return 0;
-    if (!da) return 1;
-    if (!db) return -1;
-    try { return new Date(da) - new Date(db); } catch { return 0; }
-  };
-
-  switch (state.sortBy) {
-    case 'deadline':
-      state.items.sort(byDeadline);
-      break;
-    case 'course':
-      state.items.sort((a, b) => {
-        const cn = (a?.courseName || '').localeCompare(b?.courseName || '');
-        return cn !== 0 ? cn : byDeadline(a, b);
-      });
-      break;
-    case 'added':
-      state.items.sort((a, b) => {
-        try { return new Date(b?.firstSeen || 0) - new Date(a?.firstSeen || 0); } catch { return 0; }
-      });
-      break;
-  }
-}
 
 // ─── Rendering ─────────────────────────────────────────
 
