@@ -288,15 +288,25 @@ async function reconcileHomeworkData(course, newItems) {
       Object.assign(existingItems[existingIdx], newItem);
       updated++;
     } else {
-      // --- New item ---
-      if (newItem.autoDetectedCompleted) {
-        newItem.checkedOff = true;
-        newItem.completionReason = 'auto';
+      // --- Secondary dedup: 标题+截止日期相同视为同一项（防hash变化导致重复） ---
+      var dupIdx = existingItems.findIndex(function(i) { return i.title === newItem.title && i.deadline === newItem.deadline; });
+      if (dupIdx >= 0) {
+        existingItems[dupIdx].uid = existingItems[dupIdx].uid || newItem.uid;
+        Object.assign(existingItems[dupIdx], newItem);
+        existingItems[dupIdx].firstSeen = existingItems[dupIdx].firstSeen || new Date().toISOString();
+        existingItems[dupIdx].lastUpdated = new Date().toISOString();
+        updated++;
+      } else {
+        // --- Genuinely new item ---
+        if (newItem.autoDetectedCompleted) {
+          newItem.checkedOff = true;
+          newItem.completionReason = 'auto';
+        }
+        newItem.firstSeen = newItem.firstSeen || new Date().toISOString();
+        newItem.lastUpdated = newItem.firstSeen;
+        existingItems.push(newItem);
+        added++;
       }
-      newItem.firstSeen = newItem.firstSeen || new Date().toISOString();
-      newItem.lastUpdated = newItem.firstSeen;
-      existingItems.push(newItem);
-      added++;
     }
   }
 
