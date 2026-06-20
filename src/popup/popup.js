@@ -81,7 +81,6 @@ function initDomRefs() {
   dom.loginWarning    = safeQuery('#login-warning');
   dom.refreshBtn      = safeQuery('#refresh-btn');
   dom.emptyRefreshBtn = safeQuery('#empty-refresh-btn');
-  dom.clearCompletedBtn = safeQuery('#clear-completed-btn');
   dom.resetDataBtn    = safeQuery('#reset-data-btn');
   dom.filterSelect    = safeQuery('#filter-select');
   dom.sortSelect      = safeQuery('#sort-select');
@@ -195,7 +194,6 @@ function setupEventListeners() {
 
   safeOn(dom.refreshBtn,      'click', handleRefresh);
   safeOn(dom.emptyRefreshBtn, 'click', handleRefresh);
-  safeOn(dom.clearCompletedBtn, 'click', handleClearCompleted);
   safeOn(dom.resetDataBtn,    'click', handleResetData);
 
   safeOn(dom.filterSelect, 'change', (e) => {
@@ -568,16 +566,6 @@ async function handleRefresh() {
   }
 
   try { if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning'); } catch {}
-}
-
-async function handleClearCompleted() {
-  try {
-    await chrome.runtime.sendMessage({ type: 'CLEAR_COMPLETED' });
-    await loadData();
-    render();
-  } catch(e) {
-    console.error('[Popup] CLEAR_COMPLETED failed:', e.message);
-  }
 }
 
 async function handleResetData() {

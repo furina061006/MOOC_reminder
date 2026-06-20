@@ -286,15 +286,28 @@ async function reconcileHomeworkData(course, newItems) {
 
       // Merge into existing
       Object.assign(existingItems[existingIdx], newItem);
+      // 确保手动标记不被 Object.assign 覆盖（newItem 来自新爬取，manuallyCheckedOff=false）
+      if (existing.manuallyCheckedOff) {
+        existingItems[existingIdx].checkedOff = true;
+        existingItems[existingIdx].manuallyCheckedOff = true;
+        existingItems[existingIdx].completionReason = 'manual';
+      }
       updated++;
     } else {
       // --- Secondary dedup: 标题+截止日期相同视为同一项（防hash变化导致重复） ---
       var dupIdx = existingItems.findIndex(function(i) { return i.title === newItem.title && i.deadline === newItem.deadline; });
       if (dupIdx >= 0) {
-        existingItems[dupIdx].uid = existingItems[dupIdx].uid || newItem.uid;
+        var dupExisting = existingItems[dupIdx];
+        // 保留手动勾选状态（Object.assign 会覆盖）
+        var wasManual = dupExisting.manuallyCheckedOff;
         Object.assign(existingItems[dupIdx], newItem);
         existingItems[dupIdx].firstSeen = existingItems[dupIdx].firstSeen || new Date().toISOString();
         existingItems[dupIdx].lastUpdated = new Date().toISOString();
+        if (wasManual) {
+          existingItems[dupIdx].checkedOff = true;
+          existingItems[dupIdx].manuallyCheckedOff = true;
+          existingItems[dupIdx].completionReason = 'manual';
+        }
         updated++;
       } else {
         // --- Genuinely new item ---
