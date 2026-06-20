@@ -447,11 +447,19 @@ function createHomeworkItem(item) {
 
   // 阶段/提醒标签
   if (!item.checkedOff) {
-    // 手动永远是第一个
+    if (item.type === 'quiz') {
+      var autoEl = document.createElement('span');
+      autoEl.className = 'item-type';
+      autoEl.textContent = '自动检测';
+      autoEl.style.fontSize = '10px';
+      autoEl.style.background = '#d4edda';
+      autoEl.style.color = '#155724';
+      meta.appendChild(autoEl);
+    }
     if (item.type !== 'quiz') {
       var mnEl = document.createElement('span');
       mnEl.className = 'item-type';
-      mnEl.textContent = '手动';
+      mnEl.textContent = '手动✓';
       mnEl.style.fontSize = '10px';
       mnEl.style.background = '#e2e3e5';
       mnEl.style.color = '#6c757d';
