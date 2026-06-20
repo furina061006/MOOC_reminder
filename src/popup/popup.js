@@ -447,15 +447,7 @@ function createHomeworkItem(item) {
 
   // 阶段/提醒标签
   if (!item.checkedOff) {
-    if (item.type === 'homework' && item.hwPhase === 'peerreview') {
-      var prEl = document.createElement('span');
-      prEl.className = 'item-type';
-      prEl.textContent = '互评中';
-      prEl.style.fontSize = '10px';
-      prEl.style.background = '#fff3cd';
-      prEl.style.color = '#856404';
-      meta.appendChild(prEl);
-    }
+    // 手动永远是第一个
     if (item.type !== 'quiz') {
       var mnEl = document.createElement('span');
       mnEl.className = 'item-type';
@@ -464,6 +456,15 @@ function createHomeworkItem(item) {
       mnEl.style.background = '#e2e3e5';
       mnEl.style.color = '#6c757d';
       meta.appendChild(mnEl);
+    }
+    if (item.type === 'homework' && item.hwPhase === 'peerreview') {
+      var prEl = document.createElement('span');
+      prEl.className = 'item-type';
+      prEl.textContent = '互评中';
+      prEl.style.fontSize = '10px';
+      prEl.style.background = '#fff3cd';
+      prEl.style.color = '#856404';
+      meta.appendChild(prEl);
     }
   }
 
