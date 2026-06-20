@@ -525,17 +525,21 @@ async function handleRefresh() {
     const response = await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
     console.log('[Popup] TRIGGER_SCRAPE response:', response);
 
+    // 无论刷新是否成功，重新加载数据并重新渲染（保持当前 filter 状态）
+    await loadData();
+    render();
+
     if (response && response.success) {
-      await loadData();
-      render();
       showToast('刷新成功，扫描到 ' + (response.scrapedCount || 0) + ' 项');
     } else if (response && response.error) {
       showToast(response.error);
     } else {
-      showToast('刷新失败：无响应，请确认已打开课程页面');
+      showToast('刷新完成（无新数据）');
     }
   } catch(e) {
     console.error('[Popup] handleRefresh failed:', e.message);
+    // 刷新失败也重新渲染（应用当前filter）
+    try { await loadData(); render(); } catch {}
     showToast('刷新失败: ' + e.message);
   }
 

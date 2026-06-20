@@ -246,31 +246,23 @@
   }
 
   function isContentReady() {
-    // Check for quiz/exam page specific containers
-    const quizExamIndicators = [
-      // 测验与作业 页面容器
-      '.j-quizlist', '.m-quizlist', '.quiz-list',
-      '.j-testlist', '.m-testlist', '.test-list',
-      // 考试 页面容器
-      '.j-examlist', '.m-examlist', '.exam-list',
-      // 通用列表容器
-      '.j-list-container', '.m-list-container',
-      // 表格行 (某些课程用表格展示)
-      'table tr', '.j-table-row',
-      // Fallback: any element with quiz/test/exam in class
-      '[class*="quiz"]', '[class*="test"]', '[class*="exam"]',
-      // Generic: any div with substantial content
-      '.j-content-body', '.m-content-body'
-    ];
+    // 不依赖特定类名，只要页面有可见内容且 loading 消失即可。
+    // 具体元素筛选交给 scrapeHomeworkItems 做文本扫描。
+    try {
+      // Loading indicator 消失
+      const loading = document.querySelector('.j-loading, .m-loading, .loading-spinner, [class*="loading"]');
+      if (loading && loading.offsetParent !== null) return false;
 
-    for (const sel of quizExamIndicators) {
-      try {
-        const el = document.querySelector(sel);
-        if (el && el.textContent.trim().length > 10) return true;
-      } catch { /* skip */ }
+      // 页面有可见的内容区域即可
+      const body = document.body;
+      if (!body) return false;
+
+      // 关键检查：body 有文本内容且不是空壳框架
+      const textLen = (body.textContent || '').trim().length;
+      return textLen > 20;
+    } catch {
+      return false;
     }
-
-    return false;
   }
 
   function isLoading() {
@@ -372,113 +364,107 @@
 
   function scrapeHomeworkItems(urlMeta, courseMeta) {
     const items = [];
-    const route = getCurrentHashRoute();
 
-    // ── 策略: 测验与作业 / 考试 页面 ──
-    // These pages have a flat list structure:
-    //   - Table rows or list items, each representing one quiz/homework/exam
-    //   - Each row has: title, type, deadline, status, score
+    // ── 全页面文本扫描 ──
+    // 不依赖任何特定 CSS 类名，直接扫描页面所有元素中的作业相关文本
+    // 然后用截止日期过滤噪音
 
-    // Find all quiz/exam list items
-    const rowElements = findQuizExamRows();
+    // 第一步：扫描所有元素，提取包含作业关键词的文本
+    const candidates = [];
+    const allEls = document.querySelectorAll('div, li, tr, td, span, a, p, section');
 
-    if (rowElements.length > 0) {
-      for (const rowEl of rowElements) {
-        try {
-          const item = buildHomeworkItem(rowEl, urlMeta, courseMeta, '', '');
+    for (const el of allEls) {
+      try {
+        const text = (el.textContent || '').trim();
+        if (text.length < 4 || text.length > 500) continue;
+        if (/加载中|loading|请稍候|spinner/i.test(text)) continue;
+
+        // 跳过已知的导航/菜单/UI文本
+        if (/^(测验与作业|考试|课件|公告|讨论区|评分标准|课程介绍|首页|我的学习|我的课程|我的成绩|我的证书)\s*$/.test(text)) continue;
+        // 跳过纯表头行（只含列名不含数据）
+        if (/^(作业名称|作业标题|考试名称|测验名称|截止日期|提交时间|状态|成绩|操作)\s*$/.test(text)) continue;
+        // 跳过按钮/提醒/UI文字（含有这些关键词但不是作业条目）
+        if (/一键互评|自动互评|获取答案|不再提醒|查看帮助|使用插件前.*?看看.*?有没有问题/i.test(text)) continue;
+        // 跳过导航栏（多个板块名连在一起）
+        if (/^(公告课件|课件测验|测验与作业|作业考试|考试讨论)/i.test(text)) continue;
+        // 跳过空状态提示
+        if (/老师还没有发布|暂无.*(测试|作业|考试)|敬请期待|请耐心等待/i.test(text)) continue;
+        // 条件A：包含作业关键词
+        // 条件B：包含截止日期（YYYY-MM-DD或YYYY年MM月DD日等格式）
+        // 条件C：包含分数（如 95/100）
+        // 条件D：包含状态关键词（已完成/未完成等）
+
+        const hasHomeworkKeyword = /作业|测验|考试|测试|quiz|exam|test|homework/i.test(text);
+        const hasDeadlinePattern = /(\d{4}[年\-/]\d{1,2}[月\-/]\d{1,2}日?)/.test(text);
+        const hasScorePattern   = /\d+\.?\d*\s*[\/分]\s*\d+\.?\d*/.test(text);
+        const hasStatusKeyword  = /未完成|已完成|已提交|已批阅|待提交|已通过|待批阅|去完成|查看成绩|已截止|查看分数|已互评|已评价|已评分|互评结束|得分/i.test(text);
+        const hasDeadlineLabel  = /截止|deadline|due|提交时间|结束时间/i.test(text);
+
+        // 准入：满足至少一个条件
+        if (!hasHomeworkKeyword && !hasDeadlinePattern && !hasScorePattern && !hasStatusKeyword && !hasDeadlineLabel) continue;
+
+        // 提取截止日期（含更多格式）
+        const deadlineMatch =
+          text.match(/(\d{4}[年\-/]\d{1,2}[月\-/]\d{1,2}日?\s*\d{1,2}:\d{2})/) ||
+          text.match(/(\d{1,2}[月\/]\d{1,2}日?\s*\d{1,2}:\d{2})/);
+
+        candidates.push({
+          el: el,
+          text: text,
+          deadlineRaw: deadlineMatch ? deadlineMatch[1] : null,
+          hasDeadline: !!deadlineMatch,
+          score: text.match(/(\d+\.?\d*)\s*[\/分]\s*(\d+\.?\d*)/)
+        });
+      } catch {}
+    }
+
+    console.log('[MOOC Reminder] Found', candidates.length, 'homework-related elements on page');
+
+    // 第二步：去重 — 只保留最内层的元素（避免父元素和子元素重复）
+    const used = new Set();
+    for (const c of candidates) {
+      let isInner = true;
+      for (const other of candidates) {
+        if (c.el === other.el) continue;
+        if (c.el !== document && other.el.contains(c.el)) {
+          isInner = false;
+          break;
+        }
+      }
+      if (isInner) {
+        const key = c.text.substring(0, 50) + (c.deadlineRaw || '');
+        if (!used.has(key)) {
+          used.add(key);
+          const item = buildHomeworkItem(c.el, urlMeta, courseMeta, '', '');
           if (item) items.push(item);
-        } catch (e) {
-          console.debug('[MOOC Reminder] buildHomeworkItem failed for row:', e.message);
         }
       }
     }
 
-    // Fallback: if no rows found, try searching for homework-like elements
+    console.log('[MOOC Reminder] After dedup and build: got', items.length, 'items');
+
+    // 第三步：如果还一个都没有，输出诊断信息
     if (items.length === 0) {
-      const allElements = document.querySelectorAll(
-        'tr, li, .j-quiz-item, .m-quiz-item, .j-test-item, .m-test-item, ' +
-        '[class*="quizItem"], [class*="testItem"], [class*="examItem"], ' +
-        '.j-list-item, .m-list-item, [class*="list-item"]'
-      );
-
-      for (const el of allElements) {
-        try {
-          const text = (el.textContent || '').trim();
-          if (/作业|测验|考试|测试|quiz|exam|test/i.test(text) &&
-              text.length > 4 && text.length < 300 &&
-              !/加载中|loading/i.test(text)) {
-            const item = buildHomeworkItem(el, urlMeta, courseMeta, '', '');
-            if (item) items.push(item);
-          }
-        } catch (e) {
-          console.debug('[MOOC Reminder] buildHomeworkItem failed for fallback el:', e.message);
+      console.log('[MOOC Reminder] DIAGNOSTIC: no items found. Page class names sample:');
+      const samples = new Set();
+      const allWithClass = document.querySelectorAll('[class]');
+      allWithClass.forEach(function(el) {
+        var cls = el.className;
+        if (typeof cls === 'string' && cls.length > 3 && cls.length < 100) {
+          samples.add(cls);
         }
-      }
+      });
+      var clsList = Array.from(samples).slice(0, 30);
+      clsList.forEach(function(c) { console.log('  [CLASS]', c); });
     }
 
-    // Deduplicate by title+deadline
-    const seen = new Set();
-    return items.filter(item => {
-      const key = `${item.title}_${item.deadline || ''}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    return items;
   }
 
   /**
    * Find quiz/exam list rows on the page.
    * icourse163.org quiz/exam pages typically use tables or structured divs.
    */
-  function findQuizExamRows() {
-    // Strategy 1: Look for table rows in quiz/exam containers
-    const tableSelectors = [
-      '.j-quizlist table tr', '.m-quizlist table tr',
-      '.j-testlist table tr', '.m-testlist table tr',
-      '.j-examlist table tr', '.m-examlist table tr',
-      'table.j-table tr', 'table.m-table tr',
-      'table tbody tr'
-    ];
-
-    for (const sel of tableSelectors) {
-      try {
-        const rows = document.querySelectorAll(sel);
-        // Filter: only keep rows with text content (skip header rows with all <th>)
-        const dataRows = Array.from(rows).filter(row => {
-          const text = (row.textContent || '').trim();
-          const hasTH = row.querySelectorAll('th').length > 0;
-          const hasTD = row.querySelectorAll('td').length > 0;
-          return text.length > 5 && (!hasTH || hasTD);
-        });
-        if (dataRows.length > 0) return dataRows;
-      } catch { /* skip */ }
-    }
-
-    // Strategy 2: Look for structured div/card items
-    const divSelectors = [
-      '.j-quiz-item', '.m-quiz-item', '.quiz-item',
-      '.j-test-item', '.m-test-item', '.test-item',
-      '.j-exam-item', '.m-exam-item', '.exam-item',
-      '[class*="quizItem"]', '[class*="testItem"]',
-      '[class*="examItem"]',
-      '.j-list-item', '.m-list-item',
-      '[class*="listItem"]', '[class*="list-item"]'
-    ];
-
-    for (const sel of divSelectors) {
-      try {
-        const items = document.querySelectorAll(sel);
-        const validItems = Array.from(items).filter(el => {
-          const text = (el.textContent || '').trim();
-          return text.length > 4 && !/加载中|loading/i.test(text);
-        });
-        if (validItems.length > 0) return validItems;
-      } catch { /* skip */ }
-    }
-
-    return [];
-  }
-
   function buildHomeworkItem(el, urlMeta, courseMeta, chapterId, lessonId) {
     const text = (el.textContent || '').trim();
 
@@ -501,10 +487,18 @@
     else if (/考试|exam/i.test(text)) type = 'exam';
     else if (/讨论|discussion/i.test(text)) type = 'discussion';
 
+    // Extract score FIRST so hasScore can use it (avoid JS Temporal Dead Zone)
+    const scoreMatch = text.match(/(\d+\.?\d*)\s*[\/分]\s*(\d+\.?\d*)/);
+    let score = null, totalScore = null;
+    if (scoreMatch) {
+      score = parseFloat(scoreMatch[1]);
+      totalScore = parseFloat(scoreMatch[2]);
+    }
+
     // Detect status — use broader check that includes score and 互评
     const isDone = checkCompleted(el, text);
     const hasScore = (score !== null && totalScore !== null);
-    const isPeerReviewDone = /已互评|互评已完成|已评价|已评分|互评结束/i.test(text);
+    const isPeerReviewDone = /^已互评$|互评已完成|^已评价$|^已评分$|互评结束|已完成互评|互评已结束|互评得分|同伴互评.*已完成/i.test(text);
     const effectivelyDone = isDone || hasScore || isPeerReviewDone;
 
     let status = 'unfinished';
@@ -518,28 +512,18 @@
       deadline = parseChineseDateInline(deadlineRaw);
     }
 
-    // Extract score
-    const scoreMatch = text.match(/(\d+\.?\d*)\s*[\/分]\s*(\d+\.?\d*)/);
-    let score = null, totalScore = null;
-    if (scoreMatch) {
-      score = parseFloat(scoreMatch[1]);
-      totalScore = parseFloat(scoreMatch[2]);
-    }
-
     // Clean title: remove deadline, score, status-like fragments
     let title = text.split(/截止|deadline|due|提交|submitted/i)[0].trim();
     if (!title || title.length < 2) title = text.substring(0, 40);
 
-    // ── Filter: skip section headers (no deadline + looks like a label) ──
+    // ── Filter: skip known UI/noise titles ──
+    if (/一键互评|自动互评|获取答案|不再提醒|查看帮助|使用插件前/i.test(title)) {
+      return null;
+    }
+
+    // ── Filter: 没有截止日期也没有分数 → 不是有效作业 ──
     if (!deadlineRaw && !hasScore) {
-      // Known section headers on icourse163.org
-      if (/^(测验与作业|考试|课件|公告|讨论区|评分标准|课程介绍)\s*$/.test(title)) {
-        return null;
-      }
-      // Generic: very short text without deadline is probably a header
-      if (title.length <= 6 && /^[一-龥\s]+$/.test(title)) {
-        return null;
-      }
+      return null;
     }
 
     return {
