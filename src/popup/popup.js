@@ -444,6 +444,27 @@ function createHomeworkItem(item) {
   deadlineEl.textContent = item.deadline ? formatDeadline(item.deadline, urgency) : '无截止日期';
 
   meta.appendChild(typeBadge);
+
+  // Homework phase badge (互评/提交阶段)
+  if (item.type === 'homework' && item.hwPhase) {
+    var phaseEl = document.createElement('span');
+    phaseEl.className = 'item-type';
+    if (item.hwPhase === 'peerreview') {
+      phaseEl.textContent = '互评中';
+      phaseEl.style.background = '#fff3cd';
+      phaseEl.style.color = '#856404';
+    } else if (item.hwPhase === 'submit') {
+      phaseEl.textContent = '待提交';
+      phaseEl.style.background = '#cce5ff';
+      phaseEl.style.color = '#004085';
+    } else if (item.hwPhase === 'results') {
+      phaseEl.textContent = '已出成绩';
+      phaseEl.style.background = '#d4edda';
+      phaseEl.style.color = '#155724';
+    }
+    meta.appendChild(phaseEl);
+  }
+
   meta.appendChild(deadlineEl);
 
   // Completion badge
@@ -477,7 +498,8 @@ function updateSummary() {
 
 function updateFooter() {
   const safe = Array.isArray(state.allItems) ? state.allItems.filter(Boolean) : [];
-  const count = safe.filter(i => i && !i.checkedOff).length;
+  // 跟界面上显示的保持一致：不含过期
+  const count = safe.filter(i => i && !i.checkedOff && !isOverdue(i)).length;
 
   if (dom.totalCount) dom.totalCount.textContent = '共 ' + count + ' 项未完成';
 

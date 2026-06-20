@@ -605,6 +605,7 @@
       homeworkId,
       title: itemName,
       type,
+      hwPhase: homeworkPhase,
       courseName: courseMeta.courseName,
       schoolName: courseMeta.schoolName,
       status,
