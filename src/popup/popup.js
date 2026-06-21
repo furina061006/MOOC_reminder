@@ -70,9 +70,11 @@ const state = {
   allItems: [],
   courses: [],
   lastSync: null,
-  syncErrors: [],
-  scrapeStatus: null,
+
+
   filter: 'unfinished',  // 'unfinished' | 'overdue' | 'completed' | 'all'
+
+
   collapsedCourses: new Set()
 };
 
@@ -320,7 +322,9 @@ function renderScrapeWarning() {
   dom.loginWarning.style.display = 'block';
   dom.loginWarning.className = 'login-warning ' + (warning.type || 'scrape');
   dom.loginWarning.innerHTML =
-    '<div class="warning-icon">' + wIcon(warning.type === 'login' ? 'lock' : 'alert-triangle', 32) + '</div>' +
+
+    '<div class="warning-icon">' + (warning.type === 'login' ? '🔒' : '⚠️') + '</div>' +
+
     '<p class="warning-title">' + escapeHtml(warning.title) + '</p>' +
     '<p class="warning-desc">' + escapeHtml(warning.message) + '</p>';
 }

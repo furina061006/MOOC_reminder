@@ -456,6 +456,38 @@ body {
   word-break: break-word;
 }
 
+.warning-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: #555;
+}
+
+.warning-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diagnostics {
+  margin: 0 12px 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #FFF7E6;
+  color: #8A5A00;
+  font-size: 11px;
+}
+
+.diagnostics summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.diagnostics-body {
+  margin-top: 6px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 /* ─── Buttons ──────────────────────────────────── */
 .btn {
   display: inline-flex;
@@ -586,5 +618,22 @@ body {
 
   .toast { background: #3a3c41; }
 
-  .empty-icon { color: #4b4e54; }
+
+  .empty-state {
+    color: #ccc;
+  }
+
+  .empty-desc {
+    color: #888;
+  }
+
+  .warning-title {
+    color: #ddd;
+  }
+
+  .diagnostics {
+    background: #3A2D1A;
+    color: #F0C36A;
+  }
+
 }

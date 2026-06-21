@@ -10,29 +10,19 @@
       "Write",
       "Edit",
       "WebSearch",
-      "WebFetch"
+      "WebFetch",
+      "Bash(python3)"
     ],
     "deny": []
-  },
-  "hooks": {
-    "PreEdit": [
-      {
-        "matcher": "src/content/selectors.json",
-        "command": "echo '[HOOK] selectors.json 即将被修改 — 请记录平台版本和验证步骤'"
-      }
-    ],
-    "PostEdit": [
-      {
-        "matcher": "src/**/*.js",
-        "command": "echo '[HOOK] JS 文件已修改 — 建议在 Chrome 中重新加载扩展测试'"
-      }
-    ]
   },
   "projectConfig": {
     "root": "/home/furina061006/AAA_Project_libraries/MOOC_reminder",
     "type": "browser-extension",
     "manifestVersion": 3,
-    "targetPlatforms": ["chrome", "edge"],
+    "targetPlatforms": [
+      "chrome",
+      "edge"
+    ],
     "testCommand": "web-ext run --source-dir . --target chromium"
   }
 }
