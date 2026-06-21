@@ -91,6 +91,7 @@ function initDomRefs() {
   dom.loginWarning    = safeQuery('#login-warning');
   dom.diagnostics     = safeQuery('#diagnostics');
   dom.refreshBtn      = safeQuery('#refresh-btn');
+  dom.settingsBtn     = safeQuery('#settings-btn');
   dom.emptyRefreshBtn = safeQuery('#empty-refresh-btn');
   dom.resetDataBtn    = safeQuery('#reset-data-btn');
   dom.filterSelect    = safeQuery('#filter-select');
@@ -178,7 +179,17 @@ async function validateAndAutoRepair() {
         courses: [],
         last_sync: null,
         sync_errors: [],
-        user_settings: { checkIntervalMinutes: 30, badgeRefreshMinutes: 5, autoDetectEnabled: true }
+        user_settings: {
+          checkIntervalMinutes: 30,
+          badgeRefreshMinutes: 5,
+          autoDetectEnabled: true,
+          notificationsEnabled: true,
+          notifyLeadHours: [48, 24],
+          notifyOverdue: true,
+          quietHoursEnabled: false,
+          quietStart: 22,
+          quietEnd: 8
+        }
       });
       console.log('[Popup] AUTO-REPAIR: done. Proceeding with clean state.');
       // Don't reload — continue rendering empty state naturally
@@ -204,6 +215,7 @@ function setupEventListeners() {
   };
 
   safeOn(dom.refreshBtn,      'click', handleRefresh);
+  safeOn(dom.settingsBtn,     'click', handleOpenSettings);
   safeOn(dom.emptyRefreshBtn, 'click', handleRefresh);
   safeOn(dom.resetDataBtn,    'click', handleResetData);
 
@@ -681,6 +693,18 @@ async function handleRefresh() {
   }
 
   try { if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning'); } catch {}
+}
+
+function handleOpenSettings() {
+  try {
+    if (chrome.runtime && chrome.runtime.openOptionsPage) {
+      chrome.runtime.openOptionsPage();
+    } else {
+      window.open(chrome.runtime.getURL('src/popup/options.html'), '_blank');
+    }
+  } catch (e) {
+    console.error('[Popup] openOptionsPage failed:', e.message);
+  }
 }
 
 async function handleResetData() {

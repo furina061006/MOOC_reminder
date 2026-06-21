@@ -8,6 +8,8 @@ test('manifest is MV3 and has required runtime entries', () => {
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.background.service_worker, 'src/background/service-worker.js');
   assert.equal(manifest.action.default_popup, 'src/popup/popup.html');
+  assert.equal(manifest.options_ui.page, 'src/popup/options.html');
+  assert.equal(manifest.options_ui.open_in_tab, true);
 });
 
 test('manifest exposes selectors.json for content script fetch', () => {

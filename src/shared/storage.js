@@ -3,18 +3,14 @@
  * homework items, courses, settings, and sync metadata.
  */
 
+import { DEFAULT_SETTINGS } from './settings.js';
+
 const STORAGE_KEYS = {
   HOMEWORK_ITEMS: 'homework_items',
   COURSES: 'courses',
   LAST_SYNC: 'last_sync',
   SYNC_ERRORS: 'sync_errors',
   USER_SETTINGS: 'user_settings'
-};
-
-const DEFAULT_SETTINGS = {
-  checkIntervalMinutes: 30,
-  badgeRefreshMinutes: 5,
-  autoDetectEnabled: true
 };
 
 // ─── Homework Items ───────────────────────────────────────
