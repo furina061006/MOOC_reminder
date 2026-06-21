@@ -246,6 +246,33 @@ const MESSAGE_HANDLERS = {
 
 // ─── Data Reconciliation ────────────────────────────────
 
+function normalizeIdentityText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function isSameHomeworkCandidate(existing, newItem) {
+  if (!existing || !newItem) return false;
+
+  if (existing.uid && existing.uid === newItem.uid) return true;
+  if (existing.identityKey && newItem.identityKey && existing.identityKey === newItem.identityKey) return true;
+
+  if (existing.courseId !== newItem.courseId || existing.termId !== newItem.termId) return false;
+  if ((existing.type || '') !== (newItem.type || '')) return false;
+  if (normalizeIdentityText(existing.title) !== normalizeIdentityText(newItem.title)) return false;
+
+  // Existing data from older versions may not have identityKey. Use deadline as a
+  // migration hint, but only the caller may merge if the match is unique.
+  if (existing.deadline && newItem.deadline && existing.deadline !== newItem.deadline) return false;
+  return true;
+}
+
+function findUniqueHomeworkCandidate(items, newItem) {
+  const matches = items
+    .map(function(item, index) { return { item: item, index: index }; })
+    .filter(function(entry) { return isSameHomeworkCandidate(entry.item, newItem); });
+  return matches.length === 1 ? matches[0].index : -1;
+}
+
 async function reconcileHomeworkData(course, newItems) {
   const existingItems = await getHomeworkItems();
   let added = 0;
@@ -294,19 +321,29 @@ async function reconcileHomeworkData(course, newItems) {
       }
       updated++;
     } else {
-      // --- Secondary dedup: 标题+截止日期相同视为同一项（防hash变化导致重复） ---
-      var dupIdx = existingItems.findIndex(function(i) { return i.title === newItem.title && i.deadline === newItem.deadline; });
+      // --- Secondary dedup: match only when one existing item is an unambiguous candidate. ---
+      var dupIdx = findUniqueHomeworkCandidate(existingItems, newItem);
       if (dupIdx >= 0) {
         var dupExisting = existingItems[dupIdx];
         // 保留手动勾选状态（Object.assign 会覆盖）
         var wasManual = dupExisting.manuallyCheckedOff;
+        var wasCheckedOff = dupExisting.checkedOff;
+        var oldCompletionReason = dupExisting.completionReason;
+        var oldFirstSeen = dupExisting.firstSeen;
+        var oldUid = dupExisting.uid;
         Object.assign(existingItems[dupIdx], newItem);
-        existingItems[dupIdx].firstSeen = existingItems[dupIdx].firstSeen || new Date().toISOString();
+        existingItems[dupIdx].firstSeen = oldFirstSeen || new Date().toISOString();
         existingItems[dupIdx].lastUpdated = new Date().toISOString();
+        if (oldUid && oldUid !== newItem.uid) {
+          existingItems[dupIdx].previousUid = oldUid;
+        }
         if (wasManual) {
           existingItems[dupIdx].checkedOff = true;
           existingItems[dupIdx].manuallyCheckedOff = true;
           existingItems[dupIdx].completionReason = 'manual';
+        } else if (wasCheckedOff || newItem.autoDetectedCompleted) {
+          existingItems[dupIdx].checkedOff = true;
+          existingItems[dupIdx].completionReason = newItem.autoDetectedCompleted ? 'auto' : oldCompletionReason;
         }
         updated++;
       } else {
