@@ -791,6 +791,29 @@
     return 'hw_' + (hash >>> 0).toString(16).padStart(8, '0');
   }
 
+  function inferDeadlineYear(month, day, hour, minute) {
+    const now = new Date();
+    let year = now.getFullYear();
+    const candidate = new Date(
+      year,
+      parseInt(month) - 1,
+      parseInt(day),
+      parseInt(hour || '23'),
+      parseInt(minute || '59'),
+      0,
+      0
+    );
+
+    // Keep recently-past dates as overdue, but roll distant past dates into
+    // next year. This avoids parsing January deadlines as last January when
+    // a course shows dates without a year near the semester boundary.
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    if (!isNaN(candidate.getTime()) && candidate.getTime() < now.getTime() - sevenDaysMs) {
+      year += 1;
+    }
+    return String(year);
+  }
+
   function parseChineseDateInline(raw) {
     // Simple inline parser — mirrors date-utils.js logic
     if (!raw) return null;
@@ -810,9 +833,10 @@
     // "6月30日 23:59" (no year)
     match = raw.match(/(\d{1,2})月(\d{1,2})日?\s*(\d{1,2}):(\d{2})/);
     if (match) {
-      const year = new Date().getFullYear().toString();
+      const year = inferDeadlineYear(match[1], match[2], match[3], match[4]);
       return formatISO(year, match[1], match[2], match[3], match[4]);
     }
+
 
     // "2026年6月30日" (date only)
     match = raw.match(/(\d{4})年(\d{1,2})月(\d{1,2})日?/);
@@ -824,6 +848,13 @@
     match = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
     if (match) {
       return formatISO(match[1], match[2], match[3], '23', '59');
+    }
+
+    // "6月30日" (date only, no year)
+    match = raw.match(/(\d{1,2})月(\d{1,2})日?/);
+    if (match) {
+      const year = inferDeadlineYear(match[1], match[2], '23', '59');
+      return formatISO(year, match[1], match[2], '23', '59');
     }
 
     return null;
