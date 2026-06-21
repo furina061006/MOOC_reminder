@@ -63,7 +63,7 @@ const state = {
   allItems: [],
   courses: [],
   lastSync: null,
-  filter: 'unfinished',  // 'unfinished' | 'completed' | 'all'
+  filter: 'unfinished',  // 'unfinished' | 'overdue' | 'completed' | 'all'
   collapsedCourses: new Set()
 };
 
@@ -230,13 +230,15 @@ async function loadData() {
 function applyFilter() {
   const safe = Array.isArray(state.allItems) ? state.allItems.filter(Boolean) : [];
 
-  // 都不含过期的
   switch (state.filter) {
+    case 'overdue':
+      state.items = safe.filter(i => i && !i.checkedOff && isOverdue(i));
+      break;
     case 'completed':
-      state.items = safe.filter(i => i && i.checkedOff && !isOverdue(i));
+      state.items = safe.filter(i => i && i.checkedOff);
       break;
     case 'all':
-      state.items = safe.filter(i => i && !isOverdue(i));
+      state.items = safe;
       break;
     default:  // 'unfinished'
       state.items = safe.filter(i => i && !i.checkedOff && !isOverdue(i));
@@ -462,8 +464,8 @@ function updateSummary() {
 
 function updateFooter() {
   const safe = Array.isArray(state.allItems) ? state.allItems.filter(Boolean) : [];
-  // 跟界面上显示的保持一致：不含过期
-  const count = safe.filter(i => i && !i.checkedOff && !isOverdue(i)).length;
+  // Badge truth: all unfinished items, including overdue ones.
+  const count = safe.filter(i => i && !i.checkedOff).length;
 
   if (dom.totalCount) dom.totalCount.textContent = '共 ' + count + ' 项未完成';
 
