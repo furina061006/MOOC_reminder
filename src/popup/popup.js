@@ -92,6 +92,7 @@ function initDomRefs() {
   dom.settingsBtn     = safeQuery('#settings-btn');
   dom.emptyRefreshBtn = safeQuery('#empty-refresh-btn');
   dom.resetDataBtn    = safeQuery('#reset-data-btn');
+  dom.exportIcsBtn    = safeQuery('#export-ics-btn');
   dom.filterSelect    = safeQuery('#filter-select');
   dom.totalCount      = safeQuery('#total-count');
   dom.syncTime        = safeQuery('#sync-time');
@@ -186,7 +187,9 @@ async function validateAndAutoRepair() {
           notifyOverdue: true,
           quietHoursEnabled: false,
           quietStart: 22,
-          quietEnd: 8
+          quietEnd: 8,
+          dailyDigestEnabled: false,
+          dailyDigestHour: 8
         }
       });
       console.log('[Popup] AUTO-REPAIR: done. Proceeding with clean state.');
@@ -216,6 +219,7 @@ function setupEventListeners() {
   safeOn(dom.settingsBtn,     'click', handleOpenSettings);
   safeOn(dom.emptyRefreshBtn, 'click', handleRefresh);
   safeOn(dom.resetDataBtn,    'click', handleResetData);
+  safeOn(dom.exportIcsBtn,    'click', handleExportCalendar);
 
   safeOn(dom.filterSelect, 'change', (e) => {
     try { state.filter = e.target.value; applyFilter(); render(); } catch {}
@@ -700,6 +704,37 @@ function handleOpenSettings() {
     }
   } catch (e) {
     console.error('[Popup] openOptionsPage failed:', e.message);
+  }
+}
+
+function handleExportCalendar() {
+  try {
+    if (!window.MOOC_GENERATE_ICS || !window.MOOC_EXPORTABLE_ITEMS) {
+      showToast('日历导出模块未加载');
+      return;
+    }
+    const exportable = window.MOOC_EXPORTABLE_ITEMS(state.allItems);
+    if (exportable.length === 0) {
+      showToast('没有可导出的未完成作业');
+      return;
+    }
+    const ics = window.MOOC_GENERATE_ICS(exportable, { alarmMinutes: 60 });
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = new Date();
+    const pad = function(n) { return String(n).padStart(2, '0'); };
+    a.href = url;
+    a.download = 'mooc-reminder-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '.ics';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      try { URL.revokeObjectURL(url); a.remove(); } catch { /* ignore */ }
+    }, 1000);
+    showToast('已导出 ' + exportable.length + ' 项到日历文件');
+  } catch (e) {
+    console.error('[Popup] export calendar failed:', e.message);
+    showToast('导出失败: ' + e.message);
   }
 }
 

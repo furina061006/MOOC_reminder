@@ -18,7 +18,8 @@ const browserExtensionGlobals = {
   console: 'readonly',
   alert: 'readonly',
   confirm: 'readonly',
-  requestAnimationFrame: 'readonly'
+  requestAnimationFrame: 'readonly',
+  Blob: 'readonly'
 };
 
 const projectRules = {
