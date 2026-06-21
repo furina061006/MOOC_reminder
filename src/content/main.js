@@ -379,7 +379,7 @@
         if (hasDL) debugCount.deadline++;
         if (hasTitle) { debugCount.hasScore++; } // repurpose counter
 
-        var item = buildHomeworkItem(itemEls[i], urlMeta, courseMeta, '', '');
+        var item = buildHomeworkItem(itemEls[i], urlMeta, courseMeta, '', '', i);
         if (item) { items.push(item); seenFallback.add(itemEls[i]); debugCount.passed++; }
       } catch(e) { console.debug('[MOOC Reminder] build failed:', e.message); }
     }
@@ -394,7 +394,7 @@
         if (parent && !seenFallback.has(parent)) {
           seenFallback.add(parent);
           try {
-            var item2 = buildHomeworkItem(parent, urlMeta, courseMeta, '', '');
+            var item2 = buildHomeworkItem(parent, urlMeta, courseMeta, '', '', j);
             if (item2) items.push(item2);
           } catch(e) {}
         }
@@ -417,7 +417,7 @@
               if (!seenFallback.has(els[k])) {
                 seenFallback.add(els[k]);
                 try {
-                  var item3 = buildHomeworkItem(els[k], urlMeta, courseMeta, '', '');
+                  var item3 = buildHomeworkItem(els[k], urlMeta, courseMeta, '', '', k);
                   if (item3) items.push(item3);
                 } catch(e) {}
               }
@@ -473,7 +473,38 @@
    * Find quiz/exam list rows on the page.
    * icourse163.org quiz/exam pages typically use tables or structured divs.
    */
-  function buildHomeworkItem(el, urlMeta, courseMeta, chapterId, lessonId) {
+  function extractHomeworkTitle(el, text) {
+    try {
+      var titleEl = el.querySelector('.j-name, [class*="name"], h4, h3');
+      if (titleEl && titleEl.textContent && titleEl.textContent.trim()) {
+        return titleEl.textContent.trim();
+      }
+    } catch {}
+
+    var cleaned = (text || '')
+      .replace(/\s+/g, ' ')
+      .replace(/(截止时间?|提交截止|截止日期)[:：]?\s*\d{1,4}[年\-/月\d日\s:：]+.*$/i, '')
+      .replace(/(有效分数|测验得分|作业得分|考试得分|得分)[:：]?\s*\d{1,3}(?:\.\d+)?\s*(?:[\/分]\s*\d{1,3}(?:\.\d+)?)?.*$/i, '')
+      .replace(/(已完成|已提交|已批阅|已通过|查看成绩|查看分数).*$/i, '')
+      .trim();
+
+    if (!cleaned || cleaned.length < 2) {
+      cleaned = (text || '').substring(0, 40).trim();
+    }
+    return cleaned;
+  }
+
+  function buildStableHomeworkIdentity(urlMeta, type, title, domPosition) {
+    return [
+      urlMeta.courseId || '',
+      urlMeta.termId || '',
+      type || '',
+      title || '',
+      String(domPosition || 0)
+    ].join('|');
+  }
+
+  function buildHomeworkItem(el, urlMeta, courseMeta, chapterId, lessonId, domPosition) {
     try {
     const text = (el.textContent || '').trim();
 
@@ -481,14 +512,6 @@
     if (text.length < 2) return null;
     if (/加载中|loading|请稍候|spinner/i.test(text)) return null;
 
-    // Extract homework ID
-    const homeworkId = extractId(el, [
-      'data-test-id', 'data-testid', 'data-homework-id',
-      'data-homeworkid', 'data-hwid', 'data-id', 'data-content-id'
-    ]) || hashFromText(text);
-
-    // Generate UID
-    const uid = `${urlMeta.courseId}_tid${urlMeta.termId}_ch${chapterId}_le${lessonId}_hw${homeworkId}`;
 
     // Detect type (优先用按钮文字判断)
     var btnEl = el.querySelector('.j-quizBtn');
@@ -577,9 +600,8 @@
       deadline = parseChineseDateInline(deadlineRaw);
     }
 
-    // Clean itemName: remove deadline, score, status-like fragments
-    var itemName = text.split(/截止|deadline|due|提交|submitted/i)[0].trim();
-    if (!itemName || itemName.length < 2) itemName = text.substring(0, 40);
+    // Clean itemName using the dedicated title element when available.
+    var itemName = extractHomeworkTitle(el, text);
 
     // ── Filter: skip known UI/noise itemNames ──
     if (/一键互评|自动互评|获取答案|不再提醒|查看帮助|使用插件前/i.test(itemName)) {
@@ -596,8 +618,18 @@
       return null;
     }
 
+    // Prefer stable DOM IDs; otherwise hash stable fields, not full text/status.
+    const extractedId = extractId(el, [
+      'data-test-id', 'data-testid', 'data-homework-id',
+      'data-homeworkid', 'data-hwid', 'data-id', 'data-content-id'
+    ]);
+    const identityKey = buildStableHomeworkIdentity(urlMeta, type, itemName, domPosition);
+    const homeworkId = extractedId || hashFromText(identityKey);
+    const uid = `${urlMeta.courseId}_tid${urlMeta.termId}_ch${chapterId}_le${lessonId}_hw${homeworkId}`;
+
     return {
       uid,
+      identityKey,
       courseId: urlMeta.courseId,
       termId: urlMeta.termId,
       chapterId,
@@ -767,20 +799,32 @@
     });
   }
 
-  function extractId(el, attrNames) {
-    for (const name of attrNames) {
-      const val = el.getAttribute(name);
-      if (val) return val;
+ function extractId(el, attrNames) {
+    function fromElement(target) {
+      if (!target) return '';
+      for (const name of attrNames) {
+        const val = target.getAttribute && target.getAttribute(name);
+        if (val) return val;
+      }
+      const href = target.getAttribute && target.getAttribute('href');
+      if (href) {
+        const idMatch = href.match(/[?&](?:id|testId|quizId|examId|homeworkId)=(\d+)/i);
+        if (idMatch) return idMatch[1];
+        const contentMatch = href.match(/[?&]contentId=(\d+)/i);
+        if (contentMatch) return contentMatch[1];
+      }
+      return '';
     }
-    // Try to extract from href
-    const href = el.getAttribute('href');
-    if (href) {
-      const idMatch = href.match(/[?&]id=(\d+)/);
-      if (idMatch) return idMatch[1];
-      const contentMatch = href.match(/[?&]contentId=(\d+)/);
-      if (contentMatch) return contentMatch[1];
+
+    const ownId = fromElement(el);
+    if (ownId) return ownId;
+
+    try {
+      const child = el.querySelector('[data-test-id], [data-testid], [data-homework-id], [data-homeworkid], [data-hwid], [data-id], [data-content-id], a[href], .j-quizBtn[href]');
+      return fromElement(child);
+    } catch {
+      return '';
     }
-    return '';
   }
 
   function hashFromText(text) {
