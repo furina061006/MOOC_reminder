@@ -16,10 +16,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "src/content/selectors.json",
-        "src/content/scrapers/*.js",
-        "src/content/observers/*.js",
-        "src/shared/*.js"
+        "src/content/selectors.json"
       ],
       "matches": [
         "https://www.icourse163.org/*"
