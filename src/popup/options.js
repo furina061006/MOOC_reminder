@@ -7,6 +7,8 @@
  */
 
 const LEAD_CHOICES = [72, 48, 24, 12, 6, 2]; // hours
+let currentSettings = null;
+
 const DEFAULTS = {
   checkIntervalMinutes: 30,
   badgeRefreshMinutes: 5,
@@ -18,7 +20,8 @@ const DEFAULTS = {
   quietStart: 22,
   quietEnd: 8,
   dailyDigestEnabled: false,
-  dailyDigestHour: 8
+  dailyDigestHour: 8,
+  mutedCourseIds: []
 };
 
 function $(id) { return document.getElementById(id); }
@@ -54,7 +57,8 @@ function buildHourSelect(sel) {
 }
 
 function populate(settings) {
-  const s = Object.assign({}, DEFAULTS, settings || {});
+  currentSettings = Object.assign({}, DEFAULTS, settings || {});
+  const s = currentSettings;
   $('check-interval').value = s.checkIntervalMinutes;
   $('badge-interval').value = s.badgeRefreshMinutes;
   $('auto-detect').checked = s.autoDetectEnabled !== false;
@@ -89,7 +93,8 @@ function collect() {
     quietStart: parseInt($('quiet-start').value, 10),
     quietEnd: parseInt($('quiet-end').value, 10),
     dailyDigestEnabled: $('digest-enabled').checked,
-    dailyDigestHour: parseInt($('digest-hour').value, 10)
+    dailyDigestHour: parseInt($('digest-hour').value, 10),
+    mutedCourseIds: currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : []
   };
 }
 

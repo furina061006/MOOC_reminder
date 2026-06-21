@@ -20,7 +20,8 @@ const KEYS = {
   SYNC_ERRORS: 'sync_errors',
   SCRAPE_STATUS: 'scrape_status',
   API_STATUS: 'api_status',
-  USER_SETTINGS: 'user_settings'
+  USER_SETTINGS: 'user_settings',
+  POPUP_UI_STATE: 'popup_ui_state'
 };
 
 // Inlined from src/shared/settings.js — keep in sync (shared copy is unit-tested).
@@ -35,7 +36,8 @@ const DEFAULT_SETTINGS = {
   quietStart: 22,
   quietEnd: 8,
   dailyDigestEnabled: false,
-  dailyDigestHour: 8
+  dailyDigestHour: 8,
+  mutedCourseIds: []
 };
 
 function clampInt(value, min, max, fallback) {
@@ -64,7 +66,8 @@ function normalizeSettings(stored) {
     quietStart: clampInt(s.quietStart, 0, 23, DEFAULT_SETTINGS.quietStart),
     quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd),
     dailyDigestEnabled: s.dailyDigestEnabled === true,
-    dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour)
+    dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour),
+    mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : []
   };
 }
 
@@ -227,6 +230,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
+function makeManualHomeworkUid(title, deadline, courseName) {
+  const text = [title || '', deadline || '', courseName || ''].join('|');
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+  return 'manual_tidmanual_ch_le_hw' + (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function isCourseMuted(item, settings) {
+  const muted = settings && Array.isArray(settings.mutedCourseIds) ? settings.mutedCourseIds : [];
+  return !!(item && muted.indexOf(item.courseId) >= 0);
+}
+
+function isSnoozed(item, now) {
+  if (!item || !item.snoozedUntil) return false;
+  const t = new Date(item.snoozedUntil).getTime();
+  return !isNaN(t) && t > now.getTime();
+}
+
 const MESSAGE_HANDLERS = {
   // Content script sends scraped data
   async HOMEWORK_DATA(msg) {
@@ -322,6 +343,89 @@ const MESSAGE_HANDLERS = {
   // Popup requests immediate scrape
   async TRIGGER_SCRAPE() {
     return await triggerManualScrape();
+  },
+
+  // Popup adds a manually-created reminder (for missed scraper items or offline homework)
+  async ADD_MANUAL_ITEM(msg) {
+    const title = String(msg.title || '').trim();
+    const deadline = msg.deadline ? new Date(msg.deadline) : null;
+    if (!title || !deadline || isNaN(deadline.getTime())) {
+      return { success: false, error: '标题和截止时间必填' };
+    }
+    const courseName = String(msg.courseName || '手动提醒').trim() || '手动提醒';
+    const courseId = String(msg.courseId || 'manual').trim() || 'manual';
+    const now = new Date().toISOString();
+    const item = {
+      uid: makeManualHomeworkUid(title, deadline.toISOString(), courseName),
+      identityKey: ['manual', courseId, title, deadline.toISOString()].join('|'),
+      courseId,
+      termId: 'manual',
+      chapterId: '',
+      lessonId: '',
+      homeworkId: makeManualHomeworkUid(title, deadline.toISOString(), courseName).replace(/^manual_tidmanual_ch_le_hw/, ''),
+      title,
+      type: msg.type || 'homework',
+      courseName,
+      schoolName: String(msg.schoolName || '').trim(),
+      status: 'unfinished',
+      checkedOff: false,
+      manuallyCheckedOff: false,
+      autoDetectedCompleted: false,
+      completionReason: null,
+      deadline: deadline.toISOString(),
+      deadlineRaw: '(手动添加)',
+      firstSeen: now,
+      lastUpdated: now,
+      pageUrl: String(msg.pageUrl || '').trim(),
+      source: 'manual'
+    };
+    const items = await getHomeworkItems();
+    items.push(item);
+    await setHomeworkItems(items);
+    await upsertCourse({ courseId, termId: 'manual', courseName, schoolName: item.schoolName, courseType: 'manual' });
+    await updateBadgeFromStorage();
+    return { success: true, item };
+  },
+
+  // Popup snoozes notification for one item (badge count is unchanged)
+  async SNOOZE_ITEM(msg) {
+    if (!msg.homeworkUid) return { success: false, error: 'Invalid payload' };
+    const hours = clampInt(msg.hours, 1, 168, 24);
+    const until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+    const items = await getHomeworkItems();
+    const item = items.find(i => i && i.uid === msg.homeworkUid);
+    if (!item) return { success: false, error: 'Item not found' };
+    item.snoozedUntil = until;
+    item.lastUpdated = new Date().toISOString();
+    await setHomeworkItems(items);
+    return { success: true, snoozedUntil: until };
+  },
+
+  // Popup mutes/unmutes a course for notifications/digests
+  async TOGGLE_COURSE_MUTE(msg) {
+    const courseId = String(msg.courseId || '').trim();
+    if (!courseId) return { success: false, error: 'Invalid payload' };
+    const settings = normalizeSettings(await getUserSettings());
+    const muted = new Set(settings.mutedCourseIds || []);
+    if (msg.muted === false) muted.delete(courseId);
+    else if (msg.muted === true) muted.add(courseId);
+    else if (muted.has(courseId)) muted.delete(courseId); else muted.add(courseId);
+    settings.mutedCourseIds = Array.from(muted);
+    await chrome.storage.local.set({ [KEYS.USER_SETTINGS]: settings });
+    return { success: true, muted: settings.mutedCourseIds.indexOf(courseId) >= 0, settings };
+  },
+
+  // Popup UI state persistence (filter + collapsed courses)
+  async GET_POPUP_STATE() {
+    const raw = await chrome.storage.local.get(KEYS.POPUP_UI_STATE);
+    return { success: true, uiState: raw[KEYS.POPUP_UI_STATE] || {} };
+  },
+
+  async SET_POPUP_STATE(msg) {
+    const current = (await chrome.storage.local.get(KEYS.POPUP_UI_STATE))[KEYS.POPUP_UI_STATE] || {};
+    const uiState = { ...current, ...(msg.uiState || {}) };
+    await chrome.storage.local.set({ [KEYS.POPUP_UI_STATE]: uiState });
+    return { success: true, uiState };
   },
 
   // Popup clears completed items
@@ -635,7 +739,7 @@ async function sendDailyDigestNotification() {
   if (!settings.dailyDigestEnabled || !settings.notificationsEnabled) return;
   const now = new Date();
   if (isWithinQuietHours(settings, now)) return;
-  const items = await getHomeworkItems();
+  const items = (await getHomeworkItems()).filter(item => !isCourseMuted(item, settings) && !isSnoozed(item, now));
   const message = formatDigestMessage(items, now);
   if (!message) return;
   try {
@@ -701,6 +805,7 @@ async function maybeNotifyDeadlines(allItems, unfinishedItems) {
   let changed = false;
 
   for (const item of unfinishedItems) {
+    if (isCourseMuted(item, settings) || isSnoozed(item, now)) continue;
     const level = getNotificationLevel(item, now, settings);
     if (!level || item.lastNotificationLevel === level) continue;
 

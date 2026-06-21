@@ -50,6 +50,9 @@
       <option value="completed">已完成</option>
       <option value="all">全部（含过期）</option>
     </select>
+    <button id="add-manual-btn" class="icon-btn" title="手动添加" aria-label="手动添加">
+      <span class="icon-slot" data-icon="plus" data-icon-size="16"></span>
+    </button>
   </div>
 
   <!-- Homework List -->
@@ -75,6 +78,20 @@
 
   <div id="diagnostics" class="diagnostics" style="display: none;"></div>
 
+  <section id="manual-form" class="manual-form" style="display: none;">
+    <div class="manual-form-header">
+      <strong>手动添加提醒</strong>
+      <button id="manual-cancel-btn" class="icon-btn" title="关闭" aria-label="关闭"><span class="icon-slot" data-icon="x" data-icon-size="14"></span></button>
+    </div>
+    <label>标题<input id="manual-title" type="text" placeholder="例如：线下实验报告"></label>
+    <label>课程<input id="manual-course" type="text" placeholder="例如：数据结构"></label>
+    <label>截止时间<input id="manual-deadline" type="datetime-local"></label>
+    <label>页面链接（可选）<input id="manual-url" type="url" placeholder="https://..."></label>
+    <div class="manual-actions">
+      <button id="manual-save-btn" class="btn btn-primary"><span class="icon-slot" data-icon="check" data-icon-size="14"></span>添加</button>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer class="footer">
     <div class="footer-info">
@@ -83,6 +100,9 @@
       <span id="sync-time">尚未同步</span>
     </div>
     <div class="footer-actions">
+      <button id="clear-completed-btn" class="btn btn-sm btn-ghost">
+        <span class="icon-slot" data-icon="check-circle" data-icon-size="13"></span>清除已完成
+      </button>
       <button id="export-ics-btn" class="btn btn-sm btn-ghost">
         <span class="icon-slot" data-icon="calendar" data-icon-size="13"></span>导出日历
       </button>

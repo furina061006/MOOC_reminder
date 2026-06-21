@@ -28,7 +28,13 @@ export const MSG_TYPES = {
 
   // Options page ↔ Background: read / persist user settings
   GET_SETTINGS: 'GET_SETTINGS',
-  SETTINGS_UPDATED: 'SETTINGS_UPDATED'
+  SETTINGS_UPDATED: 'SETTINGS_UPDATED',
+
+  ADD_MANUAL_ITEM: 'ADD_MANUAL_ITEM',
+  SNOOZE_ITEM: 'SNOOZE_ITEM',
+  TOGGLE_COURSE_MUTE: 'TOGGLE_COURSE_MUTE',
+  GET_POPUP_STATE: 'GET_POPUP_STATE',
+  SET_POPUP_STATE: 'SET_POPUP_STATE'
 };
 
 /**
@@ -57,10 +63,35 @@ export function validateMessage(type, payload) {
       }
       break;
 
+    case MSG_TYPES.ADD_MANUAL_ITEM:
+      if (!payload || typeof payload.title !== 'string' || typeof payload.deadline !== 'string') {
+        return { valid: false, error: 'ADD_MANUAL_ITEM requires {title, deadline}' };
+      }
+      break;
+
+    case MSG_TYPES.SNOOZE_ITEM:
+      if (!payload || typeof payload.homeworkUid !== 'string') {
+        return { valid: false, error: 'SNOOZE_ITEM requires {homeworkUid}' };
+      }
+      break;
+
+    case MSG_TYPES.TOGGLE_COURSE_MUTE:
+      if (!payload || typeof payload.courseId !== 'string') {
+        return { valid: false, error: 'TOGGLE_COURSE_MUTE requires {courseId}' };
+      }
+      break;
+
+    case MSG_TYPES.SET_POPUP_STATE:
+      if (!payload || typeof payload.uiState !== 'object') {
+        return { valid: false, error: 'SET_POPUP_STATE requires {uiState}' };
+      }
+      break;
+
     case MSG_TYPES.CLEAR_COMPLETED:
     case MSG_TYPES.SCRAPE_NOW:
     case MSG_TYPES.REFRESH_BADGE:
     case MSG_TYPES.GET_SETTINGS:
+    case MSG_TYPES.GET_POPUP_STATE:
       // No payload required
       break;
 

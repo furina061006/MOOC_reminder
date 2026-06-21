@@ -72,6 +72,7 @@ const state = {
   lastSync: null,
   syncErrors: [],
   scrapeStatus: null,
+  settings: {},
   filter: 'unfinished',  // 'unfinished' | 'overdue' | 'completed' | 'all'
   collapsedCourses: new Set()
 };
@@ -94,6 +95,15 @@ function initDomRefs() {
   dom.resetDataBtn    = safeQuery('#reset-data-btn');
   dom.exportIcsBtn    = safeQuery('#export-ics-btn');
   dom.filterSelect    = safeQuery('#filter-select');
+  dom.addManualBtn    = safeQuery('#add-manual-btn');
+  dom.manualForm      = safeQuery('#manual-form');
+  dom.manualSaveBtn   = safeQuery('#manual-save-btn');
+  dom.manualCancelBtn = safeQuery('#manual-cancel-btn');
+  dom.manualTitle     = safeQuery('#manual-title');
+  dom.manualCourse    = safeQuery('#manual-course');
+  dom.manualDeadline  = safeQuery('#manual-deadline');
+  dom.manualUrl       = safeQuery('#manual-url');
+  dom.clearCompletedBtn = safeQuery('#clear-completed-btn');
   dom.totalCount      = safeQuery('#total-count');
   dom.syncTime        = safeQuery('#sync-time');
   dom.countOverdue    = safeQuery('#count-overdue');
@@ -115,6 +125,7 @@ async function init() {
 
   try { if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS(); } catch(e) { console.error('[Popup] hydrate icons:', e.message); }
   try { setupEventListeners(); } catch(e) { console.error('[Popup] setupEventListeners:', e.message); }
+  try { await loadUiState(); }    catch(e) { console.error('[Popup] loadUiState:', e.message); }
   try { await loadData(); }       catch(e) { console.error('[Popup] loadData:', e.message); }
   try { render(); }               catch(e) {
     console.error('[Popup] render crashed:', e.message, e.stack);
@@ -189,7 +200,8 @@ async function validateAndAutoRepair() {
           quietStart: 22,
           quietEnd: 8,
           dailyDigestEnabled: false,
-          dailyDigestHour: 8
+          dailyDigestHour: 8,
+          mutedCourseIds: []
         }
       });
       console.log('[Popup] AUTO-REPAIR: done. Proceeding with clean state.');
@@ -220,13 +232,41 @@ function setupEventListeners() {
   safeOn(dom.emptyRefreshBtn, 'click', handleRefresh);
   safeOn(dom.resetDataBtn,    'click', handleResetData);
   safeOn(dom.exportIcsBtn,    'click', handleExportCalendar);
+  safeOn(dom.clearCompletedBtn, 'click', handleClearCompleted);
+  safeOn(dom.addManualBtn,    'click', toggleManualForm);
+  safeOn(dom.manualCancelBtn, 'click', toggleManualForm);
+  safeOn(dom.manualSaveBtn,   'click', handleAddManualItem);
 
   safeOn(dom.filterSelect, 'change', (e) => {
-    try { state.filter = e.target.value; applyFilter(); render(); } catch {}
+    try { state.filter = e.target.value; saveUiState(); applyFilter(); render(); } catch {}
   });
 }
 
 // ─── Data Loading ──────────────────────────────────────
+
+async function loadUiState() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_POPUP_STATE' });
+    const ui = response && response.uiState ? response.uiState : {};
+    if (ui.filter) state.filter = ui.filter;
+    if (Array.isArray(ui.collapsedCourses)) state.collapsedCourses = new Set(ui.collapsedCourses);
+    if (dom.filterSelect) dom.filterSelect.value = state.filter;
+  } catch (e) {
+    console.debug('[Popup] loadUiState failed:', e.message);
+  }
+}
+
+function saveUiState() {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'SET_POPUP_STATE',
+      uiState: {
+        filter: state.filter,
+        collapsedCourses: Array.from(state.collapsedCourses)
+      }
+    });
+  } catch { /* best effort */ }
+}
 
 async function loadData() {
   console.log('[Popup] loadData start');
@@ -248,6 +288,7 @@ async function loadData() {
       state.lastSync = response.lastSync || null;
       state.syncErrors = Array.isArray(response.syncErrors) ? response.syncErrors.filter(Boolean) : [];
       state.scrapeStatus = response.scrapeStatus || null;
+      state.settings = response.settings || {};
     }
   } catch (e) {
     console.error('[Popup] loadData failed:', e.message);
@@ -461,6 +502,8 @@ function createCourseGroup(course, items) {
   const courseName = course.courseName || '未知课程';
   const schoolName = course.schoolName || '';
   const isCollapsed = state.collapsedCourses.has(courseId);
+  const mutedCourses = Array.isArray(state.settings.mutedCourseIds) ? state.settings.mutedCourseIds : [];
+  const isMuted = mutedCourses.indexOf(courseId) >= 0;
 
   const group = document.createElement('div');
   group.className = 'course-group' + (isCollapsed ? ' collapsed' : '');
@@ -474,8 +517,12 @@ function createCourseGroup(course, items) {
       '<span class="course-group-arrow">' + wIcon('chevron-down', 14) + '</span>' +
       '<span>' + escapeHtml(courseName) + '</span>' +
       (schoolName ? '<span style="font-weight:400;font-size:11px;color:#999;">' + escapeHtml(schoolName) + '</span>' : '') +
+      (isMuted ? '<span class="course-muted-badge" title="课程通知已静音">' + wIcon('bell-off', 13) + '</span>' : '') +
     '</div>' +
-    '<span class="course-group-count">' + (Array.isArray(items) ? items.length : 0) + ' 项</span>';
+    '<div style="display:flex;align-items:center;gap:6px;">' +
+      '<button class="item-action-btn course-mute-btn" title="' + (isMuted ? '取消静音' : '静音课程') + '" aria-label="静音课程">' + wIcon(isMuted ? 'bell' : 'bell-off', 13) + '</button>' +
+      '<span class="course-group-count">' + (Array.isArray(items) ? items.length : 0) + ' 项</span>' +
+    '</div>';
 
   header.addEventListener('click', function() {
     try {
@@ -485,8 +532,15 @@ function createCourseGroup(course, items) {
       } else {
         state.collapsedCourses.delete(courseId);
       }
+      saveUiState();
     } catch {}
   });
+  const muteBtn = header.querySelector('.course-mute-btn');
+  if (muteBtn) {
+    muteBtn.addEventListener('click', function(e) {
+      try { e.stopPropagation(); handleToggleCourseMute(courseId, isMuted); } catch {}
+    });
+  }
 
   // Items
   const container = document.createElement('div');
@@ -595,15 +649,27 @@ function createHomeworkItem(item) {
   el.appendChild(cb);
   el.appendChild(content);
 
-  if (url) {
-    const openBtn = document.createElement('span');
-    openBtn.className = 'item-open';
-    openBtn.title = '打开页面';
-    openBtn.setAttribute('role', 'button');
-    openBtn.innerHTML = wIcon('external-link', 14);
-    openBtn.addEventListener('click', function () { openUrl(url); });
-    el.appendChild(openBtn);
+  const actions = document.createElement('span');
+  actions.className = 'item-actions';
+  if (!isDone) {
+    const snoozeBtn = document.createElement('button');
+    snoozeBtn.type = 'button';
+    snoozeBtn.className = 'item-action-btn';
+    snoozeBtn.title = item.snoozedUntil ? '已稍后提醒至 ' + formatDeadline(item.snoozedUntil) : '24 小时后再提醒';
+    snoozeBtn.innerHTML = wIcon('clock', 13);
+    snoozeBtn.addEventListener('click', function (e) { e.stopPropagation(); handleSnoozeItem(uid); });
+    actions.appendChild(snoozeBtn);
   }
+  if (url) {
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'item-action-btn';
+    openBtn.title = '打开页面';
+    openBtn.innerHTML = wIcon('external-link', 14);
+    openBtn.addEventListener('click', function (e) { e.stopPropagation(); openUrl(url); });
+    actions.appendChild(openBtn);
+  }
+  if (actions.children.length > 0) el.appendChild(actions);
 
   return el;
 }
@@ -704,6 +770,96 @@ function handleOpenSettings() {
     }
   } catch (e) {
     console.error('[Popup] openOptionsPage failed:', e.message);
+  }
+}
+
+function toggleManualForm() {
+  if (!dom.manualForm) return;
+  dom.manualForm.style.display = dom.manualForm.style.display === 'none' ? 'block' : 'none';
+}
+
+async function handleAddManualItem() {
+  try {
+    const title = (dom.manualTitle && dom.manualTitle.value || '').trim();
+    const courseName = (dom.manualCourse && dom.manualCourse.value || '').trim() || '手动提醒';
+    const rawDeadline = dom.manualDeadline && dom.manualDeadline.value;
+    const pageUrl = (dom.manualUrl && dom.manualUrl.value || '').trim();
+    if (!title || !rawDeadline) {
+      showToast('请填写标题和截止时间');
+      return;
+    }
+    const response = await chrome.runtime.sendMessage({
+      type: 'ADD_MANUAL_ITEM',
+      title,
+      courseName,
+      deadline: new Date(rawDeadline).toISOString(),
+      pageUrl
+    });
+    if (response && response.success) {
+      showToast('已添加提醒');
+      if (dom.manualTitle) dom.manualTitle.value = '';
+      if (dom.manualCourse) dom.manualCourse.value = '';
+      if (dom.manualDeadline) dom.manualDeadline.value = '';
+      if (dom.manualUrl) dom.manualUrl.value = '';
+      if (dom.manualForm) dom.manualForm.style.display = 'none';
+      await loadData();
+      render();
+    } else {
+      showToast(response && response.error ? response.error : '添加失败');
+    }
+  } catch (e) {
+    console.error('[Popup] add manual item failed:', e.message);
+    showToast('添加失败: ' + e.message);
+  }
+}
+
+async function handleSnoozeItem(uid) {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'SNOOZE_ITEM', homeworkUid: uid, hours: 24 });
+    if (response && response.success) {
+      const item = state.allItems.find(i => i && i.uid === uid);
+      if (item) item.snoozedUntil = response.snoozedUntil;
+      showToast('已设置 24 小时后再提醒');
+      render();
+    } else {
+      showToast(response && response.error ? response.error : '设置失败');
+    }
+  } catch (e) {
+    console.error('[Popup] snooze failed:', e.message);
+    showToast('设置失败: ' + e.message);
+  }
+}
+
+async function handleToggleCourseMute(courseId, wasMuted) {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'TOGGLE_COURSE_MUTE', courseId, muted: !wasMuted });
+    if (response && response.success) {
+      state.settings = response.settings || state.settings;
+      showToast(response.muted ? '课程已静音' : '课程已取消静音');
+      render();
+    } else {
+      showToast(response && response.error ? response.error : '操作失败');
+    }
+  } catch (e) {
+    console.error('[Popup] toggle course mute failed:', e.message);
+    showToast('操作失败: ' + e.message);
+  }
+}
+
+async function handleClearCompleted() {
+  if (!confirm('清除所有已完成记录？未完成作业不会受影响。')) return;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'CLEAR_COMPLETED' });
+    if (response && response.success) {
+      showToast('已清除已完成记录');
+      await loadData();
+      render();
+    } else {
+      showToast(response && response.error ? response.error : '清除失败');
+    }
+  } catch (e) {
+    console.error('[Popup] clear completed failed:', e.message);
+    showToast('清除失败: ' + e.message);
   }
 }
 

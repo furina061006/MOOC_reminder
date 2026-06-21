@@ -20,7 +20,8 @@ export const DEFAULT_SETTINGS = {
   quietStart: 22,              // 22:00 (inclusive)
   quietEnd: 8,                 // 08:00 (exclusive)
   dailyDigestEnabled: false,   // one summary notification per day
-  dailyDigestHour: 8           // local hour for daily digest
+  dailyDigestHour: 8,          // local hour for daily digest
+  mutedCourseIds: []           // courses muted for notifications/digests
 };
 
 function clampInt(value, min, max, fallback) {
@@ -53,7 +54,8 @@ export function normalizeSettings(stored) {
     quietStart: clampInt(s.quietStart, 0, 23, DEFAULT_SETTINGS.quietStart),
     quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd),
     dailyDigestEnabled: s.dailyDigestEnabled === true,
-    dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour)
+    dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour),
+    mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : []
   };
 }
 

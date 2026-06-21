@@ -171,6 +171,7 @@ body {
 /* ─── Controls ─────────────────────────────────── */
 .controls {
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 10px 16px;
   background: var(--surface);
@@ -507,6 +508,64 @@ body {
 .btn-sm {
   padding: 4px 9px;
   font-size: 11px;
+}
+
+/* ─── Manual add form ──────────────────────────── */
+.manual-form {
+  margin: 10px 16px 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.manual-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.manual-form label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.manual-form input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+.manual-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+
+.item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.item-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.item-action-btn:hover { color: var(--accent); background: var(--surface-2); }
+.course-muted-badge {
+  color: var(--text-faint);
+  display: inline-flex;
+  align-items: center;
 }
 
 /* ─── Footer ───────────────────────────────────── */
