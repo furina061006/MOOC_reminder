@@ -63,7 +63,9 @@ const state = {
   allItems: [],
   courses: [],
   lastSync: null,
+
   filter: 'unfinished',  // 'unfinished' | 'overdue' | 'completed' | 'all'
+
   collapsedCourses: new Set()
 };
 
@@ -78,6 +80,7 @@ function initDomRefs() {
   dom.homeworkList    = safeQuery('#homework-list');
   dom.emptyState      = safeQuery('#empty-state');
   dom.loginWarning    = safeQuery('#login-warning');
+  dom.diagnostics     = safeQuery('#diagnostics');
   dom.refreshBtn      = safeQuery('#refresh-btn');
   dom.emptyRefreshBtn = safeQuery('#empty-refresh-btn');
   dom.resetDataBtn    = safeQuery('#reset-data-btn');
@@ -207,6 +210,8 @@ async function loadData() {
   state.allItems = [];
   state.courses = [];
   state.lastSync = null;
+  state.syncErrors = [];
+  state.scrapeStatus = null;
   state.items = [];
 
   try {
@@ -217,6 +222,8 @@ async function loadData() {
       state.allItems = Array.isArray(response.allItems) ? response.allItems.filter(Boolean) : [];
       state.courses  = Array.isArray(response.courses)  ? response.courses.filter(Boolean)  : [];
       state.lastSync = response.lastSync || null;
+      state.syncErrors = Array.isArray(response.syncErrors) ? response.syncErrors.filter(Boolean) : [];
+      state.scrapeStatus = response.scrapeStatus || null;
     }
   } catch (e) {
     console.error('[Popup] loadData failed:', e.message);
@@ -250,6 +257,74 @@ function applyFilter() {
 
 // ─── Rendering ─────────────────────────────────────────
 
+function getScrapeWarning() {
+  const status = state.scrapeStatus;
+  if (!status || typeof status !== 'object') return null;
+
+  if (status.status === 'login_required') {
+    return {
+      type: 'login',
+      title: '请先登录 icourse163.org',
+      message: status.message || '登录过期会导致作业无法刷新'
+    };
+  }
+
+  if (status.status === 'empty_on_homework_page') {
+    return {
+      type: 'scrape',
+      title: '可能未识别到作业列表',
+      message: status.message || '页面已加载，但未抓取到作业条目，可能是网页结构变化'
+    };
+  }
+
+  if (status.status === 'error') {
+    return {
+      type: 'error',
+      title: '最近一次抓取失败',
+      message: status.message || '请重新打开课程页面后刷新'
+    };
+  }
+
+  return null;
+}
+
+function renderScrapeWarning() {
+  const warning = getScrapeWarning();
+  if (!dom.loginWarning) return;
+
+  if (!warning) {
+    dom.loginWarning.style.display = 'none';
+    return;
+  }
+
+  dom.loginWarning.style.display = 'block';
+  dom.loginWarning.className = 'login-warning ' + (warning.type || 'scrape');
+  dom.loginWarning.innerHTML =
+    '<div class="warning-icon">' + (warning.type === 'login' ? '🔒' : '⚠️') + '</div>' +
+    '<p class="warning-title">' + escapeHtml(warning.title) + '</p>' +
+    '<p class="warning-desc">' + escapeHtml(warning.message) + '</p>';
+}
+
+function renderDiagnostics() {
+  if (!dom.diagnostics) return;
+  const errors = Array.isArray(state.syncErrors) ? state.syncErrors : [];
+  if (errors.length === 0) {
+    dom.diagnostics.style.display = 'none';
+    dom.diagnostics.innerHTML = '';
+    return;
+  }
+
+  const latest = errors[errors.length - 1];
+  const errorText = latest && (latest.error || latest.message) ? String(latest.error || latest.message) : '未知错误';
+  const timeText = latest && latest.time ? formatDeadline(latest.time) : '';
+  dom.diagnostics.style.display = 'block';
+  dom.diagnostics.innerHTML =
+    '<details>' +
+      '<summary>最近抓取错误（' + errors.length + '）</summary>' +
+      '<div class="diagnostics-body">' + escapeHtml(timeText ? timeText + ' · ' + errorText : errorText) + '</div>' +
+    '</details>';
+}
+
 function render() {
   console.log('[Popup] render start');
 
@@ -263,15 +338,16 @@ function render() {
   }
 
   const itemCount = Array.isArray(state.items) ? state.items.length : 0;
+  const hasWarning = !!getScrapeWarning();
+  try { renderScrapeWarning(); } catch(e) { console.error('[Popup] renderScrapeWarning:', e.message); }
+  try { renderDiagnostics(); } catch(e) { console.error('[Popup] renderDiagnostics:', e.message); }
 
   if (itemCount === 0) {
     try { list.style.display = 'none'; } catch {}
-    try { empty.style.display = 'block'; } catch {}
-    try { if (dom.loginWarning) dom.loginWarning.style.display = 'none'; } catch {}
+    try { empty.style.display = hasWarning ? 'none' : 'block'; } catch {}
   } else {
     try { list.style.display = 'block'; } catch {}
     try { empty.style.display = 'none'; } catch {}
-    try { if (dom.loginWarning) dom.loginWarning.style.display = 'none'; } catch {}
 
     try { list.innerHTML = ''; } catch {}
 
