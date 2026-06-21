@@ -15,8 +15,25 @@ test('manifest exposes selectors.json for content script fetch', () => {
   assert.ok(resources.includes('src/content/selectors.json'));
 });
 
-test('manifest has icourse163 learn host permissions only', () => {
+test('manifest grants site-wide icourse163 host access for API + discovery', () => {
   assert.deepEqual(manifest.host_permissions, [
+    'https://www.icourse163.org/*'
+  ]);
+});
+
+test('manifest requests cookies permission for the background API csrf token', () => {
+  assert.ok(manifest.permissions.includes('cookies'));
+});
+
+test('manifest registers the course-discovery content script site-wide', () => {
+  const scripts = manifest.content_scripts || [];
+  const discovery = scripts.find(s => (s.js || []).includes('src/content/course-discovery.js'));
+  assert.ok(discovery, 'course-discovery.js content script is registered');
+  assert.ok(discovery.matches.includes('https://www.icourse163.org/*'));
+  // The homework scraper still only runs on learn pages.
+  const main = scripts.find(s => (s.js || []).includes('src/content/main.js'));
+  assert.ok(main);
+  assert.deepEqual(main.matches, [
     'https://www.icourse163.org/learn/*',
     'https://www.icourse163.org/spoc/learn/*'
   ]);

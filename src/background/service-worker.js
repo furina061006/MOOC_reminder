@@ -19,6 +19,7 @@ const KEYS = {
   LAST_SYNC: 'last_sync',
   SYNC_ERRORS: 'sync_errors',
   SCRAPE_STATUS: 'scrape_status',
+  API_STATUS: 'api_status',
   USER_SETTINGS: 'user_settings'
 };
 
@@ -131,7 +132,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
   switch (alarm.name) {
     case 'periodic-scrape':
+      // Tab-based DOM scrape (if a course tab is open) AND tab-less API refresh
+      // of every known course — the latter is what lets us stay current without
+      // the user keeping a course page open.
       await performPeriodicScrape();
+      await apiRefreshAllKnownCourses();
       break;
     case 'badge-refresh':
       await updateBadgeFromStorage();
@@ -202,6 +207,34 @@ const MESSAGE_HANDLERS = {
     return { success: false, error: 'Item not found' };
   },
 
+  // Content script (course-discovery) reports harvested course links.
+  // This is how the extension learns about EVERY enrolled course — not just
+  // pages the user manually opened — enabling background API homework refresh.
+  async COURSE_LINKS(msg) {
+    if (!Array.isArray(msg.courses)) return { success: false, error: 'Invalid payload' };
+    const existing = await getCourses();
+    const known = new Set(existing.map(c => c && c.courseId));
+    let registered = 0;
+    let newCourses = 0;
+    for (const c of msg.courses) {
+      if (!c || !c.courseId || !c.termId) continue;
+      if (!known.has(c.courseId)) newCourses++;
+      await upsertCourse({
+        courseId: c.courseId,
+        termId: c.termId,
+        courseName: c.courseName || '',
+        courseType: c.courseType || 'mooc',
+        discovered: true
+      });
+      registered++;
+    }
+    // Only kick a (heavy) background refresh when a genuinely new course appeared.
+    if (newCourses > 0) {
+      apiRefreshAllKnownCourses().catch(() => {});
+    }
+    return { success: true, registered, newCourses };
+  },
+
   // Popup requests homework data
   async GET_HOMEWORK() {
     const items = await getHomeworkItems();  // already sanitized by getHomeworkItems
@@ -210,6 +243,7 @@ const MESSAGE_HANDLERS = {
     const settings = await getUserSettings();
     const syncErrors = await getSyncErrors();
     const scrapeStatus = await getScrapeStatus();
+    const apiStatus = await getApiStatus();
 
     return {
       items: items.filter(i => i && !i.checkedOff),  // unfinished only
@@ -218,7 +252,8 @@ const MESSAGE_HANDLERS = {
       lastSync,
       settings,
       syncErrors,
-      scrapeStatus
+      scrapeStatus,
+      apiStatus
     };
   },
 
@@ -601,6 +636,10 @@ async function performPeriodicScrape() {
 async function triggerManualScrape() {
   console.log('[MOOC Reminder] Manual scrape triggered');
 
+  // First try the tab-less API refresh of every known course.
+  const apiResult = await apiRefreshAllKnownCourses();
+  const apiChanged = (apiResult && apiResult.changed) || 0;
+
   try {
     const tabs = await chrome.tabs.query({
       url: [
@@ -610,9 +649,12 @@ async function triggerManualScrape() {
     });
 
     if (tabs.length === 0) {
+      if (apiResult && apiResult.okCount > 0) {
+        return { success: true, scrapedCount: apiChanged, tabsScanned: 0, viaApi: true };
+      }
       return {
         success: false,
-        error: '请打开 icourse163.org 课程页面后重试',
+        error: '没有打开的课程页面；后台接口也未刷新成功（请确认已登录 icourse163，或打开任一课程页面）',
         scrapedCount: 0
       };
     }
@@ -655,7 +697,7 @@ async function triggerManualScrape() {
 
     return {
       success: true,
-      scrapedCount: totalItems,
+      scrapedCount: totalItems + apiChanged,
       tabsScanned: tabs.length,
       errors: errorCount
     };
@@ -742,6 +784,201 @@ async function addSyncError(errorMessage) {
   // Keep last 20
   const trimmed = errors.length > 20 ? errors.slice(errors.length - 20) : errors;
   await chrome.storage.local.set({ [KEYS.SYNC_ERRORS]: trimmed });
+}
+
+async function getApiStatus() {
+  const result = await chrome.storage.local.get(KEYS.API_STATUS);
+  return result[KEYS.API_STATUS] || null;
+}
+
+async function setApiStatus(status) {
+  if (!status || typeof status !== 'object') return;
+  await chrome.storage.local.set({
+    [KEYS.API_STATUS]: { ...status, checkedAt: new Date().toISOString() }
+  });
+}
+
+// ─── icourse163 API — background, no-tab homework refresh ───────────────
+// Inlined from src/shared/icourse163-api.js — keep the two in sync (the shared
+// copy is unit-tested; this copy is what actually runs). Pulls homework
+// deadlines for known course-terms WITHOUT an open tab, by calling the site's
+// web JSON-RPC with the logged-in session cookie. Experimental and fully
+// fenced: any failure is swallowed and the existing tab-based DOM scrape remains
+// the authoritative path. termId (from the canonical learn URL) is the bridge
+// key; our own courseId is attached to results so they dedup with DOM items.
+
+const ICOURSE_ORIGIN = 'https://www.icourse163.org';
+const CSRF_COOKIE_NAME = 'NTESSTUDYSI';
+const API_TERM_DTO = 'web/j/courseBean.getMocTermDto.rpc';
+
+const API_DEADLINE_FIELDS = ['deadline', 'endTime', 'submitEndTime', 'evaluationEndTime', 'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'];
+const API_SCORE_FIELDS = ['mark', 'score', 'studentScore', 'finalMark'];
+const API_TOTAL_FIELDS = ['totalMark', 'totalScore', 'fullMark', 'allMark'];
+
+function apiPad(n) { return String(n).padStart(2, '0'); }
+
+function apiFirstNumber(obj, fields) {
+  for (const f of fields) {
+    const v = obj[f];
+    if (typeof v === 'number' && isFinite(v) && v > 0) return v;
+    if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v)) return parseFloat(v);
+  }
+  return null;
+}
+
+function apiMsToLocalIso(ms) {
+  const n = typeof ms === 'string' ? parseInt(ms, 10) : ms;
+  if (typeof n !== 'number' || !isFinite(n) || n <= 0) return null;
+  const d = new Date(n);
+  if (isNaN(d.getTime())) return null;
+  const tz = -d.getTimezoneOffset();
+  const sign = tz >= 0 ? '+' : '-';
+  return `${d.getFullYear()}-${apiPad(d.getMonth() + 1)}-${apiPad(d.getDate())}T` +
+    `${apiPad(d.getHours())}:${apiPad(d.getMinutes())}:00${sign}` +
+    `${apiPad(Math.floor(Math.abs(tz) / 60))}:${apiPad(Math.abs(tz) % 60)}`;
+}
+
+function apiClassifyType(name) {
+  const t = String(name || '');
+  if (/考试|exam/i.test(t)) return 'exam';
+  if (/测验|quiz|测试/i.test(t)) return 'quiz';
+  if (/讨论|discussion/i.test(t)) return 'discussion';
+  return 'homework';
+}
+
+function apiCoerceJson(input) {
+  if (input == null) return null;
+  if (typeof input === 'object') return input;
+  if (typeof input !== 'string') return null;
+  try { return JSON.parse(input); } catch { /* try prefix strip */ }
+  const i = input.search(/[{[]/);
+  if (i > 0) { try { return JSON.parse(input.slice(i)); } catch { return null; } }
+  return null;
+}
+
+function apiExtractHomework(input, course) {
+  const data = apiCoerceJson(input);
+  if (!data || !course) return [];
+  const out = [];
+  const seen = new Set();
+  let visited = 0;
+  function looksLikeChapter(node) { return Array.isArray(node.lessons) || /chapter/i.test(node.type || ''); }
+  function looksLikeLesson(node) { return Array.isArray(node.units) || /lesson/i.test(node.type || ''); }
+  function visit(node, chapterId, lessonId) {
+    if (!node || typeof node !== 'object' || visited > 5000) return;
+    visited++;
+    if (Array.isArray(node)) { for (const c of node) visit(c, chapterId, lessonId); return; }
+    const name = node.name || node.title || node.unitName || '';
+    const deadlineMs = apiFirstNumber(node, API_DEADLINE_FIELDS);
+    const score = apiFirstNumber(node, API_SCORE_FIELDS);
+    const totalScore = apiFirstNumber(node, API_TOTAL_FIELDS);
+    const hasSignal = deadlineMs != null || (score != null && totalScore != null);
+    if (typeof name === 'string' && name.trim() && hasSignal &&
+        /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)) {
+      const homeworkId = String(node.id || node.jobId || node.quizId || node.testId || node.homeworkId || '') || ('h' + (out.length + 1));
+      const uid = `${course.courseId}_tid${course.termId}_ch${chapterId || ''}_le${lessonId || ''}_hw${homeworkId}`;
+      if (!seen.has(uid)) {
+        seen.add(uid);
+        const deadline = deadlineMs != null ? apiMsToLocalIso(deadlineMs) : null;
+        const done = score != null && totalScore != null && score > 0;
+        out.push({
+          uid, courseId: course.courseId, termId: course.termId,
+          chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
+          title: name.trim(), type: apiClassifyType(name),
+          courseName: course.courseName || '', schoolName: course.schoolName || '',
+          status: done ? 'completed' : 'unfinished',
+          checkedOff: done, manuallyCheckedOff: false,
+          autoDetectedCompleted: done, completionReason: done ? 'auto' : null,
+          deadline, deadlineRaw: deadline ? '(API)' : null,
+          score, totalScore, source: 'api', pageUrl: course.pageUrl || ''
+        });
+      }
+    }
+    const nextChapter = node.chapterId || (looksLikeChapter(node) ? node.id : chapterId);
+    const nextLesson = node.lessonId || (looksLikeLesson(node) ? node.id : lessonId);
+    for (const key of Object.keys(node)) {
+      const v = node[key];
+      if (v && typeof v === 'object') visit(v, nextChapter, nextLesson);
+    }
+  }
+  visit(data, '', '');
+  return out;
+}
+
+async function getCsrfKey() {
+  if (!chrome.cookies || !chrome.cookies.get) return null;
+  try {
+    const cookie = await chrome.cookies.get({ url: ICOURSE_ORIGIN + '/', name: CSRF_COOKIE_NAME });
+    return cookie && cookie.value ? cookie.value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function apiFetchTermDto(csrfKey, termId) {
+  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO}?csrfKey=${encodeURIComponent(csrfKey)}`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: `termId=${encodeURIComponent(termId)}&gatewayType=3`
+  });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  return await resp.text();
+}
+
+async function apiRefreshCourse(course, csrfKey) {
+  if (!course || !course.termId) return 0;
+  const text = await apiFetchTermDto(csrfKey, course.termId);
+  const items = apiExtractHomework(text, course);
+  if (items.length > 0) {
+    const result = await reconcileHomeworkData(course, items);
+    return result.added + result.updated;
+  }
+  return 0;
+}
+
+let apiRefreshInFlight = false;
+
+async function apiRefreshAllKnownCourses() {
+  if (apiRefreshInFlight) return { ok: false, reason: 'in_flight' };
+  apiRefreshInFlight = true;
+  try {
+    const csrfKey = await getCsrfKey();
+    if (!csrfKey) {
+      await setApiStatus({ status: 'api_no_session', message: '未检测到 icourse163 登录态，已回退到打开页面时抓取' });
+      return { ok: false, reason: 'no_csrf', okCount: 0, changed: 0 };
+    }
+    const courses = await getCourses();
+    if (courses.length === 0) {
+      await setApiStatus({ status: 'api_idle', message: '暂无已知课程，访问 icourse163 主页即可自动发现' });
+      return { ok: true, changed: 0, courses: 0, okCount: 0 };
+    }
+    let changed = 0, okCount = 0, failed = 0;
+    for (const course of courses) {
+      try {
+        changed += await apiRefreshCourse(course, csrfKey);
+        okCount++;
+      } catch (e) {
+        failed++;
+        console.debug('[MOOC Reminder] API refresh failed for', course.courseId, e.message);
+      }
+    }
+    if (okCount > 0) {
+      await updateBadgeFromStorage();
+      await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
+      await setApiStatus({ status: 'api_ok', message: `后台已刷新 ${okCount}/${courses.length} 门课程`, itemCount: changed });
+    } else {
+      await setApiStatus({ status: 'api_unavailable', message: '后台接口暂不可用，已回退到打开页面时抓取' });
+      await addSyncError(`API refresh: all ${failed} course(s) failed`);
+    }
+    return { ok: okCount > 0, changed, courses: courses.length, okCount, failed };
+  } catch (e) {
+    await addSyncError('API refresh: ' + e.message);
+    return { ok: false, reason: e.message, okCount: 0, changed: 0 };
+  } finally {
+    apiRefreshInFlight = false;
+  }
 }
 
 // ─── Utilities ──────────────────────────────────────────
