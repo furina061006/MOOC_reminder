@@ -10,6 +10,13 @@
 // Runs BEFORE anything else. If init() fails, shows recovery UI after 4s.
 // All code is external (no CSP-violating inline scripts).
 
+function wIcon(name, size, color) {
+  try {
+    var svg = window.MOOC_ICON ? window.MOOC_ICON(name, { size: size }) : '';
+    return color ? '<span style="color:' + color + ';display:inline-flex;">' + svg + '</span>' : svg;
+  } catch { return ''; }
+}
+
 (function setupWatchdog() {
   window.__popup_ok = false;
 
@@ -21,7 +28,7 @@
     if (!body) return;
     body.innerHTML =
       '<div style="padding:24px;text-align:center;font-family:sans-serif;">' +
-        '<div style="font-size:40px;margin-bottom:12px;">⚠️</div>' +
+        '<div style="margin-bottom:12px;">' + wIcon('alert-triangle', 40, '#dc3545') + '</div>' +
         '<p style="font-size:14px;font-weight:600;margin-bottom:4px;">插件加载失败</p>' +
         '<p style="font-size:12px;color:#999;margin-bottom:16px;">可能是缓存数据损坏导致</p>' +
         '<button id="w-recover" style="padding:8px 20px;background:#dc3545;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;margin-right:8px;">清除缓存并重置</button>' +
@@ -38,7 +45,7 @@
           chrome.storage.local.clear(function() {
             document.body.innerHTML =
               '<div style="padding:24px;text-align:center;font-family:sans-serif;">' +
-                '<div style="font-size:40px;margin-bottom:12px;">✅</div>' +
+                '<div style="margin-bottom:12px;">' + wIcon('check-circle', 40, '#28a745') + '</div>' +
                 '<p style="font-size:14px;font-weight:600;">缓存已清除</p>' +
                 '<p style="font-size:12px;color:#999;">请关闭后重新打开，或打开课程页面刷新</p>' +
               '</div>';
@@ -104,11 +111,12 @@ async function init() {
 
   initDomRefs();
 
+  try { if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS(); } catch(e) { console.error('[Popup] hydrate icons:', e.message); }
   try { setupEventListeners(); } catch(e) { console.error('[Popup] setupEventListeners:', e.message); }
   try { await loadData(); }       catch(e) { console.error('[Popup] loadData:', e.message); }
   try { render(); }               catch(e) {
     console.error('[Popup] render crashed:', e.message, e.stack);
-    safeSetBody('<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-title">渲染失败</p><p class="empty-desc">'+escapeHtml(String(e.message))+'</p></div>');
+    safeSetBody('<div class="empty-state"><div class="empty-icon">'+wIcon('alert-triangle',44,'#dc3545')+'</div><p class="empty-title">渲染失败</p><p class="empty-desc">'+escapeHtml(String(e.message))+'</p></div>');
   }
   console.log('[Popup] init done, items:', state.items.length, 'courses:', state.courses.length);
   window.__popup_ok = true;
@@ -300,7 +308,7 @@ function renderScrapeWarning() {
   dom.loginWarning.style.display = 'block';
   dom.loginWarning.className = 'login-warning ' + (warning.type || 'scrape');
   dom.loginWarning.innerHTML =
-    '<div class="warning-icon">' + (warning.type === 'login' ? '🔒' : '⚠️') + '</div>' +
+    '<div class="warning-icon">' + wIcon(warning.type === 'login' ? 'lock' : 'alert-triangle', 32) + '</div>' +
     '<p class="warning-title">' + escapeHtml(warning.title) + '</p>' +
     '<p class="warning-desc">' + escapeHtml(warning.message) + '</p>';
 }
@@ -408,7 +416,7 @@ function createCourseGroup(course, items) {
   header.className = 'course-group-header';
   header.innerHTML =
     '<div class="course-group-title">' +
-      '<span class="course-group-arrow">▼</span>' +
+      '<span class="course-group-arrow">' + wIcon('chevron-down', 14) + '</span>' +
       '<span>' + escapeHtml(courseName) + '</span>' +
       (schoolName ? '<span style="font-weight:400;font-size:11px;color:#999;">' + escapeHtml(schoolName) + '</span>' : '') +
     '</div>' +
@@ -729,6 +737,13 @@ document.addEventListener('DOMContentLoaded', function() {
   console.log('[Popup] DOMContentLoaded');
   init().catch(function(e) {
     console.error('[Popup] FATAL:', e.message, e.stack);
-    safeSetBody('<div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-title">插件加载失败</p><p class="empty-desc">' + escapeHtml(String(e.message)) + '</p><p style="margin-top:12px;"><button onclick="chrome.storage.local.clear()" style="padding:6px 14px;background:#dc3545;color:#fff;border:none;border-radius:4px;cursor:pointer;">清除缓存</button></p></div>');
+    safeSetBody('<div class="empty-state"><div class="empty-icon">' + wIcon('alert-triangle', 44, '#dc3545') + '</div><p class="empty-title">插件加载失败</p><p class="empty-desc">' + escapeHtml(String(e.message)) + '</p><p style="margin-top:12px;"><button id="fatal-clear-btn" class="btn btn-primary btn-danger">清除缓存</button></p></div>');
+    // Attach listener instead of an inline onclick (MV3 CSP forbids inline handlers).
+    var clearBtn = document.getElementById('fatal-clear-btn');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function() {
+        try { chrome.storage.local.clear(); clearBtn.textContent = '已清除，请重新打开'; } catch (err) { console.error(err); }
+      });
+    }
   });
 });
