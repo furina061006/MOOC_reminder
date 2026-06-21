@@ -18,6 +18,7 @@ const KEYS = {
   COURSES: 'courses',
   LAST_SYNC: 'last_sync',
   SYNC_ERRORS: 'sync_errors',
+  SCRAPE_STATUS: 'scrape_status',
   USER_SETTINGS: 'user_settings'
 };
 
@@ -49,7 +50,8 @@ async function validateAndRepairStorage() {
     const data = await chrome.storage.local.get([
       KEYS.HOMEWORK_ITEMS,
       KEYS.COURSES,
-      KEYS.USER_SETTINGS
+      KEYS.USER_SETTINGS,
+      KEYS.SCRAPE_STATUS
     ]);
 
     let needsRepair = false;
@@ -74,6 +76,7 @@ async function validateAndRepairStorage() {
         [KEYS.COURSES]: [],
         [KEYS.LAST_SYNC]: null,
         [KEYS.SYNC_ERRORS]: [],
+        [KEYS.SCRAPE_STATUS]: data[KEYS.SCRAPE_STATUS] || null,
         [KEYS.USER_SETTINGS]: data[KEYS.USER_SETTINGS] || DEFAULT_SETTINGS
       });
       console.log('[MOOC Reminder] Storage repaired — all data reset');
@@ -84,6 +87,7 @@ async function validateAndRepairStorage() {
         [KEYS.COURSES]: Array.isArray(courses) ? courses.filter(Boolean) : [],
         [KEYS.LAST_SYNC]: (await chrome.storage.local.get(KEYS.LAST_SYNC))[KEYS.LAST_SYNC] || null,
         [KEYS.SYNC_ERRORS]: [],
+        [KEYS.SCRAPE_STATUS]: data[KEYS.SCRAPE_STATUS] || null,
         [KEYS.USER_SETTINGS]: data[KEYS.USER_SETTINGS] || DEFAULT_SETTINGS
       });
     }
@@ -96,6 +100,7 @@ async function validateAndRepairStorage() {
         [KEYS.COURSES]: [],
         [KEYS.LAST_SYNC]: null,
         [KEYS.SYNC_ERRORS]: [],
+        [KEYS.SCRAPE_STATUS]: null,
         [KEYS.USER_SETTINGS]: DEFAULT_SETTINGS
       });
     } catch {}
@@ -163,6 +168,9 @@ const MESSAGE_HANDLERS = {
     }
 
     const result = await reconcileHomeworkData(msg.course, msg.homeworkItems);
+    if (msg.scrapeStatus) {
+      await setScrapeStatus(msg.scrapeStatus);
+    }
     await updateBadgeFromStorage();
     console.log(`[MOOC Reminder] Reconciled: +${result.added} added, ~${result.updated} updated`);
     return { success: true, added: result.added, updated: result.updated };
@@ -200,13 +208,17 @@ const MESSAGE_HANDLERS = {
     const courses = await getCourses();
     const lastSync = await getLastSync();
     const settings = await getUserSettings();
+    const syncErrors = await getSyncErrors();
+    const scrapeStatus = await getScrapeStatus();
 
     return {
       items: items.filter(i => i && !i.checkedOff),  // unfinished only
       allItems: items,                                 // including completed
       courses,
       lastSync,
-      settings
+      settings,
+      syncErrors,
+      scrapeStatus
     };
   },
 
@@ -230,10 +242,22 @@ const MESSAGE_HANDLERS = {
       [KEYS.HOMEWORK_ITEMS]: [],
       [KEYS.COURSES]: [],
       [KEYS.LAST_SYNC]: null,
-      [KEYS.SYNC_ERRORS]: []
+      [KEYS.SYNC_ERRORS]: [],
+      [KEYS.SCRAPE_STATUS]: null
     });
     await updateBadgeFromStorage();
     console.log('[MOOC Reminder] All data reset');
+    return { success: true };
+  },
+
+  async SCRAPE_STATUS(msg) {
+    if (!msg.scrapeStatus || typeof msg.scrapeStatus !== 'object') {
+      return { success: false, error: 'Invalid payload' };
+    }
+    await setScrapeStatus(msg.scrapeStatus);
+    if (msg.scrapeStatus.status === 'error') {
+      await addSyncError('Scrape status: ' + (msg.scrapeStatus.message || 'unknown error'));
+    }
     return { success: true };
   },
 
@@ -386,6 +410,27 @@ function getUrgencyColor(items) {
   return '#007BFF'; // blue
 }
 
+async function processScrapeResponse(response) {
+  if (!response || typeof response !== 'object') {
+    return { itemCount: 0, changedCount: 0, handled: false };
+  }
+
+  if (response.scrapeStatus) {
+    await setScrapeStatus(response.scrapeStatus);
+  }
+
+  if (response.course && Array.isArray(response.homeworkItems)) {
+    const result = await reconcileHomeworkData(response.course, response.homeworkItems);
+    return {
+      itemCount: response.homeworkItems.length,
+      changedCount: result.added + result.updated,
+      handled: true
+    };
+  }
+
+  return { itemCount: 0, changedCount: 0, handled: !!response.scrapeStatus };
+}
+
 // ─── Periodic Scraping ──────────────────────────────────
 
 async function performPeriodicScrape() {
@@ -413,10 +458,8 @@ async function performPeriodicScrape() {
           type: 'SCRAPE_NOW'
         });
 
-        if (response && response.course && response.homeworkItems) {
-          await reconcileHomeworkData(response.course, response.homeworkItems);
-          scrapedCount += response.homeworkItems.length;
-        }
+        const processed = await processScrapeResponse(response);
+        scrapedCount += processed.itemCount;
       } catch (e) {
         // Tab might not have content script ready — skip
         console.debug('[MOOC Reminder] Could not scrape tab', tab.id, e.message);
@@ -459,10 +502,8 @@ async function triggerManualScrape() {
           type: 'SCRAPE_NOW'
         });
 
-        if (response && response.course && response.homeworkItems) {
-          const result = await reconcileHomeworkData(response.course, response.homeworkItems);
-          totalItems += result.added + result.updated;
-        }
+        const processed = await processScrapeResponse(response);
+        totalItems += processed.changedCount;
       } catch (e) {
         errorCount++;
         // Try injecting content script and retrying
@@ -481,6 +522,7 @@ async function triggerManualScrape() {
           }
         } catch (e2) {
           console.debug('[MOOC Reminder] Inject+retry failed for tab', tab.id, e2.message);
+          await addSyncError(`Manual scrape tab ${tab.id}: ${e2.message}`);
         }
       }
     }
@@ -546,9 +588,29 @@ async function getUserSettings() {
   return result[KEYS.USER_SETTINGS] || DEFAULT_SETTINGS;
 }
 
-async function addSyncError(errorMessage) {
+async function getSyncErrors() {
   const result = await chrome.storage.local.get(KEYS.SYNC_ERRORS);
-  const errors = result[KEYS.SYNC_ERRORS] || [];
+  const raw = result[KEYS.SYNC_ERRORS];
+  return Array.isArray(raw) ? raw.filter(Boolean) : [];
+}
+
+async function getScrapeStatus() {
+  const result = await chrome.storage.local.get(KEYS.SCRAPE_STATUS);
+  return result[KEYS.SCRAPE_STATUS] || null;
+}
+
+async function setScrapeStatus(status) {
+  if (!status || typeof status !== 'object') return;
+  await chrome.storage.local.set({
+    [KEYS.SCRAPE_STATUS]: {
+      ...status,
+      checkedAt: status.checkedAt || new Date().toISOString()
+    }
+  });
+}
+
+async function addSyncError(errorMessage) {
+  const errors = await getSyncErrors();
   errors.push({
     time: new Date().toISOString(),
     error: errorMessage

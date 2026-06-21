@@ -178,6 +178,14 @@
         data = scrapePage();
       } catch (scrapeErr) {
         console.error('[MOOC Reminder] scrapePage() threw:', scrapeErr);
+        try {
+          await chrome.runtime.sendMessage({
+            type: 'SCRAPE_STATUS',
+            scrapeStatus: createScrapeStatus('error', {
+              message: String(scrapeErr?.message || scrapeErr)
+            })
+          });
+        } catch {}
         return null;
       }
 
@@ -187,16 +195,32 @@
           await chrome.runtime.sendMessage({
             type: 'HOMEWORK_DATA',
             course: data.course,
-            homeworkItems: data.homeworkItems
+            homeworkItems: data.homeworkItems,
+            scrapeStatus: data.scrapeStatus
           });
           console.log(`[MOOC Reminder] Scraped ${data.homeworkItems.length} items from ${data.course.courseName}`);
         } catch (e) {
           console.error('[MOOC Reminder] Failed to send data to background:', e);
         }
+      } else if (data && data.scrapeStatus) {
+        try {
+          await chrome.runtime.sendMessage({
+            type: 'SCRAPE_STATUS',
+            scrapeStatus: data.scrapeStatus
+          });
+        } catch (e) {
+          console.error('[MOOC Reminder] Failed to send scrape status:', e);
+        }
       }
       return data;
     } catch (e) {
       console.error('[MOOC Reminder] Scrape failed:', e.message);
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'SCRAPE_STATUS',
+          scrapeStatus: createScrapeStatus('error', { message: e.message })
+        });
+      } catch {}
       return null;
     } finally {
       isScraping = false;
@@ -283,6 +307,19 @@
 
   // ─── Page Scraping Logic ──────────────────────────────
 
+  function createScrapeStatus(status, details) {
+    return Object.assign({
+      status,
+      url: window.location.href,
+      route: getCurrentHashRoute(),
+      checkedAt: new Date().toISOString()
+    }, details || {});
+  }
+
+  function isDedicatedHomeworkRoute(route) {
+    return /\/learn\/(quiz|exam|homework)/i.test(route || '');
+  }
+
   function scrapePage() {
     if (!selectorConfig) {
       selectorConfig = getDefaultSelectors();
@@ -291,7 +328,13 @@
     // Check for login wall
     if (isLoginWall()) {
       console.log('[MOOC Reminder] Login wall detected, skipping scrape');
-      return null;
+      return {
+        course: null,
+        homeworkItems: [],
+        scrapeStatus: createScrapeStatus('login_required', {
+          message: '请先登录 icourse163.org'
+        })
+      };
     }
 
     // Parse URL metadata
@@ -302,6 +345,8 @@
 
     // Scrape homework items
     const homeworkItems = scrapeHomeworkItems(urlMeta, meta);
+    const route = getCurrentHashRoute();
+    const status = homeworkItems.length > 0 ? 'ok' : (isDedicatedHomeworkRoute(route) ? 'empty_on_homework_page' : 'empty');
 
     return {
       course: {
@@ -312,7 +357,14 @@
         courseType: urlMeta.isSpoc ? 'spoc' : 'mooc',
         courseUrl: window.location.href
       },
-      homeworkItems: homeworkItems
+      homeworkItems: homeworkItems,
+      scrapeStatus: createScrapeStatus(status, {
+        courseId: urlMeta.courseId,
+        termId: urlMeta.termId,
+        courseName: meta.courseName,
+        itemCount: homeworkItems.length,
+        message: status === 'empty_on_homework_page' ? '页面已加载，但未识别到作业条目，可能是网页结构变化' : null
+      })
     };
   }
 
