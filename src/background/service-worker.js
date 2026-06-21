@@ -413,6 +413,7 @@ async function updateBadgeFromStorage() {
 
     await chrome.action.setBadgeText({ text: String(count) });
     await chrome.action.setBadgeBackgroundColor({ color: getUrgencyColor(unfinished) });
+    await maybeNotifyDeadlines(items, unfinished);
   } catch (e) {
     console.error('[MOOC Reminder] Badge update failed:', e);
   }
@@ -470,6 +471,92 @@ async function processScrapeResponse(response) {
 
 // ─── Periodic Scraping ──────────────────────────────────
 
+
+function getNotificationLevel(item, now) {
+  if (!item || !item.deadline) return null;
+  let deadline;
+  try {
+    deadline = new Date(item.deadline);
+  } catch {
+    return null;
+  }
+  if (isNaN(deadline.getTime())) return null;
+
+  const diff = deadline - now;
+  if (diff < 0) return 'overdue';
+  if (diff <= 24 * 60 * 60 * 1000) return 'due_24h';
+  if (diff <= 48 * 60 * 60 * 1000) return 'due_48h';
+  return null;
+}
+
+function formatNotificationDeadline(deadline) {
+  try {
+    const d = new Date(deadline);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return '';
+  }
+}
+
+async function maybeNotifyDeadlines(allItems, unfinishedItems) {
+  if (!chrome.notifications || !Array.isArray(allItems) || !Array.isArray(unfinishedItems)) return;
+
+  const now = new Date();
+  let changed = false;
+
+  for (const item of unfinishedItems) {
+    const level = getNotificationLevel(item, now);
+    if (!level || item.lastNotificationLevel === level) continue;
+
+    const notificationId = `mooc-reminder:${encodeURIComponent(item.uid || '')}:${level}`;
+    const title = level === 'overdue' ? 'MOOC 作业已过期' : 'MOOC 作业即将截止';
+    const deadlineText = formatNotificationDeadline(item.deadline);
+    const message = `${item.courseName || '未知课程'} · ${item.title || '未命名作业'}${deadlineText ? '（' + deadlineText + '）' : ''}`;
+
+    try {
+      await chrome.notifications.create(notificationId, {
+        type: 'basic',
+        iconUrl: 'src/assets/icons/icon128.png',
+        title,
+        message,
+        priority: level === 'overdue' ? 2 : 1
+      });
+      item.lastNotificationLevel = level;
+      item.lastNotifiedAt = new Date().toISOString();
+      changed = true;
+    } catch (e) {
+      console.warn('[MOOC Reminder] Notification failed:', e.message);
+    }
+  }
+
+  if (changed) {
+    await setHomeworkItems(allItems);
+  }
+}
+
+chrome.notifications?.onClicked?.addListener(async (notificationId) => {
+  if (!notificationId || notificationId.indexOf('mooc-reminder:') !== 0) return;
+  const parts = notificationId.split(':');
+  const uid = parts.length >= 2 ? decodeURIComponent(parts[1]) : '';
+  if (!uid) return;
+
+  try {
+    const items = await getHomeworkItems();
+    const item = items.find(i => i && i.uid === uid);
+    if (item && item.pageUrl) {
+      await chrome.tabs.create({ url: item.pageUrl });
+    }
+    await chrome.notifications.clear(notificationId);
+  } catch (e) {
+    console.debug('[MOOC Reminder] Notification click failed:', e.message);
+  }
+});
 async function performPeriodicScrape() {
   console.log('[MOOC Reminder] Periodic scrape started');
 
