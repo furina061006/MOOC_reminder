@@ -8,11 +8,11 @@
     "alarms",
     "scripting",
     "tabs",
-    "notifications"
+    "notifications",
+    "cookies"
   ],
   "host_permissions": [
-    "https://www.icourse163.org/learn/*",
-    "https://www.icourse163.org/spoc/learn/*"
+    "https://www.icourse163.org/*"
   ],
   "web_accessible_resources": [
     {
@@ -35,6 +35,13 @@
         "https://www.icourse163.org/spoc/learn/*"
       ],
       "js": ["src/content/main.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.icourse163.org/*"
+      ],
+      "js": ["src/content/course-discovery.js"],
       "run_at": "document_idle"
     }
   ],

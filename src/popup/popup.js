@@ -257,8 +257,8 @@ function applyFilter() {
     case 'all':
       state.items = safe;
       break;
-    default:  // 'unfinished'
-      state.items = safe.filter(i => i && !i.checkedOff && !isOverdue(i));
+    default:  // 'unfinished' — includes overdue, so the list matches the badge/footer count
+      state.items = safe.filter(i => i && !i.checkedOff);
       break;
   }
 
@@ -366,7 +366,14 @@ function render() {
     const grouped = groupByCourse(state.items);
     const courses = Array.isArray(state.courses) ? state.courses.filter(Boolean) : [];
 
-    for (const [courseId, items] of Object.entries(grouped)) {
+    // Order course groups by their most urgent (earliest) deadline.
+    const orderedEntries = Object.entries(grouped).sort((a, b) => {
+      const am = Math.min.apply(null, a[1].map(deadlineMs));
+      const bm = Math.min.apply(null, b[1].map(deadlineMs));
+      return am - bm;
+    });
+
+    for (const [courseId, items] of orderedEntries) {
       if (!Array.isArray(items) || items.length === 0) continue;
 
       const course = courses.find(c => c && c.courseId === courseId) || {
@@ -401,6 +408,38 @@ function groupByCourse(items) {
     groups[key].push(item);
   }
   return groups;
+}
+
+// Earliest-deadline-first sort key; items without a deadline sink to the bottom.
+function deadlineMs(item) {
+  if (!item || !item.deadline) return Infinity;
+  try {
+    const t = new Date(item.deadline).getTime();
+    return isNaN(t) ? Infinity : t;
+  } catch { return Infinity; }
+}
+
+function sortItemsByDeadline(items) {
+  return (Array.isArray(items) ? items.slice() : []).sort((a, b) => deadlineMs(a) - deadlineMs(b));
+}
+
+// Where clicking an item should take you: its own page, else a reconstructed
+// course learn URL (API-discovered items may not carry a pageUrl).
+function resolveItemUrl(item) {
+  if (!item) return null;
+  if (item.pageUrl) return item.pageUrl;
+  if (item.courseId && item.termId) {
+    return 'https://www.icourse163.org/learn/' + item.courseId + '?tid=' + item.termId + '#/learn/content';
+  }
+  return null;
+}
+
+function openUrl(url) {
+  if (!url) return;
+  try {
+    if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: url });
+    else window.open(url, '_blank');
+  } catch { try { window.open(url, '_blank'); } catch { /* ignore */ } }
 }
 
 function createCourseGroup(course, items) {
@@ -442,7 +481,7 @@ function createCourseGroup(course, items) {
   container.className = 'course-group-items';
 
   if (Array.isArray(items)) {
-    for (const item of items) {
+    for (const item of sortItemsByDeadline(items)) {
       try {
         const el = createHomeworkItem(item);
         if (el && el.nodeType) container.appendChild(el);
@@ -531,8 +570,29 @@ function createHomeworkItem(item) {
 
   content.appendChild(titleEl);
   content.appendChild(meta);
+
+  // Clicking the item (anywhere but the checkbox) opens its page.
+  const url = resolveItemUrl(item);
+  if (url) {
+    content.classList.add('clickable');
+    content.setAttribute('role', 'button');
+    content.title = '打开页面';
+    content.addEventListener('click', function () { openUrl(url); });
+  }
+
   el.appendChild(cb);
   el.appendChild(content);
+
+  if (url) {
+    const openBtn = document.createElement('span');
+    openBtn.className = 'item-open';
+    openBtn.title = '打开页面';
+    openBtn.setAttribute('role', 'button');
+    openBtn.innerHTML = wIcon('external-link', 14);
+    openBtn.addEventListener('click', function () { openUrl(url); });
+    el.appendChild(openBtn);
+  }
+
   return el;
 }
 
