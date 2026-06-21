@@ -23,7 +23,9 @@ export const CSRF_COOKIE_NAME = 'NTESSTUDYSI';
 
 export const RPC_ENDPOINTS = {
   // Course outline for a term (chapters → lessons → units incl. quiz/homework/exam).
-  termDto: 'web/j/courseBean.getMocTermDto.rpc'
+  termDto: 'web/j/courseBean.getMocTermDto.rpc',
+  // Fallback seen in public icourse163 tooling; runtime tries this after RPC.
+  termDtoDwr: 'dwr/call/plaincall/CourseBean.getMocTermDto.dwr'
 };
 
 export function rpcUrl(endpoint, csrfKey) {
@@ -42,6 +44,25 @@ export function buildTermDtoRequest(csrfKey, termId) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
     body: formBody({ termId: String(termId || ''), gatewayType: 3 })
+  };
+}
+
+export function buildTermDtoDwrRequest(termId) {
+  return {
+    url: `${ICOURSE_ORIGIN}/${RPC_ENDPOINTS.termDtoDwr}`,
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+    body: [
+      'callCount=1',
+      'scriptSessionId=',
+      'httpSessionId=',
+      'c0-scriptName=CourseBean',
+      'c0-methodName=getMocTermDto',
+      'c0-id=0',
+      'c0-param0=number:' + encodeURIComponent(String(termId || '')),
+      'c0-param1=boolean:true',
+      'batchId=0'
+    ].join('&')
   };
 }
 

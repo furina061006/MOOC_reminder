@@ -1069,7 +1069,8 @@ async function setApiStatus(status) {
 
 const ICOURSE_ORIGIN = 'https://www.icourse163.org';
 const CSRF_COOKIE_NAME = 'NTESSTUDYSI';
-const API_TERM_DTO = 'web/j/courseBean.getMocTermDto.rpc';
+const API_TERM_DTO_RPC = 'web/j/courseBean.getMocTermDto.rpc';
+const API_TERM_DTO_DWR = 'dwr/call/plaincall/CourseBean.getMocTermDto.dwr';
 
 const API_DEADLINE_FIELDS = ['deadline', 'endTime', 'submitEndTime', 'evaluationEndTime', 'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'];
 const API_SCORE_FIELDS = ['mark', 'score', 'studentScore', 'finalMark'];
@@ -1175,27 +1176,97 @@ async function getCsrfKey() {
   }
 }
 
-async function apiFetchTermDto(csrfKey, termId) {
-  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO}?csrfKey=${encodeURIComponent(csrfKey)}`;
+function makeApiError(label, message, details) {
+  const e = new Error(label + ': ' + message);
+  e.details = details || {};
+  return e;
+}
+
+function responseSnippet(text) {
+  return String(text || '').replace(/\s+/g, ' ').slice(0, 180);
+}
+
+async function apiFetchRpcTermDto(csrfKey, termId) {
+  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO_RPC}?csrfKey=${encodeURIComponent(csrfKey)}`;
+  const body = `termId=${encodeURIComponent(termId)}&gatewayType=3`;
   const resp = await fetch(url, {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-    body: `termId=${encodeURIComponent(termId)}&gatewayType=3`
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      'Origin': ICOURSE_ORIGIN
+    },
+    body
   });
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  return await resp.text();
+  const text = await resp.text();
+  if (!resp.ok) {
+    throw makeApiError('rpc', 'HTTP ' + resp.status, { endpoint: API_TERM_DTO_RPC, status: resp.status, body: responseSnippet(text) });
+  }
+  if (/非法跨域|csrf|forbidden|error/i.test(text)) {
+    throw makeApiError('rpc', 'server rejected request', { endpoint: API_TERM_DTO_RPC, body: responseSnippet(text) });
+  }
+  return { text, endpoint: API_TERM_DTO_RPC };
+}
+
+async function apiFetchDwrTermDto(termId) {
+  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO_DWR}`;
+  // DWR format used by public icourse163 downloaders. batchId/scriptSessionId
+  // values are tolerated by many DWR deployments when empty; this is a fallback
+  // only, so failures are diagnostic rather than fatal to DOM scraping.
+  const body = [
+    'callCount=1',
+    'scriptSessionId=',
+    'httpSessionId=',
+    'c0-scriptName=CourseBean',
+    'c0-methodName=getMocTermDto',
+    'c0-id=0',
+    'c0-param0=number:' + encodeURIComponent(termId),
+    'c0-param1=boolean:true',
+    'batchId=0'
+  ].join('&');
+  const resp = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'text/plain;charset=UTF-8',
+      'Origin': ICOURSE_ORIGIN
+    },
+    body
+  });
+  const text = await resp.text();
+  if (!resp.ok) {
+    throw makeApiError('dwr', 'HTTP ' + resp.status, { endpoint: API_TERM_DTO_DWR, status: resp.status, body: responseSnippet(text) });
+  }
+  if (/exception|forbidden|csrf|非法跨域/i.test(text)) {
+    throw makeApiError('dwr', 'server rejected request', { endpoint: API_TERM_DTO_DWR, body: responseSnippet(text) });
+  }
+  return { text, endpoint: API_TERM_DTO_DWR };
+}
+
+async function apiFetchTermDto(csrfKey, termId) {
+  const errors = [];
+  try {
+    return await apiFetchRpcTermDto(csrfKey, termId);
+  } catch (e) {
+    errors.push(e.details || { message: e.message });
+  }
+  try {
+    return await apiFetchDwrTermDto(termId);
+  } catch (e) {
+    errors.push(e.details || { message: e.message });
+  }
+  throw makeApiError('termDto', 'all endpoints failed', { termId, errors });
 }
 
 async function apiRefreshCourse(course, csrfKey) {
-  if (!course || !course.termId) return 0;
-  const text = await apiFetchTermDto(csrfKey, course.termId);
-  const items = apiExtractHomework(text, course);
+  if (!course || !course.termId) return { changed: 0, itemCount: 0, endpoint: null };
+  const fetched = await apiFetchTermDto(csrfKey, course.termId);
+  const items = apiExtractHomework(fetched.text, course);
   if (items.length > 0) {
     const result = await reconcileHomeworkData(course, items);
-    return result.added + result.updated;
+    return { changed: result.added + result.updated, itemCount: items.length, endpoint: fetched.endpoint };
   }
-  return 0;
+  return { changed: 0, itemCount: 0, endpoint: fetched.endpoint };
 }
 
 let apiRefreshInFlight = false;
@@ -1214,23 +1285,46 @@ async function apiRefreshAllKnownCourses() {
       await setApiStatus({ status: 'api_idle', message: '暂无已知课程，访问 icourse163 主页即可自动发现' });
       return { ok: true, changed: 0, courses: 0, okCount: 0 };
     }
-    let changed = 0, okCount = 0, failed = 0;
+    let changed = 0, okCount = 0, failed = 0, itemCount = 0;
+    const failureDetails = [];
+    const endpoints = {};
     for (const course of courses) {
       try {
-        changed += await apiRefreshCourse(course, csrfKey);
+        const refreshed = await apiRefreshCourse(course, csrfKey);
+        changed += refreshed.changed || 0;
+        itemCount += refreshed.itemCount || 0;
+        if (refreshed.endpoint) endpoints[refreshed.endpoint] = (endpoints[refreshed.endpoint] || 0) + 1;
         okCount++;
       } catch (e) {
         failed++;
-        console.debug('[MOOC Reminder] API refresh failed for', course.courseId, e.message);
+        const detail = {
+          courseId: course && course.courseId,
+          termId: course && course.termId,
+          message: e.message,
+          details: e.details || null
+        };
+        failureDetails.push(detail);
+        console.debug('[MOOC Reminder] API refresh failed for', course.courseId, e.message, e.details || '');
       }
     }
     if (okCount > 0) {
       await updateBadgeFromStorage();
       await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
-      await setApiStatus({ status: 'api_ok', message: `后台已刷新 ${okCount}/${courses.length} 门课程`, itemCount: changed });
+      await setApiStatus({
+        status: 'api_ok',
+        message: `后台接口连通 ${okCount}/${courses.length} 门课程，识别到 ${itemCount} 个条目`,
+        itemCount,
+        changedCount: changed,
+        endpoints
+      });
     } else {
-      await setApiStatus({ status: 'api_unavailable', message: '后台接口暂不可用，已回退到打开页面时抓取' });
-      await addSyncError(`API refresh: all ${failed} course(s) failed`);
+      const first = failureDetails[0];
+      await setApiStatus({
+        status: 'api_unavailable',
+        message: first ? ('后台接口暂不可用：' + first.message) : '后台接口暂不可用，已回退到打开页面时抓取',
+        failures: failureDetails.slice(0, 3)
+      });
+      await addSyncError('API refresh failed: ' + JSON.stringify(failureDetails.slice(0, 2)));
     }
     return { ok: okCount > 0, changed, courses: courses.length, okCount, failed };
   } catch (e) {

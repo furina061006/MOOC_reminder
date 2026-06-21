@@ -6,6 +6,7 @@ import {
   coerceJson,
   msToLocalIso,
   buildTermDtoRequest,
+  buildTermDtoDwrRequest,
   extractHomeworkFromTermDto
 } from '../../src/shared/icourse163-api.js';
 
@@ -47,6 +48,14 @@ test('buildTermDtoRequest targets the rpc endpoint with csrfKey + termId body', 
   assert.equal(req.method, 'POST');
   assert.match(req.headers['Content-Type'], /x-www-form-urlencoded/);
   assert.match(req.body, /termId=1460270441/);
+});
+
+test('buildTermDtoDwrRequest targets the DWR fallback endpoint', () => {
+  const req = buildTermDtoDwrRequest('1460270441');
+  assert.match(req.url, /\/dwr\/call\/plaincall\/CourseBean\.getMocTermDto\.dwr$/);
+  assert.equal(req.method, 'POST');
+  assert.match(req.body, /c0-methodName=getMocTermDto/);
+  assert.match(req.body, /c0-param0=number:1460270441/);
 });
 
 test('extractHomeworkFromTermDto pulls only signal-bearing assessables and dedups', () => {
