@@ -14,6 +14,9 @@
       <h1 class="title">MOOC Reminder</h1>
     </div>
     <div class="header-right">
+      <button id="settings-btn" class="icon-btn" title="设置" aria-label="设置">
+        <span class="icon-slot" data-icon="settings" data-icon-size="16"></span>
+      </button>
       <button id="refresh-btn" class="icon-btn" title="立即刷新" aria-label="立即刷新">
         <span class="icon-slot" data-icon="refresh" data-icon-size="16"></span>
       </button>
@@ -80,6 +83,9 @@
       <span id="sync-time">尚未同步</span>
     </div>
     <div class="footer-actions">
+      <button id="export-ics-btn" class="btn btn-sm btn-ghost">
+        <span class="icon-slot" data-icon="calendar" data-icon-size="13"></span>导出日历
+      </button>
       <button id="reset-data-btn" class="btn btn-sm btn-ghost btn-danger">
         <span class="icon-slot" data-icon="trash" data-icon-size="13"></span>重置数据
       </button>
@@ -87,6 +93,7 @@
   </footer>
 
   <script src="icons.js"></script>
+  <script src="calendar-export.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

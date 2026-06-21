@@ -24,7 +24,11 @@ export const MSG_TYPES = {
   SCRAPE_NOW: 'SCRAPE_NOW',
 
   // Background → Popup: badge needs refresh
-  REFRESH_BADGE: 'REFRESH_BADGE'
+  REFRESH_BADGE: 'REFRESH_BADGE',
+
+  // Options page ↔ Background: read / persist user settings
+  GET_SETTINGS: 'GET_SETTINGS',
+  SETTINGS_UPDATED: 'SETTINGS_UPDATED'
 };
 
 /**
@@ -47,9 +51,16 @@ export function validateMessage(type, payload) {
 
     case MSG_TYPES.GET_HOMEWORK:
     case MSG_TYPES.TRIGGER_SCRAPE:
+    case MSG_TYPES.SETTINGS_UPDATED:
+      if (!payload || typeof payload.settings !== 'object') {
+        return { valid: false, error: 'SETTINGS_UPDATED requires {settings: object}' };
+      }
+      break;
+
     case MSG_TYPES.CLEAR_COMPLETED:
     case MSG_TYPES.SCRAPE_NOW:
     case MSG_TYPES.REFRESH_BADGE:
+    case MSG_TYPES.GET_SETTINGS:
       // No payload required
       break;
 

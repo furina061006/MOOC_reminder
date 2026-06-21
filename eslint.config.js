@@ -18,7 +18,8 @@ const browserExtensionGlobals = {
   console: 'readonly',
   alert: 'readonly',
   confirm: 'readonly',
-  requestAnimationFrame: 'readonly'
+  requestAnimationFrame: 'readonly',
+  Blob: 'readonly'
 };
 
 const projectRules = {
@@ -41,7 +42,7 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['src/background/**/*.js', 'src/content/main.js', 'src/popup/**/*.js', 'tests/**/*.js'],
+    files: ['src/background/**/*.js', 'src/content/main.js', 'src/content/course-discovery.js', 'src/popup/**/*.js', 'tests/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',

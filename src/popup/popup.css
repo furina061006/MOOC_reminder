@@ -72,6 +72,12 @@ body {
   gap: 9px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .logo {
   display: inline-flex;
   align-items: center;
@@ -351,6 +357,26 @@ body {
 }
 .item-completion-badge.manual { background: #e6f5ea; color: #25703a; }
 .item-completion-badge.auto { background: #e7f0fd; color: #1257a8; }
+
+/* Clickable item → opens its homework/course page */
+.item-content.clickable { cursor: pointer; }
+.item-content.clickable:hover .item-title { color: var(--accent); }
+
+.item-open {
+  flex-shrink: 0;
+  margin-top: 1px;
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 5px;
+  transition: color 0.15s, background 0.15s;
+}
+.item-open:hover {
+  color: var(--accent);
+  background: var(--surface-2);
+}
 
 /* ─── Empty State ──────────────────────────────── */
 .empty-state {

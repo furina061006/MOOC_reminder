@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MOOC Reminder · 设置</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    body { width: auto; max-width: 680px; max-height: none; margin: 0 auto; padding: 0 20px 40px; }
+    .opt-header { display: flex; align-items: center; gap: 10px; padding: 22px 0 6px; }
+    .opt-header .title { font-size: 18px; }
+    .opt-sub { color: var(--text-faint); font-size: 12px; margin: 0 0 18px; }
+    .opt-section {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      padding: 6px 16px; margin-bottom: 16px;
+    }
+    .opt-section-title {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 650; font-size: 13px; color: var(--text);
+      padding: 12px 0 4px; border-bottom: 1px solid var(--border-soft); margin-bottom: 4px;
+    }
+    .opt-section-title .icon { color: var(--text-muted); }
+    .opt-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border-soft);
+    }
+    .opt-row:last-child { border-bottom: none; }
+    .opt-label { font-size: 13px; }
+    .opt-label .opt-hint { display: block; font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+    .opt-control { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+    .opt-control input[type="number"] { width: 72px; padding: 6px 8px; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
+    .opt-control select { padding: 6px 8px; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
+    .opt-unit { font-size: 12px; color: var(--text-faint); }
+    .lead-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; }
+    .lead-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; cursor: pointer; user-select: none; }
+    .lead-chip input { accent-color: var(--accent); margin: 0; }
+    .switch { position: relative; display: inline-block; width: 38px; height: 22px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch .track { position: absolute; inset: 0; background: #cdd2da; border-radius: 999px; transition: background .15s; }
+    .switch .track::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .15s; }
+    .switch input:checked + .track { background: var(--accent); }
+    .switch input:checked + .track::before { transform: translateX(16px); }
+    .opt-actions { display: flex; align-items: center; gap: 12px; padding-top: 8px; }
+    #save-status { font-size: 12px; color: #25703a; }
+    @media (prefers-color-scheme: dark) {
+      #save-status { color: #8fd6a6; }
+      .switch .track { background: #4a4d53; }
+    }
+  </style>
+</head>
+<body>
+  <div class="opt-header">
+    <span class="icon-slot" data-icon="settings" data-icon-size="22"></span>
+    <h1 class="title">设置</h1>
+  </div>
+  <p class="opt-sub">这些设置过去被存储却从未生效；现在它们真正驱动后台刷新节奏与提醒行为。</p>
+
+  <!-- 刷新与检测 -->
+  <div class="opt-section">
+    <div class="opt-section-title"><span class="icon-slot" data-icon="refresh" data-icon-size="16"></span>刷新与检测</div>
+    <div class="opt-row">
+      <div class="opt-label">后台检查间隔<span class="opt-hint">每隔多少分钟刷新一次作业（含后台接口）</span></div>
+      <div class="opt-control"><input type="number" id="check-interval" min="1" max="1440"><span class="opt-unit">分钟</span></div>
+    </div>
+    <div class="opt-row">
+      <div class="opt-label">徽章刷新间隔<span class="opt-hint">每隔多少分钟重算徽章数量与颜色</span></div>
+      <div class="opt-control"><input type="number" id="badge-interval" min="1" max="1440"><span class="opt-unit">分钟</span></div>
+    </div>
+    <div class="opt-row">
+      <div class="opt-label">自动检测完成<span class="opt-hint">关闭后，所有条目都需手动勾选确认</span></div>
+      <div class="opt-control"><label class="switch"><input type="checkbox" id="auto-detect"><span class="track"></span></label></div>
+    </div>
+  </div>
+
+  <!-- 通知 -->
+  <div class="opt-section">
+    <div class="opt-section-title"><span class="icon-slot" data-icon="bell" data-icon-size="16"></span>截止提醒</div>
+    <div class="opt-row">
+      <div class="opt-label">启用桌面通知<span class="opt-hint">作业临近或过期时弹出系统通知</span></div>
+      <div class="opt-control"><label class="switch"><input type="checkbox" id="notify-enabled"><span class="track"></span></label></div>
+    </div>
+    <div class="opt-row" style="display:block;">
+      <div class="opt-label" style="margin-bottom:2px;">提前提醒阈值<span class="opt-hint">距截止还有这些小时数时各提醒一次</span></div>
+      <div class="lead-grid" id="lead-grid"></div>
+    </div>
+    <div class="opt-row">
+      <div class="opt-label">过期时提醒<span class="opt-hint">作业变为已过期时提醒一次</span></div>
+      <div class="opt-control"><label class="switch"><input type="checkbox" id="notify-overdue"><span class="track"></span></label></div>
+    </div>
+
+
+  </div>
+
+  <!-- 免打扰 -->
+  <div class="opt-section">
+    <div class="opt-section-title"><span class="icon-slot" data-icon="moon" data-icon-size="16"></span>免打扰时段</div>
+    <div class="opt-row">
+      <div class="opt-label">启用免打扰<span class="opt-hint">该时段内不弹出通知（徽章仍更新）</span></div>
+      <div class="opt-control"><label class="switch"><input type="checkbox" id="quiet-enabled"><span class="track"></span></label></div>
+    </div>
+    <div class="opt-row">
+      <div class="opt-label">时段</div>
+      <div class="opt-control">
+        <select id="quiet-start"></select><span class="opt-unit">至</span><select id="quiet-end"></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt-actions">
+    <button id="save-btn" class="btn btn-primary"><span class="icon-slot" data-icon="check" data-icon-size="15"></span>保存设置</button>
+    <span id="save-status"></span>
+  </div>
+
+  <script src="icons.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
