@@ -1,0 +1,16 @@
+{
+  "name": "mooc-reminder",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "中国大学MOOC homework reminder browser extension",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test \"tests/unit/*.test.mjs\"",
+    "validate": "npm run lint && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0"
+  }
+}
