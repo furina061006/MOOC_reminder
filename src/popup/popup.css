@@ -72,6 +72,12 @@ body {
   gap: 9px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .logo {
   display: inline-flex;
   align-items: center;

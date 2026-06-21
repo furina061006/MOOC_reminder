@@ -23,11 +23,60 @@ const KEYS = {
   USER_SETTINGS: 'user_settings'
 };
 
+// Inlined from src/shared/settings.js — keep in sync (shared copy is unit-tested).
 const DEFAULT_SETTINGS = {
   checkIntervalMinutes: 30,
   badgeRefreshMinutes: 5,
-  autoDetectEnabled: true
+  autoDetectEnabled: true,
+  notificationsEnabled: true,
+  notifyLeadHours: [48, 24],
+  notifyOverdue: true,
+  quietHoursEnabled: false,
+  quietStart: 22,
+  quietEnd: 8
 };
+
+function clampInt(value, min, max, fallback) {
+  const n = typeof value === 'string' ? parseInt(value, 10) : value;
+  if (typeof n !== 'number' || !isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+function normalizeSettings(stored) {
+  const s = (stored && typeof stored === 'object') ? stored : {};
+  let leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULT_SETTINGS.notifyLeadHours;
+  leads = leads.map(h => {
+    const n = typeof h === 'string' ? parseInt(h, 10) : h;
+    if (typeof n !== 'number' || !isFinite(n) || n < 1) return null;
+    return Math.min(720, Math.round(n));
+  }).filter(h => h != null).sort((a, b) => b - a);
+  if (leads.length === 0) leads = DEFAULT_SETTINGS.notifyLeadHours.slice();
+  return {
+    checkIntervalMinutes: clampInt(s.checkIntervalMinutes, 1, 1440, DEFAULT_SETTINGS.checkIntervalMinutes),
+    badgeRefreshMinutes: clampInt(s.badgeRefreshMinutes, 1, 1440, DEFAULT_SETTINGS.badgeRefreshMinutes),
+    autoDetectEnabled: s.autoDetectEnabled !== false,
+    notificationsEnabled: s.notificationsEnabled !== false,
+    notifyLeadHours: leads,
+    notifyOverdue: s.notifyOverdue !== false,
+    quietHoursEnabled: s.quietHoursEnabled === true,
+    quietStart: clampInt(s.quietStart, 0, 23, DEFAULT_SETTINGS.quietStart),
+    quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd)
+  };
+}
+
+function resolveAlarmPeriods(settings) {
+  const s = normalizeSettings(settings);
+  return { scrapeMinutes: s.checkIntervalMinutes, badgeMinutes: s.badgeRefreshMinutes };
+}
+
+function isWithinQuietHours(settings, date) {
+  const s = normalizeSettings(settings);
+  if (!s.quietHoursEnabled) return false;
+  const hour = date.getHours();
+  if (s.quietStart === s.quietEnd) return false;
+  if (s.quietStart < s.quietEnd) return hour >= s.quietStart && hour < s.quietEnd;
+  return hour >= s.quietStart || hour < s.quietEnd;
+}
 
 // ─── Lifecycle ──────────────────────────────────────────
 
@@ -35,13 +84,13 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('[MOOC Reminder] Extension installed/updated:', details.reason);
 
   await validateAndRepairStorage();
-  setupAlarms();
+  await setupAlarms();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[MOOC Reminder] Browser started, validating storage and setting up alarms');
   await validateAndRepairStorage();
-  setupAlarms();
+  await setupAlarms();
 });
 
 // ─── Storage Validation ─────────────────────────────────
@@ -78,7 +127,7 @@ async function validateAndRepairStorage() {
         [KEYS.LAST_SYNC]: null,
         [KEYS.SYNC_ERRORS]: [],
         [KEYS.SCRAPE_STATUS]: data[KEYS.SCRAPE_STATUS] || null,
-        [KEYS.USER_SETTINGS]: data[KEYS.USER_SETTINGS] || DEFAULT_SETTINGS
+        [KEYS.USER_SETTINGS]: normalizeSettings(data[KEYS.USER_SETTINGS])
       });
       console.log('[MOOC Reminder] Storage repaired — all data reset');
     } else {
@@ -89,7 +138,7 @@ async function validateAndRepairStorage() {
         [KEYS.LAST_SYNC]: (await chrome.storage.local.get(KEYS.LAST_SYNC))[KEYS.LAST_SYNC] || null,
         [KEYS.SYNC_ERRORS]: [],
         [KEYS.SCRAPE_STATUS]: data[KEYS.SCRAPE_STATUS] || null,
-        [KEYS.USER_SETTINGS]: data[KEYS.USER_SETTINGS] || DEFAULT_SETTINGS
+        [KEYS.USER_SETTINGS]: normalizeSettings(data[KEYS.USER_SETTINGS])
       });
     }
   } catch (e) {
@@ -102,7 +151,7 @@ async function validateAndRepairStorage() {
         [KEYS.LAST_SYNC]: null,
         [KEYS.SYNC_ERRORS]: [],
         [KEYS.SCRAPE_STATUS]: null,
-        [KEYS.USER_SETTINGS]: DEFAULT_SETTINGS
+        [KEYS.USER_SETTINGS]: normalizeSettings(DEFAULT_SETTINGS)
       });
     } catch {}
   }
@@ -110,21 +159,18 @@ async function validateAndRepairStorage() {
 
 // ─── Alarms ─────────────────────────────────────────────
 
-function setupAlarms() {
-  // Clear existing alarms to avoid duplicates
-  chrome.alarms.clear('periodic-scrape', () => {
-    chrome.alarms.create('periodic-scrape', {
-      periodInMinutes: 30
-    });
-  });
+async function setupAlarms() {
+  const { scrapeMinutes, badgeMinutes } = resolveAlarmPeriods(await getUserSettings());
 
-  chrome.alarms.clear('badge-refresh', () => {
-    chrome.alarms.create('badge-refresh', {
-      periodInMinutes: 5
-    });
-  });
+  // Recreate alarms with the user-configured cadence (no callback form so we
+  // can await; create() replaces an existing alarm of the same name).
+  await chrome.alarms.clear('periodic-scrape');
+  await chrome.alarms.create('periodic-scrape', { periodInMinutes: scrapeMinutes });
 
-  console.log('[MOOC Reminder] Alarms configured');
+  await chrome.alarms.clear('badge-refresh');
+  await chrome.alarms.create('badge-refresh', { periodInMinutes: badgeMinutes });
+
+  console.log(`[MOOC Reminder] Alarms configured: scrape=${scrapeMinutes}m badge=${badgeMinutes}m`);
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -240,7 +286,7 @@ const MESSAGE_HANDLERS = {
     const items = await getHomeworkItems();  // already sanitized by getHomeworkItems
     const courses = await getCourses();
     const lastSync = await getLastSync();
-    const settings = await getUserSettings();
+    const settings = normalizeSettings(await getUserSettings());
     const syncErrors = await getSyncErrors();
     const scrapeStatus = await getScrapeStatus();
     const apiStatus = await getApiStatus();
@@ -296,6 +342,21 @@ const MESSAGE_HANDLERS = {
     return { success: true };
   },
 
+  // Options page reads current settings
+  async GET_SETTINGS() {
+    return { success: true, settings: normalizeSettings(await getUserSettings()) };
+  },
+
+  // Options page saves settings → persist (normalized) and re-apply alarm cadence
+  async SETTINGS_UPDATED(msg) {
+    const saved = normalizeSettings(msg && msg.settings);
+    await chrome.storage.local.set({ [KEYS.USER_SETTINGS]: saved });
+    await setupAlarms();
+    await updateBadgeFromStorage();
+    console.log('[MOOC Reminder] Settings updated, alarms reconfigured');
+    return { success: true, settings: saved };
+  },
+
   // Refresh badge only
   async REFRESH_BADGE() {
     await updateBadgeFromStorage();
@@ -334,6 +395,7 @@ function findUniqueHomeworkCandidate(items, newItem) {
 
 async function reconcileHomeworkData(course, newItems) {
   const existingItems = await getHomeworkItems();
+  const autoDetect = normalizeSettings(await getUserSettings()).autoDetectEnabled;
   let added = 0;
   let updated = 0;
 
@@ -345,6 +407,14 @@ async function reconcileHomeworkData(course, newItems) {
     if (!newItem.uid) {
       console.warn('[MOOC Reminder] Skipping item without UID:', newItem.title);
       continue;
+    }
+
+    // If auto-detect is disabled, scraped/API auto-completion must not mark
+    // items as badge-done. Manual check-off is still preserved below.
+    if (!autoDetect && newItem.autoDetectedCompleted) {
+      newItem.checkedOff = false;
+      newItem.autoDetectedCompleted = false;
+      newItem.completionReason = null;
     }
 
     const existingIdx = existingItems.findIndex(i => i.uid === newItem.uid);
@@ -360,8 +430,8 @@ async function reconcileHomeworkData(course, newItems) {
         newItem.completionReason = 'manual';
       }
 
-      // Apply auto-detection (only if not manually overridden)
-      if (!newItem.checkedOff && newItem.autoDetectedCompleted) {
+      // Apply auto-detection (only if enabled and not manually overridden)
+      if (autoDetect && !newItem.checkedOff && newItem.autoDetectedCompleted) {
         newItem.checkedOff = true;
         newItem.completionReason = 'auto';
       }
@@ -400,14 +470,14 @@ async function reconcileHomeworkData(course, newItems) {
           existingItems[dupIdx].checkedOff = true;
           existingItems[dupIdx].manuallyCheckedOff = true;
           existingItems[dupIdx].completionReason = 'manual';
-        } else if (wasCheckedOff || newItem.autoDetectedCompleted) {
+        } else if (wasCheckedOff || (autoDetect && newItem.autoDetectedCompleted)) {
           existingItems[dupIdx].checkedOff = true;
-          existingItems[dupIdx].completionReason = newItem.autoDetectedCompleted ? 'auto' : oldCompletionReason;
+          existingItems[dupIdx].completionReason = (autoDetect && newItem.autoDetectedCompleted) ? 'auto' : oldCompletionReason;
         }
         updated++;
       } else {
         // --- Genuinely new item ---
-        if (newItem.autoDetectedCompleted) {
+        if (autoDetect && newItem.autoDetectedCompleted) {
           newItem.checkedOff = true;
           newItem.completionReason = 'auto';
         }
@@ -507,8 +577,9 @@ async function processScrapeResponse(response) {
 // ─── Periodic Scraping ──────────────────────────────────
 
 
-function getNotificationLevel(item, now) {
-  if (!item || !item.deadline) return null;
+function getNotificationLevel(item, now, settings) {
+  const s = normalizeSettings(settings);
+  if (!s.notificationsEnabled || !item || !item.deadline) return null;
   let deadline;
   try {
     deadline = new Date(item.deadline);
@@ -517,10 +588,13 @@ function getNotificationLevel(item, now) {
   }
   if (isNaN(deadline.getTime())) return null;
 
-  const diff = deadline - now;
-  if (diff < 0) return 'overdue';
-  if (diff <= 24 * 60 * 60 * 1000) return 'due_24h';
-  if (diff <= 48 * 60 * 60 * 1000) return 'due_48h';
+  const diff = deadline.getTime() - now.getTime();
+  if (diff < 0) return s.notifyOverdue ? 'overdue' : null;
+
+  const ascending = s.notifyLeadHours.slice().sort((a, b) => a - b);
+  for (const lead of ascending) {
+    if (diff <= lead * 60 * 60 * 1000) return 'due_' + lead + 'h';
+  }
   return null;
 }
 
@@ -542,11 +616,18 @@ function formatNotificationDeadline(deadline) {
 async function maybeNotifyDeadlines(allItems, unfinishedItems) {
   if (!chrome.notifications || !Array.isArray(allItems) || !Array.isArray(unfinishedItems)) return;
 
+  const settings = normalizeSettings(await getUserSettings());
+  if (!settings.notificationsEnabled) return;
+
   const now = new Date();
+  // During quiet hours, hold off — the next badge-refresh tick outside the
+  // window will deliver any still-pending reminders.
+  if (isWithinQuietHours(settings, now)) return;
+
   let changed = false;
 
   for (const item of unfinishedItems) {
-    const level = getNotificationLevel(item, now);
+    const level = getNotificationLevel(item, now, settings);
     if (!level || item.lastNotificationLevel === level) continue;
 
     const notificationId = `mooc-reminder:${encodeURIComponent(item.uid || '')}:${level}`;
@@ -751,7 +832,7 @@ async function getLastSync() {
 
 async function getUserSettings() {
   const result = await chrome.storage.local.get(KEYS.USER_SETTINGS);
-  return result[KEYS.USER_SETTINGS] || DEFAULT_SETTINGS;
+  return normalizeSettings(result[KEYS.USER_SETTINGS]);
 }
 
 async function getSyncErrors() {
