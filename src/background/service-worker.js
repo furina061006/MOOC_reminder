@@ -33,9 +33,9 @@ const DEFAULT_SETTINGS = {
   notifyOverdue: true,
   quietHoursEnabled: false,
   quietStart: 22,
-  quietEnd: 8,
-  dailyDigestEnabled: false,
-  dailyDigestHour: 8
+
+  quietEnd: 8
+
 };
 
 function clampInt(value, min, max, fallback) {
@@ -62,9 +62,9 @@ function normalizeSettings(stored) {
     notifyOverdue: s.notifyOverdue !== false,
     quietHoursEnabled: s.quietHoursEnabled === true,
     quietStart: clampInt(s.quietStart, 0, 23, DEFAULT_SETTINGS.quietStart),
-    quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd),
-    dailyDigestEnabled: s.dailyDigestEnabled === true,
-    dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour)
+
+    quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd)
+
   };
 }
 
@@ -174,16 +174,9 @@ async function setupAlarms() {
   await chrome.alarms.clear('badge-refresh');
   await chrome.alarms.create('badge-refresh', { periodInMinutes: badgeMinutes });
 
-  await chrome.alarms.clear('daily-digest');
-  const digestSettings = normalizeSettings(await getUserSettings());
-  if (digestSettings.dailyDigestEnabled) {
-    await chrome.alarms.create('daily-digest', {
-      when: nextDailyDigestWhen(digestSettings.dailyDigestHour),
-      periodInMinutes: 24 * 60
-    });
-  }
 
-  console.log(`[MOOC Reminder] Alarms configured: scrape=${scrapeMinutes}m badge=${badgeMinutes}m digest=${digestSettings.dailyDigestEnabled ? digestSettings.dailyDigestHour + ':00' : 'off'}`);
+  console.log(`[MOOC Reminder] Alarms configured: scrape=${scrapeMinutes}m badge=${badgeMinutes}m`);
+
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -592,64 +585,6 @@ async function processScrapeResponse(response) {
 
 // ─── Periodic Scraping ──────────────────────────────────
 
-
-function nextDailyDigestWhen(hour) {
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(clampInt(hour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour), 0, 0, 0);
-  if (next.getTime() <= now.getTime()) {
-    next.setDate(next.getDate() + 1);
-  }
-  return next.getTime();
-}
-
-function getDigestItems(items, now, horizonHours) {
-  const ts = now.getTime();
-  const horizon = ts + (horizonHours || 48) * 60 * 60 * 1000;
-  return (Array.isArray(items) ? items : [])
-    .filter(item => {
-      if (!item || item.checkedOff || !item.deadline) return false;
-      const due = new Date(item.deadline).getTime();
-      return !isNaN(due) && due <= horizon;
-    })
-    .sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
-}
-
-function formatDigestMessage(items, now) {
-  const digestItems = getDigestItems(items, now, 48);
-  if (digestItems.length === 0) return null;
-  const shown = digestItems.slice(0, 3).map(item => {
-    const due = new Date(item.deadline);
-    const overdue = due < now;
-    const pad = function(n) { return String(n).padStart(2, '0'); };
-    const day = pad(due.getMonth() + 1) + '/' + pad(due.getDate()) + ' ' + pad(due.getHours()) + ':' + pad(due.getMinutes());
-    return (item.courseName || 'MOOC') + ' · ' + (item.title || '未命名作业') + (overdue ? '（已过期）' : '（' + day + '）');
-  });
-  const more = digestItems.length > shown.length ? `，另有 ${digestItems.length - shown.length} 项` : '';
-  return shown.join('；') + more;
-}
-
-async function sendDailyDigestNotification() {
-  if (!chrome.notifications) return;
-  const settings = normalizeSettings(await getUserSettings());
-  if (!settings.dailyDigestEnabled || !settings.notificationsEnabled) return;
-  const now = new Date();
-  if (isWithinQuietHours(settings, now)) return;
-  const items = await getHomeworkItems();
-  const message = formatDigestMessage(items, now);
-  if (!message) return;
-  try {
-    await chrome.notifications.create('mooc-reminder:daily-digest', {
-      type: 'basic',
-      iconUrl: 'src/assets/icons/icon128.png',
-      title: '今日 MOOC 作业汇总',
-      message,
-      priority: 1
-    });
-  } catch (e) {
-    console.warn('[MOOC Reminder] Daily digest notification failed:', e.message);
-  }
-}
 
 function getNotificationLevel(item, now, settings) {
   const s = normalizeSettings(settings);

@@ -18,9 +18,9 @@ export const DEFAULT_SETTINGS = {
   notifyOverdue: true,         // fire once when an item becomes overdue
   quietHoursEnabled: false,    // suppress notifications during quiet hours
   quietStart: 22,              // 22:00 (inclusive)
-  quietEnd: 8,                 // 08:00 (exclusive)
-  dailyDigestEnabled: false,   // one summary notification per day
-  dailyDigestHour: 8           // local hour for daily digest
+
+  quietEnd: 8                  // 08:00 (exclusive)
+
 };
 
 function clampInt(value, min, max, fallback) {
@@ -51,9 +51,9 @@ export function normalizeSettings(stored) {
     notifyOverdue: s.notifyOverdue !== false,
     quietHoursEnabled: s.quietHoursEnabled === true,
     quietStart: clampInt(s.quietStart, 0, 23, DEFAULT_SETTINGS.quietStart),
-    quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd),
-    dailyDigestEnabled: s.dailyDigestEnabled === true,
-    dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour)
+
+    quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd)
+
   };
 }
 
