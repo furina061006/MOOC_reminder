@@ -30,7 +30,9 @@ test('normalizeSettings preserves default booleans when missing', () => {
   assert.equal(s.notificationsEnabled, true);
   assert.equal(s.notifyOverdue, true);
   assert.equal(s.quietHoursEnabled, false);
-
+  assert.equal(s.dailyDigestEnabled, false);
+  assert.equal(s.dailyDigestHour, 8);
+  assert.deepEqual(s.mutedCourseIds, []);
 });
 
 test('resolveAlarmPeriods derives alarm cadence from settings', () => {

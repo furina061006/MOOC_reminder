@@ -7,6 +7,8 @@
  */
 
 const LEAD_CHOICES = [72, 48, 24, 12, 6, 2]; // hours
+let currentSettings = null;
+
 const DEFAULTS = {
   checkIntervalMinutes: 30,
   badgeRefreshMinutes: 5,
@@ -16,9 +18,10 @@ const DEFAULTS = {
   notifyOverdue: true,
   quietHoursEnabled: false,
   quietStart: 22,
-
-  quietEnd: 8
-
+  quietEnd: 8,
+  dailyDigestEnabled: false,
+  dailyDigestHour: 8,
+  mutedCourseIds: []
 };
 
 function $(id) { return document.getElementById(id); }
@@ -54,7 +57,8 @@ function buildHourSelect(sel) {
 }
 
 function populate(settings) {
-  const s = Object.assign({}, DEFAULTS, settings || {});
+  currentSettings = Object.assign({}, DEFAULTS, settings || {});
+  const s = currentSettings;
   $('check-interval').value = s.checkIntervalMinutes;
   $('badge-interval').value = s.badgeRefreshMinutes;
   $('auto-detect').checked = s.autoDetectEnabled !== false;
@@ -63,7 +67,8 @@ function populate(settings) {
   $('quiet-enabled').checked = s.quietHoursEnabled === true;
   $('quiet-start').value = String(s.quietStart);
   $('quiet-end').value = String(s.quietEnd);
-
+  $('digest-enabled').checked = s.dailyDigestEnabled === true;
+  $('digest-hour').value = String(s.dailyDigestHour);
   const leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULTS.notifyLeadHours;
   for (const h of LEAD_CHOICES) {
     const cb = $('lead-' + h);
@@ -86,9 +91,10 @@ function collect() {
     notifyOverdue: $('notify-overdue').checked,
     quietHoursEnabled: $('quiet-enabled').checked,
     quietStart: parseInt($('quiet-start').value, 10),
-
-    quietEnd: parseInt($('quiet-end').value, 10)
-
+    quietEnd: parseInt($('quiet-end').value, 10),
+    dailyDigestEnabled: $('digest-enabled').checked,
+    dailyDigestHour: parseInt($('digest-hour').value, 10),
+    mutedCourseIds: currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : []
   };
 }
 
@@ -138,7 +144,7 @@ async function init() {
   buildLeadChips();
   buildHourSelect($('quiet-start'));
   buildHourSelect($('quiet-end'));
-
+  buildHourSelect($('digest-hour'));
   if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS();
   const settings = await loadSettings();
   populate(settings);

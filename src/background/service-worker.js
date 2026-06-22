@@ -20,7 +20,8 @@ const KEYS = {
   SYNC_ERRORS: 'sync_errors',
   SCRAPE_STATUS: 'scrape_status',
   API_STATUS: 'api_status',
-  USER_SETTINGS: 'user_settings'
+  USER_SETTINGS: 'user_settings',
+  POPUP_UI_STATE: 'popup_ui_state'
 };
 
 // Inlined from src/shared/settings.js — keep in sync (shared copy is unit-tested).
@@ -33,9 +34,10 @@ const DEFAULT_SETTINGS = {
   notifyOverdue: true,
   quietHoursEnabled: false,
   quietStart: 22,
-
-  quietEnd: 8
-
+  quietEnd: 8,
+  dailyDigestEnabled: false,
+  dailyDigestHour: 8,
+  mutedCourseIds: []
 };
 
 function clampInt(value, min, max, fallback) {
@@ -62,9 +64,10 @@ function normalizeSettings(stored) {
     notifyOverdue: s.notifyOverdue !== false,
     quietHoursEnabled: s.quietHoursEnabled === true,
     quietStart: clampInt(s.quietStart, 0, 23, DEFAULT_SETTINGS.quietStart),
-
-    quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd)
-
+    quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd),
+    dailyDigestEnabled: s.dailyDigestEnabled === true,
+    dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour),
+    mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : []
   };
 }
 
@@ -174,9 +177,16 @@ async function setupAlarms() {
   await chrome.alarms.clear('badge-refresh');
   await chrome.alarms.create('badge-refresh', { periodInMinutes: badgeMinutes });
 
+  await chrome.alarms.clear('daily-digest');
+  const digestSettings = normalizeSettings(await getUserSettings());
+  if (digestSettings.dailyDigestEnabled) {
+    await chrome.alarms.create('daily-digest', {
+      when: nextDailyDigestWhen(digestSettings.dailyDigestHour),
+      periodInMinutes: 24 * 60
+    });
+  }
 
-  console.log(`[MOOC Reminder] Alarms configured: scrape=${scrapeMinutes}m badge=${badgeMinutes}m`);
-
+  console.log(`[MOOC Reminder] Alarms configured: scrape=${scrapeMinutes}m badge=${badgeMinutes}m digest=${digestSettings.dailyDigestEnabled ? digestSettings.dailyDigestHour + ':00' : 'off'}`);
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -219,6 +229,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   return false;
 });
+
+function makeManualHomeworkUid(title, deadline, courseName) {
+  const text = [title || '', deadline || '', courseName || ''].join('|');
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+  return 'manual_tidmanual_ch_le_hw' + (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function isCourseMuted(item, settings) {
+  const muted = settings && Array.isArray(settings.mutedCourseIds) ? settings.mutedCourseIds : [];
+  return !!(item && muted.indexOf(item.courseId) >= 0);
+}
+
+function isSnoozed(item, now) {
+  if (!item || !item.snoozedUntil) return false;
+  const t = new Date(item.snoozedUntil).getTime();
+  return !isNaN(t) && t > now.getTime();
+}
 
 const MESSAGE_HANDLERS = {
   // Content script sends scraped data
@@ -315,6 +343,89 @@ const MESSAGE_HANDLERS = {
   // Popup requests immediate scrape
   async TRIGGER_SCRAPE() {
     return await triggerManualScrape();
+  },
+
+  // Popup adds a manually-created reminder (for missed scraper items or offline homework)
+  async ADD_MANUAL_ITEM(msg) {
+    const title = String(msg.title || '').trim();
+    const deadline = msg.deadline ? new Date(msg.deadline) : null;
+    if (!title || !deadline || isNaN(deadline.getTime())) {
+      return { success: false, error: '标题和截止时间必填' };
+    }
+    const courseName = String(msg.courseName || '手动提醒').trim() || '手动提醒';
+    const courseId = String(msg.courseId || 'manual').trim() || 'manual';
+    const now = new Date().toISOString();
+    const item = {
+      uid: makeManualHomeworkUid(title, deadline.toISOString(), courseName),
+      identityKey: ['manual', courseId, title, deadline.toISOString()].join('|'),
+      courseId,
+      termId: 'manual',
+      chapterId: '',
+      lessonId: '',
+      homeworkId: makeManualHomeworkUid(title, deadline.toISOString(), courseName).replace(/^manual_tidmanual_ch_le_hw/, ''),
+      title,
+      type: msg.type || 'homework',
+      courseName,
+      schoolName: String(msg.schoolName || '').trim(),
+      status: 'unfinished',
+      checkedOff: false,
+      manuallyCheckedOff: false,
+      autoDetectedCompleted: false,
+      completionReason: null,
+      deadline: deadline.toISOString(),
+      deadlineRaw: '(手动添加)',
+      firstSeen: now,
+      lastUpdated: now,
+      pageUrl: String(msg.pageUrl || '').trim(),
+      source: 'manual'
+    };
+    const items = await getHomeworkItems();
+    items.push(item);
+    await setHomeworkItems(items);
+    await upsertCourse({ courseId, termId: 'manual', courseName, schoolName: item.schoolName, courseType: 'manual' });
+    await updateBadgeFromStorage();
+    return { success: true, item };
+  },
+
+  // Popup snoozes notification for one item (badge count is unchanged)
+  async SNOOZE_ITEM(msg) {
+    if (!msg.homeworkUid) return { success: false, error: 'Invalid payload' };
+    const hours = clampInt(msg.hours, 1, 168, 24);
+    const until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+    const items = await getHomeworkItems();
+    const item = items.find(i => i && i.uid === msg.homeworkUid);
+    if (!item) return { success: false, error: 'Item not found' };
+    item.snoozedUntil = until;
+    item.lastUpdated = new Date().toISOString();
+    await setHomeworkItems(items);
+    return { success: true, snoozedUntil: until };
+  },
+
+  // Popup mutes/unmutes a course for notifications/digests
+  async TOGGLE_COURSE_MUTE(msg) {
+    const courseId = String(msg.courseId || '').trim();
+    if (!courseId) return { success: false, error: 'Invalid payload' };
+    const settings = normalizeSettings(await getUserSettings());
+    const muted = new Set(settings.mutedCourseIds || []);
+    if (msg.muted === false) muted.delete(courseId);
+    else if (msg.muted === true) muted.add(courseId);
+    else if (muted.has(courseId)) muted.delete(courseId); else muted.add(courseId);
+    settings.mutedCourseIds = Array.from(muted);
+    await chrome.storage.local.set({ [KEYS.USER_SETTINGS]: settings });
+    return { success: true, muted: settings.mutedCourseIds.indexOf(courseId) >= 0, settings };
+  },
+
+  // Popup UI state persistence (filter + collapsed courses)
+  async GET_POPUP_STATE() {
+    const raw = await chrome.storage.local.get(KEYS.POPUP_UI_STATE);
+    return { success: true, uiState: raw[KEYS.POPUP_UI_STATE] || {} };
+  },
+
+  async SET_POPUP_STATE(msg) {
+    const current = (await chrome.storage.local.get(KEYS.POPUP_UI_STATE))[KEYS.POPUP_UI_STATE] || {};
+    const uiState = { ...current, ...(msg.uiState || {}) };
+    await chrome.storage.local.set({ [KEYS.POPUP_UI_STATE]: uiState });
+    return { success: true, uiState };
   },
 
   // Popup clears completed items
@@ -586,6 +697,64 @@ async function processScrapeResponse(response) {
 // ─── Periodic Scraping ──────────────────────────────────
 
 
+function nextDailyDigestWhen(hour) {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(clampInt(hour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour), 0, 0, 0);
+  if (next.getTime() <= now.getTime()) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next.getTime();
+}
+
+function getDigestItems(items, now, horizonHours) {
+  const ts = now.getTime();
+  const horizon = ts + (horizonHours || 48) * 60 * 60 * 1000;
+  return (Array.isArray(items) ? items : [])
+    .filter(item => {
+      if (!item || item.checkedOff || !item.deadline) return false;
+      const due = new Date(item.deadline).getTime();
+      return !isNaN(due) && due <= horizon;
+    })
+    .sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+}
+
+function formatDigestMessage(items, now) {
+  const digestItems = getDigestItems(items, now, 48);
+  if (digestItems.length === 0) return null;
+  const shown = digestItems.slice(0, 3).map(item => {
+    const due = new Date(item.deadline);
+    const overdue = due < now;
+    const pad = function(n) { return String(n).padStart(2, '0'); };
+    const day = pad(due.getMonth() + 1) + '/' + pad(due.getDate()) + ' ' + pad(due.getHours()) + ':' + pad(due.getMinutes());
+    return (item.courseName || 'MOOC') + ' · ' + (item.title || '未命名作业') + (overdue ? '（已过期）' : '（' + day + '）');
+  });
+  const more = digestItems.length > shown.length ? `，另有 ${digestItems.length - shown.length} 项` : '';
+  return shown.join('；') + more;
+}
+
+async function sendDailyDigestNotification() {
+  if (!chrome.notifications) return;
+  const settings = normalizeSettings(await getUserSettings());
+  if (!settings.dailyDigestEnabled || !settings.notificationsEnabled) return;
+  const now = new Date();
+  if (isWithinQuietHours(settings, now)) return;
+  const items = (await getHomeworkItems()).filter(item => !isCourseMuted(item, settings) && !isSnoozed(item, now));
+  const message = formatDigestMessage(items, now);
+  if (!message) return;
+  try {
+    await chrome.notifications.create('mooc-reminder:daily-digest', {
+      type: 'basic',
+      iconUrl: 'src/assets/icons/icon128.png',
+      title: '今日 MOOC 作业汇总',
+      message,
+      priority: 1
+    });
+  } catch (e) {
+    console.warn('[MOOC Reminder] Daily digest notification failed:', e.message);
+  }
+}
+
 function getNotificationLevel(item, now, settings) {
   const s = normalizeSettings(settings);
   if (!s.notificationsEnabled || !item || !item.deadline) return null;
@@ -636,6 +805,7 @@ async function maybeNotifyDeadlines(allItems, unfinishedItems) {
   let changed = false;
 
   for (const item of unfinishedItems) {
+    if (isCourseMuted(item, settings) || isSnoozed(item, now)) continue;
     const level = getNotificationLevel(item, now, settings);
     if (!level || item.lastNotificationLevel === level) continue;
 
@@ -899,7 +1069,8 @@ async function setApiStatus(status) {
 
 const ICOURSE_ORIGIN = 'https://www.icourse163.org';
 const CSRF_COOKIE_NAME = 'NTESSTUDYSI';
-const API_TERM_DTO = 'web/j/courseBean.getMocTermDto.rpc';
+const API_TERM_DTO_RPC = 'web/j/courseBean.getMocTermDto.rpc';
+const API_TERM_DTO_DWR = 'dwr/call/plaincall/CourseBean.getMocTermDto.dwr';
 
 const API_DEADLINE_FIELDS = ['deadline', 'endTime', 'submitEndTime', 'evaluationEndTime', 'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'];
 const API_SCORE_FIELDS = ['mark', 'score', 'studentScore', 'finalMark'];
@@ -1005,27 +1176,97 @@ async function getCsrfKey() {
   }
 }
 
-async function apiFetchTermDto(csrfKey, termId) {
-  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO}?csrfKey=${encodeURIComponent(csrfKey)}`;
+function makeApiError(label, message, details) {
+  const e = new Error(label + ': ' + message);
+  e.details = details || {};
+  return e;
+}
+
+function responseSnippet(text) {
+  return String(text || '').replace(/\s+/g, ' ').slice(0, 180);
+}
+
+async function apiFetchRpcTermDto(csrfKey, termId) {
+  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO_RPC}?csrfKey=${encodeURIComponent(csrfKey)}`;
+  const body = `termId=${encodeURIComponent(termId)}&gatewayType=3`;
   const resp = await fetch(url, {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-    body: `termId=${encodeURIComponent(termId)}&gatewayType=3`
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      'Origin': ICOURSE_ORIGIN
+    },
+    body
   });
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  return await resp.text();
+  const text = await resp.text();
+  if (!resp.ok) {
+    throw makeApiError('rpc', 'HTTP ' + resp.status, { endpoint: API_TERM_DTO_RPC, status: resp.status, body: responseSnippet(text) });
+  }
+  if (/非法跨域|csrf|forbidden|error/i.test(text)) {
+    throw makeApiError('rpc', 'server rejected request', { endpoint: API_TERM_DTO_RPC, body: responseSnippet(text) });
+  }
+  return { text, endpoint: API_TERM_DTO_RPC };
+}
+
+async function apiFetchDwrTermDto(termId) {
+  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO_DWR}`;
+  // DWR format used by public icourse163 downloaders. batchId/scriptSessionId
+  // values are tolerated by many DWR deployments when empty; this is a fallback
+  // only, so failures are diagnostic rather than fatal to DOM scraping.
+  const body = [
+    'callCount=1',
+    'scriptSessionId=',
+    'httpSessionId=',
+    'c0-scriptName=CourseBean',
+    'c0-methodName=getMocTermDto',
+    'c0-id=0',
+    'c0-param0=number:' + encodeURIComponent(termId),
+    'c0-param1=boolean:true',
+    'batchId=0'
+  ].join('&');
+  const resp = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'text/plain;charset=UTF-8',
+      'Origin': ICOURSE_ORIGIN
+    },
+    body
+  });
+  const text = await resp.text();
+  if (!resp.ok) {
+    throw makeApiError('dwr', 'HTTP ' + resp.status, { endpoint: API_TERM_DTO_DWR, status: resp.status, body: responseSnippet(text) });
+  }
+  if (/exception|forbidden|csrf|非法跨域/i.test(text)) {
+    throw makeApiError('dwr', 'server rejected request', { endpoint: API_TERM_DTO_DWR, body: responseSnippet(text) });
+  }
+  return { text, endpoint: API_TERM_DTO_DWR };
+}
+
+async function apiFetchTermDto(csrfKey, termId) {
+  const errors = [];
+  try {
+    return await apiFetchRpcTermDto(csrfKey, termId);
+  } catch (e) {
+    errors.push(e.details || { message: e.message });
+  }
+  try {
+    return await apiFetchDwrTermDto(termId);
+  } catch (e) {
+    errors.push(e.details || { message: e.message });
+  }
+  throw makeApiError('termDto', 'all endpoints failed', { termId, errors });
 }
 
 async function apiRefreshCourse(course, csrfKey) {
-  if (!course || !course.termId) return 0;
-  const text = await apiFetchTermDto(csrfKey, course.termId);
-  const items = apiExtractHomework(text, course);
+  if (!course || !course.termId) return { changed: 0, itemCount: 0, endpoint: null };
+  const fetched = await apiFetchTermDto(csrfKey, course.termId);
+  const items = apiExtractHomework(fetched.text, course);
   if (items.length > 0) {
     const result = await reconcileHomeworkData(course, items);
-    return result.added + result.updated;
+    return { changed: result.added + result.updated, itemCount: items.length, endpoint: fetched.endpoint };
   }
-  return 0;
+  return { changed: 0, itemCount: 0, endpoint: fetched.endpoint };
 }
 
 let apiRefreshInFlight = false;
@@ -1044,23 +1285,46 @@ async function apiRefreshAllKnownCourses() {
       await setApiStatus({ status: 'api_idle', message: '暂无已知课程，访问 icourse163 主页即可自动发现' });
       return { ok: true, changed: 0, courses: 0, okCount: 0 };
     }
-    let changed = 0, okCount = 0, failed = 0;
+    let changed = 0, okCount = 0, failed = 0, itemCount = 0;
+    const failureDetails = [];
+    const endpoints = {};
     for (const course of courses) {
       try {
-        changed += await apiRefreshCourse(course, csrfKey);
+        const refreshed = await apiRefreshCourse(course, csrfKey);
+        changed += refreshed.changed || 0;
+        itemCount += refreshed.itemCount || 0;
+        if (refreshed.endpoint) endpoints[refreshed.endpoint] = (endpoints[refreshed.endpoint] || 0) + 1;
         okCount++;
       } catch (e) {
         failed++;
-        console.debug('[MOOC Reminder] API refresh failed for', course.courseId, e.message);
+        const detail = {
+          courseId: course && course.courseId,
+          termId: course && course.termId,
+          message: e.message,
+          details: e.details || null
+        };
+        failureDetails.push(detail);
+        console.debug('[MOOC Reminder] API refresh failed for', course.courseId, e.message, e.details || '');
       }
     }
     if (okCount > 0) {
       await updateBadgeFromStorage();
       await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
-      await setApiStatus({ status: 'api_ok', message: `后台已刷新 ${okCount}/${courses.length} 门课程`, itemCount: changed });
+      await setApiStatus({
+        status: 'api_ok',
+        message: `后台接口连通 ${okCount}/${courses.length} 门课程，识别到 ${itemCount} 个条目`,
+        itemCount,
+        changedCount: changed,
+        endpoints
+      });
     } else {
-      await setApiStatus({ status: 'api_unavailable', message: '后台接口暂不可用，已回退到打开页面时抓取' });
-      await addSyncError(`API refresh: all ${failed} course(s) failed`);
+      const first = failureDetails[0];
+      await setApiStatus({
+        status: 'api_unavailable',
+        message: first ? ('后台接口暂不可用：' + first.message) : '后台接口暂不可用，已回退到打开页面时抓取',
+        failures: failureDetails.slice(0, 3)
+      });
+      await addSyncError('API refresh failed: ' + JSON.stringify(failureDetails.slice(0, 2)));
     }
     return { ok: okCount > 0, changed, courses: courses.length, okCount, failed };
   } catch (e) {
