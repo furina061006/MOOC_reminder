@@ -5,8 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MOOC Reminder</title>
   <link rel="stylesheet" href="popup.css">
+  <style>
+    /* 加载状态：init 完成后隐藏 */
+    #loading-placeholder {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 60px 20px; text-align: center; color: var(--text-faint, #999);
+    }
+    #loading-placeholder .spinner {
+      width: 28px; height: 28px; border: 3px solid var(--border, #e0e0e0);
+      border-top-color: var(--accent, #007BFF); border-radius: 50%;
+      animation: popup-spin 0.8s linear infinite; margin-bottom: 12px;
+    }
+    @keyframes popup-spin { to { transform: rotate(360deg); } }
+    body.loaded #loading-placeholder { display: none; }
+  </style>
 </head>
 <body>
+  <!-- 加载占位 -->
+  <div id="loading-placeholder">
+    <div class="spinner"></div>
+    <p style="font-size:13px;font-weight:500;">加载中...</p>
+  </div>
+
   <!-- Header -->
   <header class="header">
     <div class="header-left">

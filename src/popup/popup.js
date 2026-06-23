@@ -145,6 +145,7 @@ async function init() {
   }
   console.log('[Popup] init done, items:', state.items.length, 'courses:', state.courses.length);
   window.__popup_ok = true;
+  try { document.body.classList.add('loaded'); } catch {}
 }
 
 // ─── Storage Self-Repair ────────────────────────────────
@@ -321,25 +322,28 @@ async function loadData() {
 
 function applyFilter() {
   const safe = Array.isArray(state.allItems) ? state.allItems.filter(Boolean) : [];
+  var _now = Date.now();
 
-  // Helper: 已过期的测验/考试不应出现在正常列表中（已无法提交）
-  // 已过期的作业如果已标记完成也从界面彻底隐藏（清理过期记录）
+  // Helper: 是否应隐藏（一次缓存 new Date()）
   function isExpiredButShouldHide(item) {
     if (!item || !item.deadline) return false;
     try {
-      const expired = new Date(item.deadline) < new Date();
-      if (!expired) return false;
-      // 测验/考试截止后无法再提交 → 从未完成列表中隐藏
+      var dl = new Date(item.deadline).getTime();
+      if (dl >= _now) return false;
       if (item.type === 'quiz' || item.type === 'exam') return true;
-      // 作业过期后已手动标记完成 → 从所有正常视图中隐藏（只出现在"全部"）
       if (item.type === 'homework' && item.checkedOff) return true;
       return false;
     } catch { return false; }
   }
 
+  function _isOverdue(item) {
+    if (!item || !item.deadline) return false;
+    try { return new Date(item.deadline).getTime() < _now; } catch { return false; }
+  }
+
   switch (state.filter) {
     case 'overdue':
-      state.items = safe.filter(i => i && !i.checkedOff && isOverdue(i));
+      state.items = safe.filter(i => i && !i.checkedOff && _isOverdue(i));
       break;
     case 'completed':
       // 已完成视图中排除过期后被清理的作业
