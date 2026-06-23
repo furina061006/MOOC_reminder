@@ -302,21 +302,37 @@ async function loadData() {
 function applyFilter() {
   const safe = Array.isArray(state.allItems) ? state.allItems.filter(Boolean) : [];
 
+  // Helper: 已过期的测验/考试不应出现在正常列表中（已无法提交）
+  // 已过期的作业如果已标记完成也从界面彻底隐藏（清理过期记录）
+  function isExpiredButShouldHide(item) {
+    if (!item || !item.deadline) return false;
+    try {
+      const expired = new Date(item.deadline) < new Date();
+      if (!expired) return false;
+      // 测验/考试截止后无法再提交 → 从未完成列表中隐藏
+      if (item.type === 'quiz' || item.type === 'exam') return true;
+      // 作业过期后已手动标记完成 → 从所有正常视图中隐藏（只出现在"全部"）
+      if (item.type === 'homework' && item.checkedOff) return true;
+      return false;
+    } catch { return false; }
+  }
+
   switch (state.filter) {
     case 'overdue':
       state.items = safe.filter(i => i && !i.checkedOff && isOverdue(i));
       break;
     case 'completed':
-      state.items = safe.filter(i => i && i.checkedOff);
+      // 已完成视图中排除过期后被清理的作业
+      state.items = safe.filter(i => i && i.checkedOff && !isExpiredButShouldHide(i));
       break;
     case 'all':
       state.items = safe;
       break;
-    default:  // 'unfinished' — includes overdue, so the list matches the badge/footer count
-      state.items = safe.filter(i => i && !i.checkedOff);
+    default:  // 'unfinished'
+      // 未完成视图中排除过期测验/考试
+      state.items = safe.filter(i => i && !i.checkedOff && !isExpiredButShouldHide(i));
       break;
   }
-
 }
 
 
@@ -379,16 +395,40 @@ function renderDiagnostics() {
     return;
   }
 
+  // 自动清除模式：直接清空错误并隐藏
+  if (state.settings && state.settings.autoDismissErrors) {
+    chrome.runtime.sendMessage({ type: 'CLEAR_ERRORS' }).catch(function(){});
+    dom.diagnostics.style.display = 'none';
+    dom.diagnostics.innerHTML = '';
+    return;
+  }
+
   const latest = errors[errors.length - 1];
   const errorText = latest && (latest.error || latest.message) ? String(latest.error || latest.message) : '未知错误';
   const timeText = latest && latest.time ? formatDeadline(latest.time) : '';
   dom.diagnostics.style.display = 'block';
   dom.diagnostics.innerHTML =
-    '<details>' +
-      '<summary>最近抓取错误（' + errors.length + '）</summary>' +
-      '<div class="diagnostics-body">' + escapeHtml(timeText ? timeText + ' · ' + errorText : errorText) + '</div>' +
-    '</details>';
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+      '<details style="flex:1;">' +
+        '<summary>最近抓取错误（' + errors.length + '）</summary>' +
+        '<div class="diagnostics-body">' + escapeHtml(timeText ? timeText + ' · ' + errorText : errorText) + '</div>' +
+      '</details>' +
+      '<button id="dismiss-errors-btn" style="background:none;border:none;cursor:pointer;color:#999;padding:2px 6px;font-size:18px;line-height:1;border-radius:4px;" title="关闭" aria-label="关闭">×</button>' +
+    '</div>';
+
+  try {
+    var dismissBtn = document.getElementById('dismiss-errors-btn');
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', function() {
+        dom.diagnostics.style.display = 'none';
+        dom.diagnostics.innerHTML = '';
+      });
+      dismissBtn.addEventListener('mouseenter', function() { this.style.background = '#eee'; });
+      dismissBtn.addEventListener('mouseleave', function() { this.style.background = 'none'; });
+    }
+  } catch(e) { console.error('[Popup] dismiss-btn handler:', e.message); }
 }
+
 
 function render() {
   console.log('[Popup] render start');
@@ -512,6 +552,11 @@ function createCourseGroup(course, items) {
   // Header
   const header = document.createElement('div');
   header.className = 'course-group-header';
+  // 根据设置决定是否显示静音按钮
+  var showMute = state.settings.showCourseMute !== false;
+  var muteBtnHtml = showMute
+    ? '<button class="item-action-btn course-mute-btn" title="' + (isMuted ? '取消静音' : '静音课程') + '" aria-label="静音课程">' + wIcon(isMuted ? 'bell' : 'bell-off', 13) + '</button>'
+    : '';
   header.innerHTML =
     '<div class="course-group-title">' +
       '<span class="course-group-arrow">' + wIcon('chevron-down', 14) + '</span>' +
@@ -520,7 +565,7 @@ function createCourseGroup(course, items) {
       (isMuted ? '<span class="course-muted-badge" title="课程通知已静音">' + wIcon('bell-off', 13) + '</span>' : '') +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:6px;">' +
-      '<button class="item-action-btn course-mute-btn" title="' + (isMuted ? '取消静音' : '静音课程') + '" aria-label="静音课程">' + wIcon(isMuted ? 'bell' : 'bell-off', 13) + '</button>' +
+      muteBtnHtml +
       '<span class="course-group-count">' + (Array.isArray(items) ? items.length : 0) + ' 项</span>' +
     '</div>';
 
@@ -612,8 +657,7 @@ function createHomeworkItem(item) {
     autoEl.style.background = '#d4edda';
     autoEl.style.color = '#155724';
     meta.appendChild(autoEl);
-  }
-  if (item.type !== 'quiz') {
+  } else {
     var mnEl = document.createElement('span');
     mnEl.className = 'item-type';
     mnEl.textContent = '手动确认';
@@ -621,15 +665,16 @@ function createHomeworkItem(item) {
     mnEl.style.background = '#e2e3e5';
     mnEl.style.color = '#6c757d';
     meta.appendChild(mnEl);
-  }
-  if (item.type === 'homework' && item.hwPhase === 'peerreview') {
-    var prEl = document.createElement('span');
-    prEl.className = 'item-type';
-    prEl.textContent = '互评中';
-    prEl.style.fontSize = '10px';
-    prEl.style.background = '#fff3cd';
-    prEl.style.color = '#856404';
-    meta.appendChild(prEl);
+    // 作业互评阶段：额外显示[互评中]标签
+    if (item.type === 'homework' && item.hwPhase === 'peerreview') {
+      var prEl = document.createElement('span');
+      prEl.className = 'item-type';
+      prEl.textContent = '互评中';
+      prEl.style.fontSize = '10px';
+      prEl.style.background = '#fff3cd';
+      prEl.style.color = '#856404';
+      meta.appendChild(prEl);
+    }
   }
 
   meta.appendChild(deadlineEl);
@@ -651,7 +696,7 @@ function createHomeworkItem(item) {
 
   const actions = document.createElement('span');
   actions.className = 'item-actions';
-  if (!isDone) {
+  if (!isDone && state.settings.showSnoozeButton !== false) {
     const snoozeBtn = document.createElement('button');
     snoozeBtn.type = 'button';
     snoozeBtn.className = 'item-action-btn';
@@ -660,7 +705,7 @@ function createHomeworkItem(item) {
     snoozeBtn.addEventListener('click', function (e) { e.stopPropagation(); handleSnoozeItem(uid); });
     actions.appendChild(snoozeBtn);
   }
-  if (url) {
+  if (url && state.settings.showExternalLink !== false) {
     const openBtn = document.createElement('button');
     openBtn.type = 'button';
     openBtn.className = 'item-action-btn';

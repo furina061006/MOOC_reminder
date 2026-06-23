@@ -47,6 +47,7 @@
       #save-status { color: #8fd6a6; }
       .switch .track { background: #4a4d53; }
     }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -107,9 +108,47 @@
     </div>
   </div>
 
+  <!-- 错误提示 -->
+  <div class="opt-section">
+    <div class="opt-section-title"><span class="icon-slot" data-icon="alert-triangle" data-icon-size="16"></span>错误提示</div>
+    <div class="opt-row">
+      <div class="opt-label">自动清除错误提示<span class="opt-hint">开启后，抓取错误会自动清除而不显示在界面上</span></div>
+      <div class="opt-control"><label class="switch"><input type="checkbox" id="auto-dismiss-errors"><span class="track"></span></label></div>
+    </div>
+  </div>
+
+  <!-- 弹窗显示 -->
+  <div class="opt-section">
+    <div class="opt-section-title"><span class="icon-slot" data-icon="eye" data-icon-size="16"></span>弹窗显示</div>
+    <div class="opt-row">
+      <div class="opt-label">稍后提醒按钮<span class="opt-hint">在作业条目右侧显示"稍后提醒"按钮</span></div>
+      <div class="opt-control"><label class="switch"><input type="checkbox" id="show-snooze-btn"><span class="track"></span></label></div>
+    </div>
+    <div class="opt-row">
+      <div class="opt-label">跳转页面按钮<span class="opt-hint">在作业条目右侧显示"打开页面"按钮</span></div>
+      <div class="opt-control"><label class="switch"><input type="checkbox" id="show-external-link"><span class="track"></span></label></div>
+    </div>
+    <div class="opt-row">
+      <div class="opt-label">课程静音按钮<span class="opt-hint">在课程标题旁显示"静音课程"按钮</span></div>
+      <div class="opt-control"><label class="switch"><input type="checkbox" id="show-course-mute"><span class="track"></span></label></div>
+    </div>
+  </div>
+
   <div class="opt-actions">
     <button id="save-btn" class="btn btn-primary"><span class="icon-slot" data-icon="check" data-icon-size="15"></span>保存设置</button>
     <span id="save-status"></span>
+  </div>
+
+  <!-- 错误报告 -->
+  <div class="opt-section" id="error-report-section">
+    <div class="opt-section-title"><span class="icon-slot" data-icon="alert-triangle" data-icon-size="16"></span>错误报告</div>
+    <div id="error-report-body">
+      <p class="opt-sub" style="margin:8px 0 0;">加载中...</p>
+    </div>
+    <div class="opt-actions" style="padding:8px 0;">
+      <button id="refresh-errors-btn" class="btn btn-sm btn-ghost">刷新错误</button>
+      <button id="clear-errors-btn" class="btn btn-sm btn-ghost btn-danger">清除所有错误</button>
+    </div>
   </div>
 
   <script src="icons.js"></script>

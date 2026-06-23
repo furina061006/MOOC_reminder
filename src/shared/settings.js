@@ -21,7 +21,11 @@ export const DEFAULT_SETTINGS = {
   quietEnd: 8,                 // 08:00 (exclusive)
   dailyDigestEnabled: false,   // one summary notification per day
   dailyDigestHour: 8,          // local hour for daily digest
-  mutedCourseIds: []           // courses muted for notifications/digests
+  mutedCourseIds: [],          // courses muted for notifications/digests
+  autoDismissErrors: false,    // auto-clear sync errors from the UI
+  showSnoozeButton: true,       // show snooze button in popup
+  showExternalLink: true,       // show external link button in popup
+  showCourseMute: true          // show course mute button
 };
 
 function clampInt(value, min, max, fallback) {
@@ -55,7 +59,11 @@ export function normalizeSettings(stored) {
     quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd),
     dailyDigestEnabled: s.dailyDigestEnabled === true,
     dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour),
-    mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : []
+    mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : [],
+    autoDismissErrors: s.autoDismissErrors === true,
+    showSnoozeButton: s.showSnoozeButton !== false,
+    showExternalLink: s.showExternalLink !== false,
+    showCourseMute: s.showCourseMute !== false
   };
 }
 

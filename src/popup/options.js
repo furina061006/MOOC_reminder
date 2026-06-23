@@ -21,7 +21,11 @@ const DEFAULTS = {
   quietEnd: 8,
   dailyDigestEnabled: false,
   dailyDigestHour: 8,
-  mutedCourseIds: []
+  mutedCourseIds: [],
+  autoDismissErrors: false,
+  showSnoozeButton: true,
+  showExternalLink: true,
+  showCourseMute: true
 };
 
 function $(id) { return document.getElementById(id); }
@@ -56,19 +60,31 @@ function buildHourSelect(sel) {
   }
 }
 
+function safeSetChecked(id, val) {
+  var el = $(id);
+  if (el) el.checked = !!val;
+}
+function safeSetValue(id, val) {
+  var el = $(id);
+  if (el) el.value = String(val != null ? val : '');
+}
 function populate(settings) {
   currentSettings = Object.assign({}, DEFAULTS, settings || {});
   const s = currentSettings;
-  $('check-interval').value = s.checkIntervalMinutes;
-  $('badge-interval').value = s.badgeRefreshMinutes;
-  $('auto-detect').checked = s.autoDetectEnabled !== false;
-  $('notify-enabled').checked = s.notificationsEnabled !== false;
-  $('notify-overdue').checked = s.notifyOverdue !== false;
-  $('quiet-enabled').checked = s.quietHoursEnabled === true;
-  $('quiet-start').value = String(s.quietStart);
-  $('quiet-end').value = String(s.quietEnd);
-  $('digest-enabled').checked = s.dailyDigestEnabled === true;
-  $('digest-hour').value = String(s.dailyDigestHour);
+  safeSetValue('check-interval', s.checkIntervalMinutes);
+  safeSetValue('badge-interval', s.badgeRefreshMinutes);
+  safeSetChecked('auto-detect', s.autoDetectEnabled !== false);
+  safeSetChecked('notify-enabled', s.notificationsEnabled !== false);
+  safeSetChecked('notify-overdue', s.notifyOverdue !== false);
+  safeSetChecked('quiet-enabled', s.quietHoursEnabled === true);
+  safeSetValue('quiet-start', s.quietStart);
+  safeSetValue('quiet-end', s.quietEnd);
+  safeSetChecked('auto-dismiss-errors', s.autoDismissErrors === true);
+  safeSetChecked('show-snooze-btn', s.showSnoozeButton !== false);
+  safeSetChecked('show-external-link', s.showExternalLink !== false);
+  safeSetChecked('show-course-mute', s.showCourseMute !== false);
+  safeSetChecked('digest-enabled', s.dailyDigestEnabled === true);
+  safeSetValue('digest-hour', s.dailyDigestHour);
   const leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULTS.notifyLeadHours;
   for (const h of LEAD_CHOICES) {
     const cb = $('lead-' + h);
@@ -76,6 +92,16 @@ function populate(settings) {
   }
 }
 
+function safeGetChecked(id) {
+  var el = $(id);
+  return el ? el.checked : false;
+}
+function safeGetInt(id, fallback) {
+  var el = $(id);
+  if (!el) return fallback != null ? fallback : 0;
+  var v = parseInt(el.value, 10);
+  return isNaN(v) ? (fallback != null ? fallback : 0) : v;
+}
 function collect() {
   const leads = [];
   for (const h of LEAD_CHOICES) {
@@ -83,28 +109,52 @@ function collect() {
     if (cb && cb.checked) leads.push(h);
   }
   return {
-    checkIntervalMinutes: parseInt($('check-interval').value, 10),
-    badgeRefreshMinutes: parseInt($('badge-interval').value, 10),
-    autoDetectEnabled: $('auto-detect').checked,
-    notificationsEnabled: $('notify-enabled').checked,
+    checkIntervalMinutes: safeGetInt('check-interval', 30),
+    badgeRefreshMinutes: safeGetInt('badge-interval', 5),
+    autoDetectEnabled: safeGetChecked('auto-detect'),
+    notificationsEnabled: safeGetChecked('notify-enabled'),
     notifyLeadHours: leads,
-    notifyOverdue: $('notify-overdue').checked,
-    quietHoursEnabled: $('quiet-enabled').checked,
-    quietStart: parseInt($('quiet-start').value, 10),
-    quietEnd: parseInt($('quiet-end').value, 10),
-    dailyDigestEnabled: $('digest-enabled').checked,
-    dailyDigestHour: parseInt($('digest-hour').value, 10),
-    mutedCourseIds: currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : []
+    notifyOverdue: safeGetChecked('notify-overdue'),
+    quietHoursEnabled: safeGetChecked('quiet-enabled'),
+    quietStart: safeGetInt('quiet-start', 22),
+    quietEnd: safeGetInt('quiet-end', 8),
+    dailyDigestEnabled: safeGetChecked('digest-enabled'),
+    dailyDigestHour: safeGetInt('digest-hour', 8),
+    mutedCourseIds: currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : [],
+    autoDismissErrors: safeGetChecked('auto-dismiss-errors'),
+    showSnoozeButton: safeGetChecked('show-snooze-btn'),
+    showExternalLink: safeGetChecked('show-external-link'),
+    showCourseMute: safeGetChecked('show-course-mute')
   };
 }
 
 function showStatus(text, isError) {
   const el = $('save-status');
   if (!el) return;
+  // Toast-style 提示替代原来的文字显示
   el.textContent = text;
-  el.style.color = isError ? 'var(--overdue)' : '#25703a';
+  el.style.color = isError ? '#dc3545' : '#28a745';
+  el.style.fontWeight = '600';
+  el.style.fontSize = '13px';
+  el.style.opacity = '1';
+  el.style.transition = 'opacity 0.3s';
   if (text) {
-    setTimeout(function () { try { el.textContent = ''; } catch { /* ignore */ } }, 2500);
+    setTimeout(function () {
+      try { el.style.opacity = '0'; } catch {}
+      setTimeout(function () { try { el.textContent = ''; el.style.opacity = '1'; } catch {} }, 300);
+    }, 4000);
+  }
+}
+
+function setSaveBtnLoading(loading) {
+  const btn = $('save-btn');
+  if (!btn) return;
+  if (loading) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="icon-slot" data-icon="refresh" data-icon-size="15" style="display:inline-block;animation:spin 1s linear infinite;"></span>保存中...';
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="icon-slot" data-icon="check" data-icon-size="15"></span>保存设置';
   }
 }
 
@@ -125,18 +175,106 @@ async function loadSettings() {
 }
 
 async function save() {
-  const settings = collect();
+  // 显示加载中状态
+  setSaveBtnLoading(true);
+  const statusEl = $('save-status');
+  if (statusEl) statusEl.textContent = '';
+
+  // 收集设置
+  let settings;
   try {
-    const resp = await chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', settings: settings });
-    if (resp && resp.success) {
-      populate(resp.settings); // reflect normalized/clamped values
-      showStatus('已保存');
-    } else {
-      showStatus('保存失败', true);
-    }
+    settings = collect();
   } catch (e) {
-    console.error('[Options] save failed:', e.message);
-    showStatus('保存失败：' + e.message, true);
+    console.error('[Options] collect failed:', e.message);
+    showStatus('读取设置失败：' + e.message, true);
+    setSaveBtnLoading(false);
+    return;
+  }
+
+  // 尝试发送到后台 SW（最多重试 1 次）
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const resp = await chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', settings: settings });
+      if (resp && resp.success) {
+        populate(resp.settings);
+        showStatus('✓ 已保存');
+        try { if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS(); } catch {}
+        setSaveBtnLoading(false);
+        return;
+      }
+      lastError = resp && resp.error ? resp.error : '保存失败';
+    } catch (e) {
+      lastError = e.message;
+      console.error('[Options] save attempt ' + (attempt + 1) + ' failed:', e.message);
+      if (attempt === 0) await new Promise(r => setTimeout(r, 500));
+    }
+  }
+
+  // 两次均失败，直接写入 storage 作为兜底
+  try {
+    const raw = await chrome.storage.local.get('user_settings');
+    const merged = Object.assign({}, raw.user_settings || DEFAULTS, settings);
+    await chrome.storage.local.set({ user_settings: merged });
+    showStatus('✓ 已保存（本地）');
+  } catch (e2) {
+    console.error('[Options] storage fallback failed:', e2.message);
+    showStatus('✗ 保存失败：' + (lastError || e2.message), true);
+  }
+  setSaveBtnLoading(false);
+}
+
+async function loadErrorReport() {
+  const body = $('error-report-body');
+  if (!body) return;
+  try {
+    const raw = await chrome.storage.local.get('sync_errors');
+    const errors = Array.isArray(raw.sync_errors) ? raw.sync_errors.filter(Boolean) : [];
+    if (errors.length === 0) {
+      body.innerHTML = '<p style="color:var(--text-faint);font-size:12px;margin:8px 0;">暂无错误记录</p>';
+      return;
+    }
+    var html = '<div style="max-height:300px;overflow-y:auto;font-size:12px;">';
+    for (var i = errors.length - 1; i >= 0; i--) {
+      var e = errors[i];
+      var errText = e && (e.error || e.message) ? String(e.error || e.message) : '未知错误';
+      var timeStr = '';
+      if (e && e.time) {
+        try { var d = new Date(e.time); timeStr = d.toLocaleString('zh-CN'); } catch {}
+      }
+      html += '<div style="padding:8px 0;border-bottom:1px solid var(--border-soft);">';
+      html += '<div style="color:var(--text-faint);margin-bottom:2px;">' + escapeHtml(timeStr || '') + '</div>';
+      html += '<div style="color:var(--overdue,#dc3545);word-break:break-all;">' + escapeHtml(errText) + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<p style="color:var(--overdue);font-size:12px;">加载失败：' + escapeHtml(String(e.message)) + '</p>';
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  var d = document.createElement('div');
+  d.textContent = String(str);
+  return d.innerHTML;
+}
+
+async function handleClearErrors() {
+  try {
+    await chrome.runtime.sendMessage({ type: 'CLEAR_ERRORS' });
+    loadErrorReport();
+    showStatus('错误已清除');
+  } catch (e) {
+    // Fallback: direct storage
+    try {
+      await chrome.storage.local.set({ sync_errors: [] });
+      loadErrorReport();
+      showStatus('错误已清除（本地）');
+    } catch (e2) {
+      showStatus('清除失败：' + e2.message, true);
+    }
   }
 }
 
@@ -145,11 +283,25 @@ async function init() {
   buildHourSelect($('quiet-start'));
   buildHourSelect($('quiet-end'));
   buildHourSelect($('digest-hour'));
-  if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS();
-  const settings = await loadSettings();
-  populate(settings);
-  const saveBtn = $('save-btn');
+  try { if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS(); } catch(e) { console.error('[Options] hydrate icons:', e.message); }
+  try {
+    const settings = await loadSettings();
+    populate(settings);
+  } catch (e) {
+    console.error('[Options] loadSettings failed:', e.message);
+    populate(DEFAULTS);
+    try { showStatus('加载设置失败，已使用默认值', true); } catch {}
+  }
+  var saveBtn = $('save-btn');
   if (saveBtn) saveBtn.addEventListener('click', save);
+  // 错误报告（独立 try-catch，不影响主流程）
+  try {
+    loadErrorReport();
+    var refreshErrBtn = $('refresh-errors-btn');
+    if (refreshErrBtn) refreshErrBtn.addEventListener('click', loadErrorReport);
+    var clearErrBtn = $('clear-errors-btn');
+    if (clearErrBtn) clearErrBtn.addEventListener('click', handleClearErrors);
+  } catch(e) { console.error('[Options] error report init:', e.message); }
 }
 
 document.addEventListener('DOMContentLoaded', function () {

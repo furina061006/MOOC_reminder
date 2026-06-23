@@ -37,7 +37,11 @@ const DEFAULT_SETTINGS = {
   quietEnd: 8,
   dailyDigestEnabled: false,
   dailyDigestHour: 8,
-  mutedCourseIds: []
+  mutedCourseIds: [],
+  autoDismissErrors: false,
+  showSnoozeButton: true,
+  showExternalLink: true,
+  showCourseMute: true
 };
 
 function clampInt(value, min, max, fallback) {
@@ -67,7 +71,11 @@ function normalizeSettings(stored) {
     quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd),
     dailyDigestEnabled: s.dailyDigestEnabled === true,
     dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour),
-    mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : []
+    mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : [],
+    autoDismissErrors: s.autoDismissErrors === true,
+    showSnoozeButton: s.showSnoozeButton !== false,
+    showExternalLink: s.showExternalLink !== false,
+    showCourseMute: s.showCourseMute !== false
   };
 }
 
@@ -477,6 +485,12 @@ const MESSAGE_HANDLERS = {
     return { success: true, settings: saved };
   },
 
+  // Clear sync errors from storage
+  async CLEAR_ERRORS() {
+    await chrome.storage.local.set({ [KEYS.SYNC_ERRORS]: [] });
+    return { success: true };
+  },
+
   // Refresh badge only
   async REFRESH_BADGE() {
     await updateBadgeFromStorage();
@@ -560,6 +574,11 @@ async function reconcileHomeworkData(course, newItems) {
       newItem.firstSeen = existing.firstSeen;
       newItem.lastUpdated = new Date().toISOString();
 
+      // 保留作业互评阶段：如果新爬取未检测到阶段，沿用已有值
+      if (!newItem.hwPhase && existing.hwPhase) {
+        newItem.hwPhase = existing.hwPhase;
+      }
+
       // Merge into existing
       Object.assign(existingItems[existingIdx], newItem);
       // 确保手动标记不被 Object.assign 覆盖（newItem 来自新爬取，manuallyCheckedOff=false）
@@ -580,7 +599,12 @@ async function reconcileHomeworkData(course, newItems) {
         var oldCompletionReason = dupExisting.completionReason;
         var oldFirstSeen = dupExisting.firstSeen;
         var oldUid = dupExisting.uid;
+        var oldHwPhase = dupExisting.hwPhase;
         Object.assign(existingItems[dupIdx], newItem);
+        // 保留互评阶段：新爬取未检测到时沿用旧值
+        if (!existingItems[dupIdx].hwPhase && oldHwPhase) {
+          existingItems[dupIdx].hwPhase = oldHwPhase;
+        }
         existingItems[dupIdx].firstSeen = oldFirstSeen || new Date().toISOString();
         existingItems[dupIdx].lastUpdated = new Date().toISOString();
         if (oldUid && oldUid !== newItem.uid) {
@@ -1166,14 +1190,23 @@ function apiExtractHomework(input, course) {
   return out;
 }
 
+const CSRF_COOKIE_NAMES = ['NTESSTUDYSI', 'EDUWEB', 'SESSION'];
+
 async function getCsrfKey() {
   if (!chrome.cookies || !chrome.cookies.get) return null;
-  try {
-    const cookie = await chrome.cookies.get({ url: ICOURSE_ORIGIN + '/', name: CSRF_COOKIE_NAME });
-    return cookie && cookie.value ? cookie.value : null;
-  } catch {
-    return null;
+  for (const name of CSRF_COOKIE_NAMES) {
+    try {
+      const cookie = await chrome.cookies.get({ url: ICOURSE_ORIGIN + '/', name: name });
+      if (cookie && cookie.value) {
+        console.log('[MOOC Reminder] Found CSRF cookie:', name);
+        return cookie.value;
+      }
+    } catch {
+      continue;
+    }
   }
+  console.warn('[MOOC Reminder] No CSRF cookie found among:', CSRF_COOKIE_NAMES);
+  return null;
 }
 
 function makeApiError(label, message, details) {
@@ -1194,7 +1227,8 @@ async function apiFetchRpcTermDto(csrfKey, termId) {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-      'Origin': ICOURSE_ORIGIN
+      'Origin': ICOURSE_ORIGIN,
+      'Referer': ICOURSE_ORIGIN + '/learn/'
     },
     body
   });
@@ -1245,17 +1279,26 @@ async function apiFetchDwrTermDto(termId) {
 
 async function apiFetchTermDto(csrfKey, termId) {
   const errors = [];
+  const hasCsrf = !!csrfKey;
   try {
-    return await apiFetchRpcTermDto(csrfKey, termId);
+    const result = await apiFetchRpcTermDto(csrfKey, termId);
+    result.csrfOk = hasCsrf;
+    return result;
   } catch (e) {
+    e.details = e.details || {};
+    e.details.csrfKeyFound = hasCsrf;
     errors.push(e.details || { message: e.message });
   }
   try {
-    return await apiFetchDwrTermDto(termId);
+    const result = await apiFetchDwrTermDto(termId);
+    result.csrfOk = hasCsrf;
+    return result;
   } catch (e) {
+    e.details = e.details || {};
+    e.details.csrfKeyFound = hasCsrf;
     errors.push(e.details || { message: e.message });
   }
-  throw makeApiError('termDto', 'all endpoints failed', { termId, errors });
+  throw makeApiError('termDto', 'all endpoints failed', { termId, errors, csrfKeyFound: hasCsrf });
 }
 
 async function apiRefreshCourse(course, csrfKey) {
@@ -1319,10 +1362,14 @@ async function apiRefreshAllKnownCourses() {
       });
     } else {
       const first = failureDetails[0];
+      // 检查是否因未登录导致失败
+      const csrfFound = !failureDetails.some(function(f) { return f.details && f.details.csrfKeyFound === false; });
+      const csrfNote = csrfFound ? 'CSRF密钥已找到但被拒绝' : '未找到CSRF登录态密钥，请确认已登录icourse163.org';
       await setApiStatus({
         status: 'api_unavailable',
-        message: first ? ('后台接口暂不可用：' + first.message) : '后台接口暂不可用，已回退到打开页面时抓取',
-        failures: failureDetails.slice(0, 3)
+        message: first ? ('后台接口暂不可用：' + first.message + '。' + csrfNote) : '后台接口暂不可用，已回退到打开页面时抓取',
+        failures: failureDetails.slice(0, 3),
+        csrfFound: csrfFound
       });
       await addSyncError('API refresh failed: ' + JSON.stringify(failureDetails.slice(0, 2)));
     }
