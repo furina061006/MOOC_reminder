@@ -225,11 +225,17 @@ async function save() {
 }
 
 async function loadErrorReport() {
-  const body = $('error-report-body');
+  var body = $('error-report-body');
   if (!body) return;
   try {
-    const raw = await chrome.storage.local.get('sync_errors');
-    const errors = Array.isArray(raw.sync_errors) ? raw.sync_errors.filter(Boolean) : [];
+    var raw;
+    try {
+      raw = await chrome.storage.local.get('sync_errors');
+    } catch (e) {
+      body.innerHTML = '<p style="color:var(--text-faint);font-size:12px;margin:8px 0;">存储不可用</p>';
+      return;
+    }
+    var errors = Array.isArray(raw.sync_errors) ? raw.sync_errors.filter(Boolean) : [];
     if (errors.length === 0) {
       body.innerHTML = '<p style="color:var(--text-faint);font-size:12px;margin:8px 0;">暂无错误记录</p>';
       return;
@@ -262,20 +268,30 @@ function escapeHtml(str) {
 }
 
 async function handleClearErrors() {
+  // 尝试通过后台 SW 清除
   try {
     await chrome.runtime.sendMessage({ type: 'CLEAR_ERRORS' });
-    loadErrorReport();
-    showStatus('错误已清除');
   } catch (e) {
-    // Fallback: direct storage
+    // SW 不可用时直接写 storage
     try {
       await chrome.storage.local.set({ sync_errors: [] });
-      loadErrorReport();
-      showStatus('错误已清除（本地）');
     } catch (e2) {
       showStatus('清除失败：' + e2.message, true);
+      return;
     }
   }
+  // 验证清除是否真正生效
+  try {
+    var verify = await chrome.storage.local.get('sync_errors');
+    var remaining = Array.isArray(verify.sync_errors) ? verify.sync_errors.length : 0;
+    if (remaining > 0) {
+      // 还有残留，再清一次
+      await chrome.storage.local.set({ sync_errors: [] });
+    }
+  } catch {}
+  // 重新加载显示
+  await loadErrorReport();
+  showStatus('错误已清除');
 }
 
 async function init() {
@@ -303,6 +319,18 @@ async function init() {
     if (clearErrBtn) clearErrBtn.addEventListener('click', handleClearErrors);
   } catch(e) { console.error('[Options] error report init:', e.message); }
 }
+
+// 全局未捕获 Promise 拒绝处理
+window.addEventListener('unhandledrejection', function (e) {
+  var msg = e && e.reason ? String(e.reason.message || e.reason) : 'Unknown rejection';
+  if (msg.indexOf('Extension context invalidated') >= 0 || msg.indexOf('context invalidated') >= 0) {
+    console.warn('[Options] Extension context was invalidated, stopping');
+    e.preventDefault();
+    return;
+  }
+  console.warn('[Options] Unhandled rejection:', msg);
+  e.preventDefault();
+});
 
 document.addEventListener('DOMContentLoaded', function () {
   init().catch(function (e) { console.error('[Options] init failed:', e.message); });

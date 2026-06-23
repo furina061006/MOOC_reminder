@@ -17,6 +17,18 @@ function wIcon(name, size, color) {
   } catch { return ''; }
 }
 
+// 全局未捕获 Promise 拒绝处理
+window.addEventListener('unhandledrejection', function (e) {
+  var msg = e && e.reason ? String(e.reason.message || e.reason) : 'Unknown rejection';
+  if (msg.indexOf('Extension context invalidated') >= 0) {
+    console.warn('[Popup] Context invalidated, halting');
+    e.preventDefault();
+    return;
+  }
+  console.warn('[Popup] Unhandled rejection:', msg);
+  e.preventDefault();
+});
+
 (function setupWatchdog() {
   window.__popup_ok = false;
 
@@ -268,6 +280,19 @@ function saveUiState() {
   } catch { /* best effort */ }
 }
 
+async function sendMessageSafe(msg) {
+  try {
+    return await chrome.runtime.sendMessage(msg);
+  } catch (e) {
+    if (e && e.message && e.message.indexOf('context invalidated') >= 0) {
+      console.warn('[Popup] Extension context invalidated, cannot communicate with background');
+    } else {
+      console.error('[Popup] sendMessage failed:', e && e.message);
+    }
+    return null;
+  }
+}
+
 async function loadData() {
   console.log('[Popup] loadData start');
   // Reset to safe defaults before attempting load
@@ -278,21 +303,16 @@ async function loadData() {
   state.scrapeStatus = null;
   state.items = [];
 
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_HOMEWORK' });
-    console.log('[Popup] GET_HOMEWORK response:', response ? 'received' : 'empty');
+  var response = await sendMessageSafe({ type: 'GET_HOMEWORK' });
+  console.log('[Popup] GET_HOMEWORK response:', response ? 'received' : 'empty');
 
-    if (response && typeof response === 'object') {
-      state.allItems = Array.isArray(response.allItems) ? response.allItems.filter(Boolean) : [];
-      state.courses  = Array.isArray(response.courses)  ? response.courses.filter(Boolean)  : [];
-      state.lastSync = response.lastSync || null;
-      state.syncErrors = Array.isArray(response.syncErrors) ? response.syncErrors.filter(Boolean) : [];
-      state.scrapeStatus = response.scrapeStatus || null;
-      state.settings = response.settings || {};
-    }
-  } catch (e) {
-    console.error('[Popup] loadData failed:', e.message);
-    // Stay with empty defaults — render will show empty state
+  if (response && typeof response === 'object') {
+    state.allItems = Array.isArray(response.allItems) ? response.allItems.filter(Boolean) : [];
+    state.courses  = Array.isArray(response.courses)  ? response.courses.filter(Boolean)  : [];
+    state.lastSync = response.lastSync || null;
+    state.syncErrors = Array.isArray(response.syncErrors) ? response.syncErrors.filter(Boolean) : [];
+    state.scrapeStatus = response.scrapeStatus || null;
+    state.settings = response.settings || {};
   }
 
   try { applyFilter(); } catch(e) { console.error('[Popup] applyFilter:', e.message); }
