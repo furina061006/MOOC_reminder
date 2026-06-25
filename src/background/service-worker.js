@@ -501,22 +501,6 @@ const MESSAGE_HANDLERS = {
   async REFRESH_BADGE() {
     await updateBadgeFromStorage();
     return { success: true };
-  },
-
-  // DevTools diagnostic: dump raw API response for the first known course
-  async API_DIAGNOSE() {
-    const courses = await getCourses();
-    if (courses.length === 0) return { success: false, error: 'No courses found in storage' };
-    const course = courses[0];
-    const csrfKey = await getCsrfKey();
-    if (!csrfKey) return { success: false, error: 'No CSRF key found' };
-    try {
-      const fetched = await apiFetchTermDto(csrfKey, course.termId);
-      const text = String(fetched.text || '');
-      return { success: true, courseId: course.courseId, termId: course.termId, endpoint: fetched.endpoint, snippet: text.slice(0, 3000), length: text.length };
-    } catch (e) {
-      return { success: false, error: e.message, details: e.details };
-    }
   }
 };
 
