@@ -1179,16 +1179,24 @@ function apiExtractHomework(input, course) {
         seen.add(uid);
         const deadline = deadlineMs != null ? apiMsToLocalIso(deadlineMs) : null;
         const done = score != null && totalScore != null && score > 0;
+        var itemType = apiClassifyType(name);
+        var pageUrl = course.pageUrl || '';
+        // API 抓取无实际页面，根据类型拼出正确的列表页路由
+        if (pageUrl) {
+          var base = pageUrl.split('#')[0];
+          var route = itemType === 'exam' ? '/learn/examlist' : '/learn/testlist';
+          pageUrl = base + '#' + route;
+        }
         out.push({
           uid, courseId: course.courseId, termId: course.termId,
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
-          title: name.trim(), type: apiClassifyType(name),
+          title: name.trim(), type: itemType,
           courseName: course.courseName || '', schoolName: course.schoolName || '',
           status: done ? 'completed' : 'unfinished',
           checkedOff: done, manuallyCheckedOff: false,
           autoDetectedCompleted: done, completionReason: done ? 'auto' : null,
           deadline, deadlineRaw: deadline ? '(API)' : null,
-          score, totalScore, source: 'api', pageUrl: course.pageUrl || ''
+          score, totalScore, source: 'api', pageUrl: pageUrl
         });
       }
     }
