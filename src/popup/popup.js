@@ -484,7 +484,9 @@ function render() {
     const courses = Array.isArray(state.courses) ? state.courses.filter(Boolean) : [];
 
     // Order course groups by their most urgent (earliest) deadline.
-    const orderedEntries = Object.entries(grouped).sort((a, b) => {
+    // Skip muted courses
+    var mutedIds = new Set(Array.isArray(state.settings.mutedCourseIds) ? state.settings.mutedCourseIds : []);
+    const orderedEntries = Object.entries(grouped).filter(function(e) { return !mutedIds.has(e[0]); }).sort((a, b) => {
       const am = Math.min.apply(null, a[1].map(deadlineMs));
       const bm = Math.min.apply(null, b[1].map(deadlineMs));
       return am - bm;

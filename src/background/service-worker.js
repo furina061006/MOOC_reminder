@@ -475,6 +475,12 @@ const MESSAGE_HANDLERS = {
     return { success: true, settings: normalizeSettings(await getUserSettings()) };
   },
 
+  // Options page reads courses list
+  async GET_COURSES() {
+    const courses = await getCourses();
+    return { success: true, courses };
+  },
+
   // Options page saves settings → persist (normalized) and re-apply alarm cadence
   async SETTINGS_UPDATED(msg) {
     const saved = normalizeSettings(msg && msg.settings);
@@ -652,7 +658,9 @@ async function reconcileHomeworkData(course, newItems) {
 async function updateBadgeFromStorage() {
   try {
     const items = await getHomeworkItems();
-    const unfinished = items.filter(i => !i.checkedOff);
+    const settings = normalizeSettings(await getUserSettings());
+    const mutedIds = new Set(settings.mutedCourseIds || []);
+    const unfinished = items.filter(i => !i.checkedOff && !mutedIds.has(i.courseId));
     const count = unfinished.length;
 
     if (count === 0) {

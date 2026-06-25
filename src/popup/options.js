@@ -294,6 +294,70 @@ async function handleClearErrors() {
   showStatus('错误已清除');
 }
 
+async function loadMutedCourses() {
+  var body = document.getElementById('muted-courses-body');
+  if (!body) return;
+
+  // 获取课程列表
+  var courses = [];
+  try {
+    var resp = await chrome.runtime.sendMessage({ type: 'GET_COURSES' });
+    if (resp && resp.success) courses = Array.isArray(resp.courses) ? resp.courses : [];
+  } catch (e) {
+    body.innerHTML = '<p style="color:var(--text-faint);font-size:12px;margin:8px 0;">无法加载课程列表</p>';
+    return;
+  }
+
+  // 获取已静音课程 ID
+  var mutedIds = currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : [];
+  if (mutedIds.length === 0) {
+    body.innerHTML = '<p style="color:var(--text-faint);font-size:12px;margin:8px 0;">暂无已静音的课程</p>';
+    return;
+  }
+
+  var mutedCourses = courses.filter(function(c) { return c && c.courseId && mutedIds.indexOf(c.courseId) >= 0; });
+
+  if (mutedCourses.length === 0) {
+    body.innerHTML = '<p style="color:var(--text-faint);font-size:12px;margin:8px 0;">暂无已静音的课程</p>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < mutedCourses.length; i++) {
+    var c = mutedCourses[i];
+    var name = escapeHtml(c.courseName || '未知课程');
+    var school = escapeHtml(c.schoolName || '');
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-soft);">'
+      + '<div><div style="font-size:13px;">' + name + '</div>'
+      + (school ? '<div style="font-size:11px;color:var(--text-faint);">' + school + '</div>' : '')
+      + '</div>'
+      + '<button class="btn btn-sm btn-ghost muted-unmute-btn" data-course-id="' + escapeHtml(c.courseId) + '" style="font-size:12px;">取消静音</button>'
+      + '</div>';
+  }
+  body.innerHTML = html;
+
+  // 绑定取消静音按钮事件
+  var btns = body.querySelectorAll('.muted-unmute-btn');
+  for (var j = 0; j < btns.length; j++) {
+    btns[j].addEventListener('click', async function() {
+      var courseId = this.getAttribute('data-course-id');
+      if (!courseId) return;
+      try {
+        var resp2 = await chrome.runtime.sendMessage({ type: 'TOGGLE_COURSE_MUTE', courseId: courseId, muted: false });
+        if (resp2 && resp2.success) {
+          currentSettings = resp2.settings || currentSettings;
+          showStatus('已取消静音');
+          loadMutedCourses(); // 刷新列表
+        } else {
+          showStatus('操作失败：' + (resp2 && resp2.error ? resp2.error : '未知错误'), true);
+        }
+      } catch (e) {
+        showStatus('操作失败：' + e.message, true);
+      }
+    });
+  }
+}
+
 async function init() {
   buildLeadChips();
   buildHourSelect($('quiet-start'));
@@ -318,6 +382,7 @@ async function init() {
     var clearErrBtn = $('clear-errors-btn');
     if (clearErrBtn) clearErrBtn.addEventListener('click', handleClearErrors);
   } catch(e) { console.error('[Options] error report init:', e.message); }
+  try { loadMutedCourses(); } catch(e) { console.error('[Options] loadMutedCourses:', e.message); }
 }
 
 // 全局未捕获 Promise 拒绝处理
