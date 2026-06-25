@@ -84,6 +84,7 @@ const state = {
   lastSync: null,
   syncErrors: [],
   scrapeStatus: null,
+  apiStatus: null,
   settings: {},
   filter: 'unfinished',  // 'unfinished' | 'overdue' | 'completed' | 'all'
   collapsedCourses: new Set()
@@ -121,6 +122,7 @@ function initDomRefs() {
   dom.countOverdue    = safeQuery('#count-overdue');
   dom.countSoon       = safeQuery('#count-soon');
   dom.countNormal     = safeQuery('#count-normal');
+  dom.apiTime         = safeQuery('#api-time');
 }
 
 // ─── Initialization ────────────────────────────────────
@@ -313,6 +315,7 @@ async function loadData() {
     state.lastSync = response.lastSync || null;
     state.syncErrors = Array.isArray(response.syncErrors) ? response.syncErrors.filter(Boolean) : [];
     state.scrapeStatus = response.scrapeStatus || null;
+    state.apiStatus = response.apiStatus || null;
     state.settings = response.settings || {};
   }
 
@@ -412,33 +415,58 @@ function renderScrapeWarning() {
 
 function renderDiagnostics() {
   if (!dom.diagnostics) return;
+
   const errors = Array.isArray(state.syncErrors) ? state.syncErrors : [];
-  if (errors.length === 0) {
+  var apiBlock = '';
+  var api = state.apiStatus;
+  if (api && api.status === 'api_unavailable') {
+    var csrfNote = '';
+    if (api.csrfFound === false) {
+      csrfNote = '未检测到登录态，请确认已登录 icourse163.org 后重试';
+    } else if (api.csrfFound) {
+      csrfNote = 'CSRF 令牌被拒，可能需要重新登录';
+    } else {
+      csrfNote = api.message || '后台接口暂不可用';
+    }
+    apiBlock = '<div style="padding:8px 12px;margin-bottom:6px;background:#fff3cd;border-radius:6px;font-size:12px;color:#856404;">'
+      + '<span style="display:inline-flex;vertical-align:middle;margin-right:4px;">' + wIcon('alert-triangle', 14, '#856404') + '</span>'
+      + '<span>后台抓取失败：' + escapeHtml(csrfNote) + '</span>'
+      + '</div>';
+  } else if (api && api.status === 'api_no_session') {
+    apiBlock = '<div style="padding:8px 12px;margin-bottom:6px;background:#fff3cd;border-radius:6px;font-size:12px;color:#856404;">'
+      + '<span style="display:inline-flex;vertical-align:middle;margin-right:4px;">' + wIcon('alert-triangle', 14, '#856404') + '</span>'
+      + '<span>' + escapeHtml(api.message || '未登录，后台抓取不可用') + '</span>'
+      + '</div>';
+  }
+
+  if (!apiBlock && errors.length === 0) {
     dom.diagnostics.style.display = 'none';
     dom.diagnostics.innerHTML = '';
     return;
   }
 
-  // 自动清除模式：直接清空错误并隐藏
-  if (state.settings && state.settings.autoDismissErrors) {
-    chrome.runtime.sendMessage({ type: 'CLEAR_ERRORS' }).catch(function(){});
-    dom.diagnostics.style.display = 'none';
-    dom.diagnostics.innerHTML = '';
-    return;
+  var html = apiBlock || '';
+
+  // 有错误时追加详情
+  if (errors.length > 0) {
+    if (!(state.settings && state.settings.autoDismissErrors)) {
+      const latest = errors[errors.length - 1];
+      const errorText = latest && (latest.error || latest.message) ? String(latest.error || latest.message) : '未知错误';
+      const timeText = latest && latest.time ? formatDeadline(latest.time) : '';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+        '<details style="flex:1;">' +
+          '<summary>最近抓取错误（' + errors.length + '）</summary>' +
+          '<div class="diagnostics-body">' + escapeHtml(timeText ? timeText + ' · ' + errorText : errorText) + '</div>' +
+        '</details>' +
+        '<button id="dismiss-errors-btn" style="background:none;border:none;cursor:pointer;color:#999;padding:2px 6px;font-size:18px;line-height:1;border-radius:4px;" title="关闭" aria-label="关闭">×</button>' +
+      '</div>';
+    } else {
+      chrome.runtime.sendMessage({ type: 'CLEAR_ERRORS' }).catch(function(){});
+    }
   }
 
-  const latest = errors[errors.length - 1];
-  const errorText = latest && (latest.error || latest.message) ? String(latest.error || latest.message) : '未知错误';
-  const timeText = latest && latest.time ? formatDeadline(latest.time) : '';
   dom.diagnostics.style.display = 'block';
-  dom.diagnostics.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
-      '<details style="flex:1;">' +
-        '<summary>最近抓取错误（' + errors.length + '）</summary>' +
-        '<div class="diagnostics-body">' + escapeHtml(timeText ? timeText + ' · ' + errorText : errorText) + '</div>' +
-      '</details>' +
-      '<button id="dismiss-errors-btn" style="background:none;border:none;cursor:pointer;color:#999;padding:2px 6px;font-size:18px;line-height:1;border-radius:4px;" title="关闭" aria-label="关闭">×</button>' +
-    '</div>';
+  dom.diagnostics.innerHTML = html;
 
   try {
     var dismissBtn = document.getElementById('dismiss-errors-btn');
@@ -781,6 +809,29 @@ function updateFooter() {
       }
     } else {
       dom.syncTime.textContent = '尚未同步';
+    }
+  }
+
+  if (dom.apiTime) {
+    var api = state.apiStatus;
+    if (api && api.checkedAt) {
+      try {
+        var diff = Date.now() - new Date(api.checkedAt).getTime();
+        var min = Math.floor(diff / 60000);
+        if (api.status === 'api_ok') {
+          dom.apiTime.textContent = 'API: ' + (min < 1 ? '刚刚' : min + ' 分钟前');
+          dom.apiTime.style.color = '';
+        } else {
+          dom.apiTime.textContent = 'API: 断开';
+          dom.apiTime.style.color = 'var(--overdue, #dc3545)';
+        }
+      } catch {
+        dom.apiTime.textContent = 'API: --';
+        dom.apiTime.style.color = '';
+      }
+    } else {
+      dom.apiTime.textContent = 'API: --';
+      dom.apiTime.style.color = '';
     }
   }
 }
