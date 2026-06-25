@@ -88,6 +88,11 @@
       if (msg.type === 'SCRAPE_NOW') {
         waitAndScrape().then(data => {
           try { sendResponse(data || { course: null, homeworkItems: [] }); } catch {}
+          proxyApiFetch().then(apiData => {
+            if (apiData) {
+              chrome.runtime.sendMessage({ type: 'PROXY_API_DATA', ...apiData }).catch(function(){});
+            }
+          }).catch(function(){});
         }).catch(err => {
           try { sendResponse({ course: null, homeworkItems: [], error: String(err?.message || err) }); } catch {}
         });
@@ -1016,6 +1021,31 @@
         }
       }
     };
+  }
+
+  // ─── API Proxy ─────────────────────────────────────────
+  // 用页面上下文调 MOOC 后端 API，突破 SW 的 CORS/认证限制
+  async function proxyApiFetch() {
+    const urlMeta = parseCourseUrl(window.location.href);
+    if (!urlMeta || !urlMeta.termId) return null;
+    try {
+      const resp = await fetch('https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json;charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ termId: parseInt(urlMeta.termId, 10) })
+      });
+      if (!resp.ok) return null;
+      const text = await resp.text();
+      if (text.length < 50) return null;
+      return {
+        course: { courseId: urlMeta.courseId, termId: urlMeta.termId, courseUrl: window.location.href },
+        rawData: text
+      };
+    } catch { return null; }
   }
 
   // ─── Boot ─────────────────────────────────────────────
