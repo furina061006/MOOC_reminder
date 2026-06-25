@@ -1,0 +1,1544 @@
+<!DOCTYPE html>
+<html xmlns="//www.w3.org/1999/xhtml" xml:lang="zh" lang="zh">
+    <head>
+        <title>高等数学（二）_中国大学MOOC(慕课)
+</title>
+        <script>
+            Object.defineProperty(window, 'handledomoocRPC', {
+                enumerable: false,
+                configurable: false,
+                writable: false,
+                value: null
+            });
+        </script>
+        <meta http-equiv="content-type" content="text/html;charset=utf-8"/>
+        <link rel="shortcut icon" href="//edu-image.nosdn.127.net/32a8dd2a-b9aa-4ec9-abd5-66cd8751befb.png?imageView&quality=100"/>
+        <meta http-equiv="x-dns-prefetch-control" content="on"/>
+        <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+        <meta itemprop="name" content="高等数学（二）"/>
+        <link rel="dns-prefetch" href="//s.stu.126.net"/>
+        <link rel="dns-prefetch" href="//icourse163.org/"/>
+        <link rel="dns-prefetch" href="//mc.stu.126.net"/>
+        <link rel="dns-prefetch" href="//mooc.study.163.com"/>
+        <link rel="dns-prefetch" href="//webzj.reg.163.com"/>
+        <link rel="dns-prefetch" href="//ursdoccdn.nosdn.127.net/"/>
+        <link rel="dns-prefetch" href="//nos.netease.com"/>
+        <link rel="dns-prefetch" href="//push.zhanzhang.baidu.com"/>
+        <link rel="dns-prefetch" href="//api.share.baidu.com"/>
+        <link rel="dns-prefetch" href="//js.passport.qihucdn.com"/>
+        <link rel="dns-prefetch" href="//s2.qhimg.com"/>
+        <link rel="dns-prefetch" href="//ydstatic.com/"/>
+        <link rel="dns-prefetch" href="//oimageb2.ydstatic.com/"/>
+        <link rel="dns-prefetch" href="//oimageb3.ydstatic.com/"/>
+        <link rel="dns-prefetch" href="//oimageb7.ydstatic.com/"/>
+        <link rel="dns-prefetch" href="//oimageb8.ydstatic.com"/>
+        <link rel="dns-prefetch" href="//oimagec1.ydstatic.com"/>
+        <link rel="dns-prefetch" href="//oimagea8.ydstatic.com"/>
+        <meta http-equiv="Pragma" content="no-cache"/>
+        <meta http-equiv="Cache-Control" content="no-cache" max-age="0"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+        <meta http-equiv="Expires" content="0"/>
+        <meta name="author" content="Netease"/>
+        <meta name="version" content="1.0"/>
+        <meta name="keywords" content="0701NEU005B,高等数学（二）,NEU,东北大学,中国大学MOOC(慕课)"/>
+        <meta name="description" itemprop="description" content="0701NEU005B,高等数学（二）,东北大学,东北大学,中国大学MOOC(慕课)"/>
+        <meta name="robots" content="all"/>
+        <meta name="360-site-verification" content="92d0cfcc97ca254f26fcc0586fa319b6"/>
+        <meta name="sogou_site_verification" content="kFeGWcT6tD"/>
+        <meta name="baidu-site-verification" content="BYFmFBILbh"/>
+        <meta name="shenma-site-verification" content="8ef752d11066ef909303c078d32230d6_1456214698">
+        <meta property="og:type" content="website"/>
+        <meta property="og:title" content="高等数学（二）"/>
+        <meta property="og:description" content="0701NEU005B,高等数学（二）,NEU,东北大学"/>
+        <meta property="wb:webmaster" content="981d7778ffe598a6"/>
+        <meta property="qc:admins" content="2206160020613752351636727736372561577477166045"/>
+        <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/libI18nHook_8e5137134f87873a49bef0e6d69ee8b8.js"></script>
+        <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/libEsShim_0e05204ba68c8863b2c2758466388378.js"></script>
+        <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/libBabelPolyfill_c031d28617dd4b22570c653823004fda.js"></script>
+        <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/libClamp_7c4afc5c2e098e22b94d3c3fdac6edea.js"></script>
+        <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/libDevice_70d69446a592ed53bab12b22bca6200a.js"></script>
+        <script type="text/javascript" src="//edu-cms.nosdn.127.net/topics/js/mooc_moment_afb34315eef15ca86723c56885e6127f.js"></script>
+        <script type="text/javascript" src="//edu-cms.nosdn.127.net/topics/js/rxjs.umd.min_7f27cccc1cc810f59b4daed7605cf42b.js"></script>
+        <script async type="text/javascript" src="//webzj.netstatic.net/webzj_cdn101/message4.js"></script>
+        <script async type="text/javascript" src="//acstatic-dun.126.net/tool.min.js"></script>
+        <script src="//mc.stu.126.net/rc/bootstraps/main/bootstrap.js?t=20262606022150"></script>
+        <script>
+            var _hmt = _hmt || [];
+            (function() {
+                var hm = document.createElement("script");
+                hm.src = "https://hm.baidu.com/hm.js?77dc9a9d49448cf5e629e5bebaa5500b";
+                var s = document.getElementsByTagName("script")[0];
+                s.parentNode.insertBefore(hm, s);
+            }
+            )();
+        </script>
+        <script>
+            location.config = {
+                root: '/pub/h/',
+                mode: 1,
+                ver: {
+                    "about/shared/modules/about/index.html": "75f9b211b9e209cd9bc1844d7930da96",
+                    "activities/components/omo/wap/component.html": "1d8121d63b9654d18d91bd2d85267924",
+                    "activities/components/omo/web/component.html": "c04652bcf18a961316f9742ebce51e16",
+                    "activities/components/omo-kaoyan/wap/component.html": "9c7b8afc9ae53c3e418b31a6129452d3",
+                    "activities/components/omo-kaoyan/web/component.html": "5e1c5e1c043260c59178b00fc9299844",
+                    "category/index/desktop/components/courseCardBox/courseCardBox.html": "91980a55c66de244e7e908ea6af98908",
+                    "category/index/desktop/components/courseCardList/courseCardList.html": "ecd4375293ff517683c38252d77da271",
+                    "category/index/desktop/components/courseCardList/courseCardTemplate.html": "10c6e6f2bf1ceba8e85253bd45c27662",
+                    "category/index/desktop/components/nav/nav.html": "461a06128800467980ba4b74da30784d",
+                    "category/index/desktop/components/sideBar/sideBar.html": "d54821ad8f518fe2a435df28ff9f0643",
+                    "category/index/desktop/components/tagBar/tagBar.html": "7f43e1f13ec4ccb99203e18db4d5d15a",
+                    "category/index/mobile/components/courseCardBox/courseCardBox.html": "8f08a62d385f9286ceda6e28ac19d968",
+                    "category/index/mobile/components/courseCardList/courseCardList.html": "ecd4375293ff517683c38252d77da271",
+                    "category/index/mobile/components/courseCardList/courseCardTemplate.html": "801f6361b14eb862a7bb1045af5b2060",
+                    "category/index/mobile/components/courseCardList/fkCourseCardTemplate.html": "b5f6ee9e7c8bebc26f478ed4394702df",
+                    "category/index/mobile/components/scrollPager/component.html": "c94c4bfacbbfd20b91cbc9b3685502c6",
+                    "category/index/mobile/components/specialDisplayUI.html": "aa128d09887ffb23ae6ecab20b790ceb",
+                    "category/index/mobile/components/wapCateNavList.html": "1a4c5df143bceb30464e8338d66ba9c6",
+                    "category/index/mobile/components/wapCateWrapUI.html": "2c1425208c1c37aca2e59ad01089147a",
+                    "category/index/mobile/components/wapColumnCardTpl.html": "dbabc6e5221e9ed1468de8b563c7cafc",
+                    "category/index/mobile/components/wapCourseCard.html": "8e2c0d6cf00f9383f952a3c4f692b0b9",
+                    "category/index/mobile/components/wapCourseList.html": "93f554561b4b1dafe6768cff2f974829",
+                    "category/index/mobile/components/wapKaoyanCardTpl.html": "3f9e4b50b066b478f42f9c2922c32d9e",
+                    "category/index/mobile/components/wapMoocCardTpl.html": "48a8243939f6135e650847bc88cbc2da",
+                    "cert/shared/modules/apply/index.html": "9454ec01645efa2ce92d6a40b75a3e83",
+                    "cert/shared/modules/certDesign/index.html": "4eaf18d0d2ddbea07d2899dd34cad177",
+                    "cert/shared/modules/verify/index.html": "590dfe593d2c004380c71c9ea78f1efc",
+                    "cms/components/appCallCms/appCallCms.html": "3da043ec3b6f7c95056aa8d8637b3361",
+                    "cms/components/qiyuEntry/qiyuEntry.html": "89ff2b61373e743a327bc2f3ceb5ad21",
+                    "column/audioContent/articleSnapUp/mobile/components/shared-article-snap-up/component.html": "9d3fafea2d44039c17a68dc4435fb37f",
+                    "column/audioContent/articleSnapUp/mobile/components/subscribe-button/component.html": "bf4205b34ba80e1275b1bc78fa3fa954",
+                    "column/freeArticles/mobile/components/free-articles/component.html": "37d40b841a627762879a710e02b70d80",
+                    "column/intro/desktop/components/column-combination/component.html": "cec40a402793dd2a46a2dc53d8fb24cf",
+                    "column/intro/desktop/components/column-info/component.html": "1a12af42e90a415dedbc934133b6518e",
+                    "column/intro/desktop/components/column-lecturer/component.html": "5e38c4779fefbdfef58b9c99a6f86f65",
+                    "column/intro/desktop/components/column-main-content/component.html": "389fe25892f7ce65a17b7b50a0702734",
+                    "column/intro/desktop/components/column-main-content/introduce/component.html": "c5f00ed9be517b156ff8e8950b87598b",
+                    "column/intro/desktop/components/column-main-content/outline/component.html": "6b4303ad8c4267be879c46a69cda86e7",
+                    "column/intro/desktop/components/column-purchase-area/action-actions/component.html": "f5ead3d452ffc28c8bea6204ad2ecc11",
+                    "column/intro/desktop/components/column-purchase-area/action-bargain-buy/component.html": "74df0d5cded65d817b588bb35f0f421e",
+                    "column/intro/desktop/components/column-purchase-area/action-enroll/component.html": "c7325becb2e116517c1509ecd3276f10",
+                    "column/intro/desktop/components/column-purchase-area/action-expect/component.html": "206b302a8da6e326f9a0d4d5c3d1e5ff",
+                    "column/intro/desktop/components/column-purchase-area/action-free-preview/component.html": "666a628068d22cfd658e9f942f0d629c",
+                    "column/intro/desktop/components/column-purchase-area/action-group-buy/component.html": "7be07a7d493a27ae72b5c5f411456178",
+                    "column/intro/desktop/components/column-purchase-area/action-reserve/component.html": "4533b542789a2934f03ceae16bf82dc3",
+                    "column/intro/desktop/components/column-purchase-area/component.html": "e6956e4b61f0092219f8a50533c0ed27",
+                    "column/intro/desktop/components/column-purchase-area/coupon/component.html": "ac5d2426842caac02c17bd805275380f",
+                    "column/intro/desktop/components/column-purchase-area/price/component.html": "38b210ae674a91538f4ddd409dc5ffa6",
+                    "column/intro/desktop/components/column-purchase-area/promotion-info/component.html": "bfc4dc1035ea5f1248428bb36fc1c473",
+                    "column/intro/desktop/components/column-subscribe-attention/component.html": "29a37c2404998de2f4d28f354dd42fa6",
+                    "column/intro/mobile/components/call-app-banner-wrapper/component.html": "edfaa201cd75f5a651203dfa2671cee0",
+                    "column/intro/mobile/components/column-info/wap/component.html": "7e1ab8f18b3b5020b033fe91627cd5a5",
+                    "column/intro/mobile/components/column-purchase-info/component.html": "2b821018d79388dbd7536e4e6a7cec23",
+                    "column/intro/mobile/components/column-purchase-info/price/component.html": "8d710a2875aafc6809a0a7792687b8ea",
+                    "column/intro/mobile/components/column-purchase-info/promotion-info/number.html": "c9193c41e364fc65bf157ce04beba72b",
+                    "column/intro/mobile/components/column-purchase-info/promotion-info/time.html": "f56531e172364e105cf3f6c713a7f656",
+                    "column/intro/shared/components/bargain-rules/component.html": "e7ddd482058786716125b0e3d81b7fc2",
+                    "column/intro/shared/components/column-coupon/component.html": "0fef3479709530dd8bce12f3a8a33d7c",
+                    "column/intro/shared/components/column-intro/component.html": "bee8cdc49817ec8707a5d881efd9fdcd",
+                    "column/intro/shared/components/column-intro/outline/component.html": "9462c65936b648efae8afe3aee8a9087",
+                    "column/intro/shared/components/promotion-container/component.html": "db6f269a8f5ea5ab406ac4c8e472f5a5",
+                    "column/intro/shared/components/promotion-modal/component.html": "b03f355765a8f78d0e9f72b49fb5e0e3",
+                    "column/shared/components/action-buttons/component.html": "e3e5056467adb745e1755fbbf26319e7",
+                    "column/shared/components/audio-content/wap/component.html": "e7bf133761724f0302450bfafd86f25d",
+                    "column/shared/components/audio-content/web/component.html": "e6f051ec82c1217224f3db2b6364475a",
+                    "column/shared/components/audio-player/wap/component.html": "5a7093dae305a9df2a1fb29b742a50e5",
+                    "column/shared/components/audio-player/web/component.html": "21a28c2554ef19d9e340058ea33324d2",
+                    "column/shared/components/columns-card/shared/component.html": "109cc404f088dc14b6959ada78412311",
+                    "column/shared/components/columns-card/wap/component.html": "4ddf8bbf97ee9d661a60efefa0bd238e",
+                    "column/shared/components/columns-card/web/component.html": "f2e2f66f68bc66503ea66d4ff438654a",
+                    "column/shared/components/intro-content-header/web/component.html": "f51c2a99468337696936fa8f258cdc12",
+                    "column/shared/components/intro-content-main/web/component.html": "d212a78bc19f771b651ca7efe9c8e241",
+                    "column/shared/components/intro-content-main-announcement/web/component.html": "f34a977d2d247e3c92f28bf32cdce486",
+                    "column/shared/components/intro-content-main-chapter/web/component.html": "4b6163b8f67bc2799042a538eb6ee073",
+                    "column/shared/components/intro-content-main-chapter-item/web/component.html": "c2ec6d50f6417693cd3134ccbd533bfe",
+                    "column/shared/components/learn-article-container/web/component.html": "e062711b7bc600bea39cd168281cbfda",
+                    "column/shared/components/modal-phone-contact/wap/component.html": "e790525672adc728ee5ab5dc4e117ba2",
+                    "column/shared/components/modal-phone-contact/web/component.html": "164a063c5dd710e6ba44ecff17c70bba",
+                    "column/shared/components/order-modal/component.html": "76a845c60e63ce3fb8750936d209d8a9",
+                    "column/shared/components/selected-comments/wap/component.html": "0a0abe8ddee30f9f22ee61e41e78ae40",
+                    "column/shared/components/selected-comments/web/component.html": "85d2a97b1d746d7be19aef103d9721cc",
+                    "course/intro/desktop/components/moocModal/index.html": "1cd405d345a33e595eefcea272c2b12b",
+                    "course/intro/desktop/components/outline/component.html": "3c100adb840742126fb4af5c88704ef7",
+                    "course/intro/desktop/components/scholarNotifyModal/index.html": "3e7bd70e641f8511477e8b6cfb5ad239",
+                    "course/intro/desktop/components/teacher-list/component.html": "ea32625b7cd1fd0d8c71aa7bd269f1bf",
+                    "course/intro/desktop/components/teacher-list/template.html": "bfc7be305c042b49fbd0308d30ed6bd5",
+                    "course/intro/desktop/modules/info/index.html": "85538985f106cb813fa5b8ef36c3f11b",
+                    "course/intro/mobile/components/course-detail-buy/component.html": "a0028246b6911b43a345debeb4740939",
+                    "course/intro/mobile/components/outline/statics/desktop.html": "8e7b91959123dbc991aefba656a40780",
+                    "course/intro/mobile/components/outline/statics/mobile.html": "a054bc1ac69badc53461b1dedaac3e57",
+                    "course/intro/mobile/modules/courseDetail/index.html": "812a3b3ae9a435c06b1275bc977fa960",
+                    "course/intro/shared/components/breadcrumb/web/component.html": "16da2374507d3d5128068f8b7db53609",
+                    "course/intro/shared/components/course-enroll-info/web/component.html": "ad1360ba29b2375f1c74fa538e436d0c",
+                    "course/intro/shared/components/term-password-modal/web/component.html": "16587bb0744c4ff2f9d4859cb0f00d13",
+                    "error/systemError/shared/modules/error/index.html": "0a4b508a1b9c9a49041cebbaf2f4bd67",
+                    "forum/index/shared/components/forum/index.html": "1cb07944627c2f0cc38f88ce651f1867",
+                    "forum/newPost/shared/components/publish/index.html": "3a184c5f6fb2f0952afd72f6f7eab876",
+                    "forum/person/shared/components/personWrapper/index.html": "f704da0d0e681be516c3baca70e24055",
+                    "forum/person/shared/components/rcList/index.html": "a2af94af82b86a58e92061346eb1795c",
+                    "forum/person/shared/components/simplePersonUI/index.html": "10c18d8ab064c2791a6234b16c7fea15",
+                    "forum/shared/components/forumItem/index.html": "0ce2ca93bafbd82d08b0faaaecc30a6d",
+                    "forum/shared/components/forumList/index.html": "842b36e03df8b09a820a6c2b9d31e83c",
+                    "forum/shared/components/personUI/index.html": "97b489186a021226e522ad240321be70",
+                    "forum/topic/desktop/components/commentItem.html": "b09d4467da8d3bfeddc615f7904b5378",
+                    "forum/topic/desktop/components/commentList.html": "3e6aff50e0bf2b1526b61adfb68d0500",
+                    "forum/topic/desktop/components/hoverManageList.html": "246aec1b5a1f8a31ed28af5aefc2af16",
+                    "forum/topic/desktop/components/replyItem.html": "00c85b07668a5d5d400a97a030a815f4",
+                    "forum/topic/desktop/components/replyList2.html": "2d4c784cda2a82480cbeed010d87c0a1",
+                    "forum/topic/desktop/components/selectTagModal.html": "4d4a241fadf8bdc953fc417fba969c4b",
+                    "forum/topic/desktop/components/setTopTagModal.html": "b69c8e4cb74ec04127044b8842d190c2",
+                    "help/help/desktop/modules/helpFront/index.html": "e2cd2604ad7a9be68f9b993ada08a337",
+                    "help/manageHelp/desktop/modules/helpBack.html": "130ffeee241c5125ba71ed420e7eb04d",
+                    "home/desktop/components/certCard/component.html": "e18922302a14c290a1830a1ab9a48062",
+                    "home/desktop/components/columns-wrap/wap/component.html": "4ddf8bbf97ee9d661a60efefa0bd238e",
+                    "home/desktop/components/columns-wrap/web/component.html": "b4962dfb4f0c7af4a8b68190688bbd48",
+                    "home/desktop/components/coursePanel/coursePanel.html": "029925c22d1e32a4eb3cf51724995d10",
+                    "home/desktop/components/coursePanel/coursePanelBody/component.html": "4b95c482d2d759572ac1c0be559b487e",
+                    "home/desktop/components/coursePanel/coursePanelBody/courseCard/component.html": "06604604b568aa7e690050b2287fe2b1",
+                    "home/desktop/components/enrolledCourse/enrolledCourse.html": "bd3aef32623283af621c1da3677fa3f6",
+                    "home/desktop/components/enrolledCourse/enrolledCourseBody/component.html": "abd2581c73299e575ffd5e5c1bb8605e",
+                    "home/desktop/components/enrolledCourse/enrolledCourseBody/enrolledCourseCard/component.html": "757312ffebbc4c243a2cfc3db9b01a9a",
+                    "home/desktop/components/jpkCourseCard/component.html": "5aae855530e275d2ee8bd4013a836a62",
+                    "home/desktop/components/learningPlan/courseCardWithScore/component.html": "131f7e9bde9fdbc3453f72e2b8bb95f0",
+                    "home/desktop/components/learningPlan/courseList/component.html": "b4bd2f5364c9720eff391fe0610a6fca",
+                    "home/desktop/components/learningPlan/index/component.html": "fe9159d30d7371a7e99340ac6b9c4a28",
+                    "home/desktop/components/learningPlan/learningDetail/component.html": "8ee4db8e022109eeeea3edc839e0fb5f",
+                    "home/desktop/components/learningPlan/learningGoal/component.html": "cad8e3f553ce7154e93552ffaabd1721",
+                    "home/desktop/components/learningPlan/learningTask/component.html": "f2d30f4cfb0615688e9345fb54e22324",
+                    "home/desktop/components/learningPlan/selfDefineModal/component.html": "dfe765adb38e947615b8c68eedea03bb",
+                    "home/desktop/components/lives-wrap/web/component.html": "f9cba68330a1811fea83ba214ff36cf6",
+                    "home/desktop/components/otherLearn/component.html": "b08d29eee62afc5581b0c4d111129cb9",
+                    "home/desktop/components/personalProfileGuide/back-btn/component.html": "2584da3fd110417a835f7bd059493e8d",
+                    "home/desktop/components/personalProfileGuide/fillPersonalIntro.html": "9582521696533523787b0b7a19ea7565",
+                    "home/desktop/components/personalProfileGuide/personalProfileGuide.html": "d672613e3fcc03cd1bdbdb5833ee84bf",
+                    "home/desktop/components/personalProfileGuide/selectEducation.html": "feb0f8f2425c589a91f11ed9013ab739",
+                    "home/desktop/components/personalProfileGuide/selectOccupation.html": "9cfb10ac3e08b2051e7b7e44ff77edab",
+                    "home/desktop/components/personalProfileGuide/selectProfileType.html": "64595e2a807fd55e0544c4e892e972e5",
+                    "home/desktop/components/study-plan-panel/statics/desktop.html": "b7a93ab37d44e2d4d453a5ede7a759bb",
+                    "home/desktop/components/study-plan-statistics/statics/desktop.html": "3cb516372024f4ccfe5b10a9baebc190",
+                    "home/desktop/components/study-plan-week-days/statics/desktop.html": "06513ab193726af556df8eb7fbc12bfd",
+                    "home/desktop/components/study-today-mission/statics/desktop.html": "95dd498fe23c3554f4fea861e421ac14",
+                    "home/desktop/components/userInfoTop/component.html": "8b231a989dc4950492d4d47aa28f692e",
+                    "home/desktop/components/vipCourseTab/component.html": "3d129fcc83cdf58388bce392f150242c",
+                    "home/desktop/modules/bifrostCourse/index.html": "83787bba823470175a640a02580295c9",
+                    "home/desktop/modules/column/index.html": "b060d8fbc55552b76c91ec42977afb8b",
+                    "home/desktop/modules/course/index.html": "0df640a85a26910da967d27e0e08bc80",
+                    "home/desktop/modules/discuss/index.html": "fce583bf0d9debefc6706345088eedba",
+                    "home/desktop/modules/index/index.html": "6930b5c20d0e5f4eca7b830b853f7440",
+                    "home/desktop/modules/jpkCourse/index.html": "44a0daf984eb4b691020477afee45548",
+                    "home/desktop/modules/learnPlan/index.html": "1f75cb00c97f820a656ca9f213a1a519",
+                    "home/desktop/modules/live/index.html": "5be10cef7d982a17cd34f9e2a50ba70e",
+                    "home/desktop/modules/mycert/index.html": "2e355c0fd89e0c75acac508de2a43834",
+                    "home/desktop/modules/roocCourse/index.html": "7e89e1e3cb331012f81f910631a75698",
+                    "home/desktop/modules/selfIntro/index.html": "85372b8b53c4d1189ad56d536286a292",
+                    "home/desktop/modules/spocCourse/index.html": "a394dc2bc10426a1dc985aa0b0f4c740",
+                    "home/desktop/modules/studyGuide/index.html": "64818a93f1f50b101c743a313cf11c16",
+                    "home/desktop/modules/teacherApply/index.html": "3e7902fcc3ba3d8e47bdb237c11fcf14",
+                    "home/desktop/modules/teacherApplySuccess/component/applySuccess/component.html": "4e44b77e430a0b1f75a1dfdd4be8ec5f",
+                    "home/desktop/modules/teacherApplySuccess/index.html": "8ca90cf217477ee43cf7514cf4ca8410",
+                    "home/desktop/modules/textbook/index.html": "05e3b89ff8802c82ac7e1a63505f3ab7",
+                    "home/desktop/modules/tool/index.html": "fa99524ca364767034662782838ed2a4",
+                    "home/desktop/modules/vipCourse/index.html": "22c8e468ab7179305b6c709d7154440b",
+                    "html/practicePage.html": "8905cc34a2e40675e501929cd2a0a0c8",
+                    "index/desktop/components/allChannelPanel/component.html": "2f571496657b5db4ca44adeb486b85b8",
+                    "index/desktop/components/columnList/component.html": "69446f4e24b1a714a1594da3bf00b5db",
+                    "index/desktop/components/courseRecent3/component.html": "2ff021a0fa7fac5a33715d6485177fd3",
+                    "index/desktop/components/discussBox/component.html": "606b5910de97e0f540e5f608fe78a27f",
+                    "index/desktop/components/imageBox/component.html": "b99740ed8145b116737e433a9981991e",
+                    "index/desktop/components/indexStudent/component.html": "3c926bd4e6cbc699f9deb1d8a03e89a1",
+                    "index/desktop/components/myCloudeGuide/component.html": "a25f3fdd9b8f715c661ce3f5c91b3e01",
+                    "index/desktop/components/recCourse/component.html": "12725db887a655e0e846617db108d4a6",
+                    "index/desktop/components/selfDefine/component.html": "52867aeafc56d9ab7084d442156709ec",
+                    "index/mobile/components/category/component.html": "2cb34ae713958abe02c7c96277bc7690",
+                    "index/mobile/components/channelList/component.html": "6a335ef170f74c83319fc02ffa5dd60c",
+                    "index/mobile/components/channelVideoPlay/component.html": "4f19fbf25ca3aed3ee59c60b6979dff9",
+                    "index/mobile/components/courseCard/component.html": "bf14d12f90e7619a4e70dd9b50cb67f1",
+                    "index/mobile/components/courseList/component.html": "498f4aa259889927af9867217c4d05c2",
+                    "index/mobile/components/courseLists/component.html": "f39bf35f1bb469b70a4634bc132f1e87",
+                    "index/mobile/components/nav/component.html": "a0244b5f31f055f7fe69349d244313c4",
+                    "junwei-app-course/courseDetail/mobile/components/course-detail-buy/component.html": "6740798f3fd0140b11efdc14078a916e",
+                    "junwei-app-course/courseDetail/mobile/modules/courseDetail/index.html": "7cea18005021ad1b6d085d1e10413e75",
+                    "junwei-app-course/courseLearn/mobile/modules/courseLearn.html": "edae4bd33d84828aaca73f6765306709",
+                    "learn/examExport/component/examPaper/component.html": "db5161edb1fb0cc436b5d09078c3c397",
+                    "learn/examExport/module/examExport.html": "231b05b5d84c62723a27095d7e235811",
+                    "learn/forum/mobile/components/commentItem.html": "df7d2528dbaecf4319f77220f614dcee",
+                    "learn/forum/mobile/components/replyItemUI.html": "66b1e18e9865b2f7605d975ba2fc168c",
+                    "learn/forum/mobile/components/wapForumDetailUI.html": "2d43a22024820ef3cbea69f025ccd939",
+                    "learn/index/desktop/components/common/notice.html": "05b8eb32f2fe884348e6c379768e1b1f",
+                    "learn/index/desktop/components/lesson/segmentAILectureNote/web/component.html": "7fa8ea518d911243ba2d20b6bbbd7beb",
+                    "learn/index/desktop/components/lesson/segmentList/web/component.html": "f6765e220f563a438c7e011e12fae3d0",
+                    "learn/index/desktop/components/lesson/segmentMaskGuide/web/component.html": "457bff7b9aec7f0a43bb8ab0a91f1da9",
+                    "learn/index/desktop/components/lessonJoinQa/component.html": "cb935509b99b96ff2b6f875655a4d9aa",
+                    "learn/index/desktop/components/lessonLiveWrapper/component.html": "d5a286916f4983077263ed26345bda0d",
+                    "learn/index/desktop/components/lessonOutsideLive/component.html": "0932d4b7cf94249de3657de49ddacbf3",
+                    "learn/index/desktop/components/musciAcademy/musicUnit/component.html": "760fac551983a2ed874682ea348425d9",
+                    "learn/index/desktop/modules/learn/content.html": "628934e8cfd5d4a2655de4470cbe083d",
+                    "learn/index/desktop/modules/learn/efficientExamine.html": "44f34a04cf20318e47ce97e37215d6be",
+                    "learn/index/desktop/modules/learn/exam.html": "ec478d600065b893b2b70d52dfed1169",
+                    "learn/index/desktop/modules/learn/forum.html": "48dceb110293b468d1bf46fc58ff0c89",
+                    "learn/index/desktop/modules/learn/homework.html": "ff83b0a321d6fd7249bccee777b7bb6a",
+                    "learn/index/desktop/modules/learn/knowledge.html": "43fb5a1faf7b67a629c13ef05feee8c8",
+                    "learn/index/desktop/modules/learn/newExamAgreement.html": "d7d29514d5528231d808bf36693fd38c",
+                    "learn/index/desktop/modules/learn/notEnroll.html": "9e5bb1f7764af6e6360ba3da15c0cef8",
+                    "learn/index/desktop/modules/learn/oj.html": "cde45d9da755a4212efc828705ae1f16",
+                    "learn/index/desktop/modules/learn/task.html": "aff913e1e21aeb3daa5b6ac36dd9e949",
+                    "learn/index/desktop/modules/learn.html": "9751b787f03c7acd30715fa5debcea96",
+                    "learn/newExamExport/module/examExport.html": "3389b5d6336e629fc2dc16c2ac78e9f4",
+                    "learn/video/mobile/components/wapLearnVideoUI.html": "a67b0a6b3c81e10234531eb470e2fdbd",
+                    "live/liveRoom/desktop/components/startLiveModal/startLiveBody/component.html": "4146e447ee5afebf406ef3ccd6b06c4a",
+                    "live/liveRoom/desktop/module/module-live-room/src/component/instruction-modal/web/component.html": "2956dfd2e0ebd4cadc9ad0bc3d771560",
+                    "live/liveRoom/desktop/module/module-live-room/src/component/live-channel-info-modal/component.html": "d77b5192a2662dd2916be6df92cfb9c0",
+                    "live/liveRoom/desktop/module/module-live-room/src/component/room-list-view/component.html": "cc6424d419e7146683f1cb2d6b37cfa8",
+                    "live/liveRoom/desktop/module/module-live-room/src/component/start-modal-wrapper/web/component.html": "215a36bd5c90520429731879c811e4a3",
+                    "live/liveRoom/desktop/module/module-live-room/src/live-room/index.html": "0bd5b41402336a8c11cb529d011fdf6e",
+                    "live/openLive/desktop/components/column-live-intro/component.html": "3e9f23a6e602ffe9323dd1471d708249",
+                    "live/openLive/desktop/components/live-pc-player_status/wap/component.html": "311d03de4d0dbe327239bc0c91823bc0",
+                    "live/openLive/desktop/components/live-pc-player_status/web/component.html": "2a4ac928d5c63ad532494cf709130f61",
+                    "live/openLive/desktop/components/livePresenterInfo/component.html": "471d0d4f92d333eb1a0f9aac3557b781",
+                    "live/openLive/desktop/components/liveWrap/component.html": "86857abf50e66f7044a7aa2129da1852",
+                    "live/openLive/desktop/components/mooc-polyv-live/wap/component.html": "722291b3e4dbea9cf23df70ca05ebd7e",
+                    "live/openLive/desktop/components/mooc-polyv-live/web/component.html": "0e792f25c288deb4ed32bff31bde5fd6",
+                    "live/openLive/desktop/components/openLiveWrapper/component.html": "59725afb2ef64d6dd0e57187dcffe21c",
+                    "live/openLive/desktop/components/openLiveWrapper/liveInfoHead/component.html": "8bb65316a71a1946bb3f5ae573931191",
+                    "live/openLive/mobile/components/column-entry/component.html": "0ad5d489a079aac4cdca996ddc95d0ce",
+                    "live/openLive/mobile/components/liveNotExistUI.html": "2a1152b6bb4f959bf996ec2200dc42f0",
+                    "live/openLive/mobile/components/marketing-content-entry/component.html": "48f9675413b96f42dc6301ac2d400e42",
+                    "live/openLive/mobile/components/marketing-content-list-modal/component.html": "f60d49ef35de980c461c490c14b2b2da",
+                    "live/openLive/mobile/components/mobile-live-wrap/component.html": "cb958c9d0cc7c7f08b60b44e328577a9",
+                    "live/openLive/mobile/components/playBackUI.html": "b3bc7fb6503ab9e808458cdfa2e0e11e",
+                    "live/openLive/mobile/modules/index.html": "d3a4f3324d6755e56c9e3d6c93d1e210",
+                    "live/openLive/mobile/modules/playBack.html": "bf187b9bd68a7b7a231cb61a8fa94029",
+                    "live/openLive/shared/components/live-subscription/wap/component.html": "694cd94ada8ee6d2f051a8cee5fb7c8c",
+                    "live/openLive/shared/components/live-subscription/web/component.html": "240ed03c7acfa1ce8f24047b5d317b18",
+                    "member/accountOpen/component/accountOpen/wap/component.html": "9656920a0f7031727ee8db613e3f5d13",
+                    "member/accountOpen/component/accountOpen/web/component.html": "c338952578570153fe36443929a4c49e",
+                    "member/addMemberInfo/component/account-detected/web/component.html": "38f515da328c93486ecd7da6809b6d95",
+                    "member/addMemberInfo/desktop/modules/addMember/index.html": "826b9465ef1b44e64920c0103398e3f3",
+                    "member/addMemberInfo/mobile/modules/addMember/index.html": "5656019c85b9948b8873fe9e53ca4bb7",
+                    "member/auth/component/auth/wap/component.html": "2e55b257aed6ae372cb6d84b76dceb9b",
+                    "member/icourseLogin/desktop/modules/icourseLogin/index.html": "de0b4d3d6650b4326d8c51c86d2aa325",
+                    "member/login/desktop/components/icourse-login-form/wap/component.html": "e680c3073b74d74824bccc1236f8fbe7",
+                    "member/login/desktop/components/icourse-login-form/web/component.html": "2eb6a6441b0f479777d06980af093f66",
+                    "member/login/desktop/components/mooc-google-login-page/web/component.html": "68cc9680c71a8d147ada57ee194b48a6",
+                    "member/login/desktop/components/mooc-login-page/web/component.html": "6fbaba5b088e96dc9cd9a7686bb7341d",
+                    "member/login/desktop/components/mooc-login-set/web/component.html": "0293229c2be23f081374d1d54b8cd73e",
+                    "member/login/desktop/components/mooc-regist-wrap/web/component.html": "073de1a0b2a05b97a050b2036f6697b1",
+                    "member/login/desktop/components/regist-wrap-pro/web/component.html": "2a3d43ce0ed48dfe42ac06ae4debf78a",
+                    "member/login/desktop/modules/googleLogin/index.html": "e69feac2a2fbc7e2bd41d5dd28cefc5c",
+                    "member/login/desktop/modules/loginIndex/index.html": "0de752141d63df24097aa5e88565fd97",
+                    "member/login/mobile/components/login-set-wap-pro/wap/component.html": "0a9ebe60ebf100988648a736d08f72d4",
+                    "member/login/mobile/modules/loginEmail/index.html": "498ebdf2e53cee502acf09a061a1a7f8",
+                    "member/login/mobile/modules/loginIcourse/index.html": "e765fe67715a8437f83146e5bc8c4787",
+                    "member/login/mobile/modules/loginIndex/index.html": "d3c2551194f2ad6763f2275d7a536ae6",
+                    "member/login/mobile/modules/loginTel/index.html": "fa0b73f16c3850426dc8c62044c70010",
+                    "member/login/mobile/modules/registTel/index.html": "59488b36f4711385d550ed42a68715c8",
+                    "member/phoneBind/component/phoneBind/wap/component.html": "9b836997cfde4e39c51c8a91532bef3c",
+                    "member/phoneBind/component/phoneBind/web/component.html": "a70fffd5c782531a1c04516eaf3cd441",
+                    "member/shared/modules/login/index.html": "1b3ce3edc55343f56668eeee13765480",
+                    "member/ursLogin/desktop/modules/ursLogin/index.html": "8098ad7d45bfb47e0a9f371f3b45219c",
+                    "navigation/footer/component.html": "6f71d9ba98375126a34db3f78c0729d4",
+                    "navigation/header/component.html": "dcca810eed70460b12e919119fc0c8b9",
+                    "navigation/header/personal-user-info/component.html": "11bb1395784b06e89e3cb01b7c0afe8b",
+                    "navigation/header/search-suggest/component.html": "e685bcd45ac52ed2f940aa9b724d36bb",
+                    "order/index/components/address/wap/component.html": "d3e67e6851f2fb4ec776f59b6d682cf7",
+                    "order/index/components/address/web/component.html": "7020882f523aa66d66b1f6c50e4458f4",
+                    "order/index/components/confirm/component.html": "1140f339e067c7bf36ec0dba86ca9795",
+                    "order/index/components/tel-info/component.html": "ad21dd5dec5a6c13ab28775dbd596e5a",
+                    "order/index/components/wap-phone/component.html": "20518a3cac4a47d8cbd274fe29e57876",
+                    "order/payOrder/desktop/components/pay-success-info/wap/component.html": "b0e53b355ac2384bd9d4d1cc9f13b0f7",
+                    "order/payOrder/desktop/components/pay-success-info/web/component.html": "3556522c8b6c618e1446960d0286d918",
+                    "order/payOrder/desktop/components/pay-success-info1/wap/component.html": "3424a8e317f397db6d929f8f6f9be075",
+                    "order/payOrder/desktop/components/pay-success-info1/web/component.html": "28e3bebe7971dd4686e63ab81e707217",
+                    "order/payOrder/desktop/modules/order/index.html": "0fc22011a36387e3783ee25b9b2384b1",
+                    "order/service/order-service-criteria/statics/desktop.html": "ab322ab5b708c1df616d9ad270b444bd",
+                    "order/service/order-service-head/statics/desktop.html": "e0d833c59a1c2fc851b4dd2c7bea68fe",
+                    "order/service/order-service-item/statics/desktop.html": "f2bacb409cd87ced3f74df9cc5f20cd5",
+                    "order/service/order-service-list/statics/desktop.html": "a211db7568b5349c1c4c9487308d8e99",
+                    "order/service/order-service-refund/statics/desktop.html": "07d0877a459c2c001171102328a239b4",
+                    "order/service/order-service-root/statics/desktop.html": "8440fe1fcd1f429df8a66a9a59d15855",
+                    "pay/index/desktop/components/pay-content/component.html": "c38ecec692a15a73f3d730b5a667eda2",
+                    "pay/index/desktop/components/wxpay-content/component.html": "7c6793cab9b91c8f7c51ecca67fe275a",
+                    "pay/order/desktop/modules/pay/index.html": "93c7259ae9c9b28911ce797404977d1d",
+                    "practice/practicePage/mobile/components/objectItem.html": "e961ed0aca4d1da8431dd1fa2365c090",
+                    "practice/practicePage/mobile/components/objectPage.html": "1cc17dfa1e392b6c3f8c619c87204184",
+                    "recommend/components/recommend-feedback-box/component.html": "9d6bb7fd7578a67f697a0e876252a1d0",
+                    "recommend/components/recommend-list/component.html": "712711feb9e8e6323dbe17fddcde3d7b",
+                    "recommend/components/recommend-modal/template.html": "64dc0f5c0439ac9364eb6df072766401",
+                    "search/desktop/components/ad-search-results/component.html": "85abf0d8c900e05920b7ef38e259b7ef",
+                    "search/desktop/components/column-search-results/component.html": "3d8d441f5f0b124b56416714b65bda2b",
+                    "search/desktop/components/search-results-recommend/component.html": "3ab1aa5de2b1c97b009de124dd4d39b4",
+                    "search/mobile/components/searchBox/component.html": "f3be6787bac1c1a4eb6799e198caa467",
+                    "shareLearnPlan/components/page/wap/component.html": "882f410cd8a97eef0232878565d915ef",
+                    "shareLearnPlan/components/sharePage/wap/component.html": "3353a16a9168b505d7e33e5519e5ec67",
+                    "shared/components/IE8Supported/IE8Notice.html": "9bbdcf475a90f814ddae98d5765cdbfa",
+                    "shared/components/affix/component.html": "2c4fb63f394ab5e33750eff209d71ef0",
+                    "shared/components/appCallBanner/appCallBanner.html": "2c6a7d0cd6131b7b4e812d3e9ecbfeb2",
+                    "shared/components/banUserModal/wap/component.html": "c2055b5311c7c5e05a1832832590173c",
+                    "shared/components/banUserModal/web/component.html": "4ad00d36d57a206d8aee2a9d090ec359",
+                    "shared/components/baseui/commonui.html": "41d12a88ec8e1524e1cac348bda1ffc5",
+                    "shared/components/bind-phone-fail-modal/wap/component.html": "922861fb60682db35fc44914b73d7263",
+                    "shared/components/bind-phone-fail-modal/web/component.html": "c3fa00f519d930630b3ad3d163345134",
+                    "shared/components/bind-phone-modal/unbindTemplate.html": "40026936570f153042aaccfde058da3f",
+                    "shared/components/bind-phone-modal/wap/component.html": "826a7e1d7c5a20f6e8485897683a647d",
+                    "shared/components/bind-phone-modal/web/component.html": "8871065ca42206d2bbea5e597224cbbb",
+                    "shared/components/call-app-banner/component.html": "5e9cb8d4ea8c63a2f9ef9338f0cbc61a",
+                    "shared/components/card/baseCourseCard/baseCourseCard.html": "bcb92aa0ddb2c66422a97027bc009167",
+                    "shared/components/card/courseCardWithTime/component.html": "782d98fbccfff7aeac645f5b5b561282",
+                    "shared/components/card/discussCardWithDetail/component.html": "f283e9ef50aa4b6bc2b1ec89f5c53a97",
+                    "shared/components/card/discussCardWithQuote/component.html": "4296972a40f063c94b928657d1fccd94",
+                    "shared/components/card/liveCard/component.html": "dd4294255703aaddf829e315eaa4220b",
+                    "shared/components/card/selfDefineNoDiscuss/component.html": "6e351a035684bd9e7c36cceb5f869d1e",
+                    "shared/components/card/selfDefineWithDiscuss/component.html": "22186fc82a1380f5599ed4ea32960d44",
+                    "shared/components/card/spocBaseCourseCard/component.html": "5338b338ff9a08a635a545b89e37d303",
+                    "shared/components/card/studentCard/component.html": "e79e74ea94a6e6deb2c7c2953c1c4397",
+                    "shared/components/course/spoc-course-filter/web/component.html": "cfdea56bb2c1d873328d51e34687cc64",
+                    "shared/components/course/spoc-course-filter-wrap/web/component.html": "367cb65e9b0a50829e56812bade19a91",
+                    "shared/components/course/spoc-course-list/web/component.html": "38c419a54eeb9a5fbcccfa1bfffc4f83",
+                    "shared/components/crumb/crumb.html": "db9cdfd9bff175178249a75e8f8c7670",
+                    "shared/components/custom-phone-bind-wrap/wap/component.html": "eacc0d7dce9f20c7d358d8ca05505b7f",
+                    "shared/components/custom-phone-bind-wrap/web/component.html": "c12e4bce6d0a3909589fb4e96721a3aa",
+                    "shared/components/discuss/discussWrap.html": "37f6f7691c86ab2cae88cf8048367a02",
+                    "shared/components/editor/editor.html": "cabb888b8d6c1ecce834868ae914e70a",
+                    "shared/components/emailTips/component.html": "2af61fc427a55c940957d43783ad581e",
+                    "shared/components/empty/commonEmpty.html": "61d03bcbb9131efa935ad3c2cf139852",
+                    "shared/components/empty-guide/component.html": "06514cee14da82ebe3465d6eb67b00d5",
+                    "shared/components/error/statics/desktop.html": "fc61e0469492ea879def6df04918e934",
+                    "shared/components/error/statics/mobile.html": "d55644a527ebb44fc1ca6c64728489c0",
+                    "shared/components/followModal/followModalBody/component.html": "e007a6ff958502cbeab4a6e3f0575ac7",
+                    "shared/components/followModal/followModalBody/followModalUserBox/component.html": "5d40e2d25d9f229b3b4c00a56a7a1fcf",
+                    "shared/components/followModal/followModalHead/component.html": "54623e0ab83f4ec1910ce6ed43926882",
+                    "shared/components/followModal/followModalWrapper/component.html": "95adba04c69a6a57289003ace59f9efc",
+                    "shared/components/general-coupon/component.html": "c1f0cadce2264a2f25895a2e182763a8",
+                    "shared/components/global-sticky-components/inquiry/component.html": "07a7e70127cbf076c85cf21f034b4f98",
+                    "shared/components/group-buy-list/shared/component.html": "4d5746d6b4a490bd5c5362e22c045f46",
+                    "shared/components/hoverTip/hover.html": "fa7f2776a5c14d4930b07a512f995a29",
+                    "shared/components/jpk-coupon/wap/component.html": "1f992ae57d18e0c080ea4d832edb97a1",
+                    "shared/components/jpk-coupon/web/component.html": "1f992ae57d18e0c080ea4d832edb97a1",
+                    "shared/components/kaoyan-nav-web-package/nav/component.html": "4d5224b3c22c76623e7c17114ca130ae",
+                    "shared/components/kaoyan-nav-web-package/nav-cate-button/component.html": "d0e0dfb9e86303aea0786c254c9c0927",
+                    "shared/components/kaoyan-nav-web-package/nav-person-info/component.html": "8438223a5966ee4e2e80da633e9a4796",
+                    "shared/components/kaoyan-nav-web-package/nav-person-info-nologin/component.html": "22e00dc49294fb3b53a1caea36965d3d",
+                    "shared/components/kaoyan-nav-web-package/nav-person-info-user-info/component.html": "edef408218bf5b26c89baeccc47f1ab6",
+                    "shared/components/kaoyan-nav-web-package/nav-person-info-user-info-link-item-base/component.html": "5f9ab7e49d6dd7fef9afff167f63483d",
+                    "shared/components/learn-follow-modal/component.html": "01fdff9080e6d78c9b556c79fd1188d8",
+                    "shared/components/learnPlan/circleProcess/web/component.html": "5827b918b00633445f5ea58503595728",
+                    "shared/components/learnPlan/coupon-card/wap/component.html": "bd3a1775d94f4886b8729bc6cdcdf914",
+                    "shared/components/learnPlan/coupon-card/web/component.html": "368487bae3ce8c226eae6152fea18c58",
+                    "shared/components/learnPlan/couponList/web/component.html": "79a58435cafcbbd3207b6bb3b3c4c7f1",
+                    "shared/components/learnPlan/dailyTargetProcess/web/component.html": "bbe482a72f39a908bf8863402617d3d6",
+                    "shared/components/learnPlan/simpleCircleProcess/web/component.html": "573b7041b59bb00234b181b9c3c69137",
+                    "shared/components/learnPlan/targetAchivedTag/web/component.html": "8157c5d3791b817eb9ef7698dc232b3e",
+                    "shared/components/learnPlan/targetAchivedTagAward/coupon.html": "c746c2b32a5cb991171060c1a774b40e",
+                    "shared/components/learnPlan/targetAchivedTagAward/web/component.html": "91299e2040033cb168c3d5841fd86a68",
+                    "shared/components/learnPlan/targetAchivedTagShare/web/component.html": "353eddbf073bf3ba9b7cbf803576cac6",
+                    "shared/components/list-slider/component.html": "46d0e26f8c9a46ecb8caca6625a62b30",
+                    "shared/components/live-card/component.html": "44b6b56b0f406c7726417e375aacfc40",
+                    "shared/components/liveCourses/component.html": "1642f6fab1d3c67f0a771dbdd031e1ff",
+                    "shared/components/mobile-modal/wap/component.html": "8fdbc58160ca7a0db7efa68583cae536",
+                    "shared/components/nav/kaoyanWapNav/component.html": "0811fb49a76bae58a342a5199d8bebae",
+                    "shared/components/nav/moocWapNav/component.html": "ba1f82da40f377a41dfe4827dd17645b",
+                    "shared/components/obtainable-coupon/coupon-card/wap/component.html": "bd3a1775d94f4886b8729bc6cdcdf914",
+                    "shared/components/obtainable-coupon/coupon-card/web/component.html": "368487bae3ce8c226eae6152fea18c58",
+                    "shared/components/obtainable-coupon/coupon-card-list-modal/wap/component.html": "a41ebdd3a53e2f045e2a49e087defe47",
+                    "shared/components/obtainable-coupon/coupon-card-list-modal/web/component.html": "73f365e5376677ef5e16f452f521c0fa",
+                    "shared/components/obtainable-coupon/coupon-list/shared/component.html": "dbc0ea30eb3dcef6daba930fcb5ca33b",
+                    "shared/components/purchase-restriction-reservation-modal/wap/component.html": "a87f1457961eb41f79591d956191f8ac",
+                    "shared/components/purchase-restriction-reservation-modal/web/component.html": "ba753743d119f3b534ba980cc6a668b9",
+                    "shared/components/realNameSettingsModal/component.html": "bf6e1ede63fd10f5f6c8d9b5e7241278",
+                    "shared/components/recImg/component.html": "4ec58f38149b0f9558767d8dd281b16f",
+                    "shared/components/recentLive/component.html": "5bddd14b437c78053930a7577c5fcfe6",
+                    "shared/components/recentPost/component.html": "2bfeb8c58c4356c1ef5218e061788d8f",
+                    "shared/components/resultView/resultView.html": "43aec5fde671177298c20caa9dcd9f04",
+                    "shared/components/searchAzBox/searchAzBox.html": "45e7dc903c9dc11c8b4e825fa376990e",
+                    "shared/components/selectTab/component.html": "5ce28533329371a461776ffb0cb07dd5",
+                    "shared/components/u-courseCard/component.html": "cbd1cd309ee19a345d38207f3798afb5",
+                    "shared/components/userInfoSideBar/component.html": "45c270b08ce5ebe5c21ce7ac7c346645",
+                    "shared/components/userInfoTop/component.html": "cff487264050b82011d965db0de6eb51",
+                    "shared/components/wechat-invoke-app-overlay/component.html": "af084342c20071a2d183117a140e5216",
+                    "shared/desktop/components/courseCard.html": "26b4600659ecfb619f775295cc7e5442",
+                    "shared/desktop/components/recomendCourseList.html": "9d4c8e7f9aa8254bab08da4c2ffc38d1",
+                    "shared/desktop/components/signActivity/component.html": "3572ae730630702fc52d64363ae498eb",
+                    "shared/desktop/components/u-cateNav/component.html": "3bf37e27430171b99d46dcb3beb8284a",
+                    "shared/desktop/components/viewImage/component.html": "8086a6068aecfe0c17102ba951d124a5",
+                    "shared/desktop/modules/commonutil/commonutil.html": "3f6add6500a2d00b5fea05d07430df59",
+                    "shared/mobile/components/mobile-modal/wap/component.html": "aa1045ebc8265a0d0249426e49afe03f",
+                    "shared/mobile/modules/commonutil/commonutil.html": "a2c48939c28b7a775428cf14bccadcba",
+                    "shared/modules/teacherCenter/component/SpocCenterCardBox/component.html": "f50117a6507d1677e728ecc8e3accb97",
+                    "shared/modules/teacherCenter/index.html": "7fee6529cee36d2a5eb4602a81cf1eb8",
+                    "spoc/cloud/mooc-cloud-channels/statics/desktop.html": "3d71948410d52eb55170067229467506",
+                    "spoc/cloud/mooc-cloud-courses/statics/desktop.html": "61a41c03c414cb4ffcee934167ec5c08",
+                    "spoc/cloud/mooc-cloud-main/statics/desktop.html": "b7dc09f0a2b9d838bafa0b4c258df04e",
+                    "spoc/cloud/mooc-cloud-purchase/statics/desktop.html": "491879e93b723a2b2f08ecba41c66f39",
+                    "spoc/cloud/mooc-cloud-school-slide/statics/desktop.html": "a107e617faacb022d9ab60f8a2eed48f",
+                    "spoc/cloud/mooc-cloud-solutions/statics/desktop.html": "71d96696be08eff5de4a314f20e76988",
+                    "spoc/cloud/mooc-cloud-summary-counter/statics/desktop.html": "7e5cf61b5f1f713f4a9c82577e1c8af2",
+                    "spoc/cloud/mooc-cloud-swiper/statics/desktop.html": "792eb6d4ef822ca9de0ee7a754e6e404",
+                    "spoc/cloud/mooc-cloud-tab/statics/desktop.html": "2bba31e6dd46cc4c6caa212a013d6e81",
+                    "spoc/cloud/schoolCloud/desktop/components/allCourses.html": "5f224b71d3d6f3215e3dad4a4055c163",
+                    "spoc/cloud/schoolCloud/desktop/components/allSchools.html": "3b63ad2dc09363411d563c4940a5e7a1",
+                    "spoc/cloud/schoolCloud/desktop/components/applyCloudModal.html": "5ae9e591b63f7b8ca934b33b00b761fd",
+                    "spoc/cloud/schoolCloud/desktop/components/applySuccessModal.html": "c9c23f0095ea2c5c714494b86bd8a3c6",
+                    "spoc/cloud/schoolCloud/desktop/components/caseIntroPartnerUI.html": "a981be12ec987ce67cdf78e514705496",
+                    "spoc/cloud/schoolCloud/desktop/components/caseIntroSampleUI.html": "02b7bd7145477ef1073f216fe003abdd",
+                    "spoc/cloud/schoolCloud/desktop/components/courseResCard.html": "2214c37601c9d7dc56c7cfe304a14911",
+                    "spoc/cloud/schoolCloud/desktop/components/courseResHeaderUI.html": "90c9ed893297b1f6dd4192750e0bc361",
+                    "spoc/cloud/schoolCloud/desktop/components/courseResTabUI.html": "610c2de54eca381cb910f462f37a4d1d",
+                    "spoc/cloud/schoolCloud/desktop/components/indexPage.html": "f62174f7d57d26a0e621dd4f3f8ac2fd",
+                    "spoc/cloud/schoolCloud/desktop/components/introUI.html": "25825d2d0b11a06a25bb6a58502ae653",
+                    "spoc/cloud/schoolCloud/desktop/components/recruitLesson.html": "a501c021720f610770523ad163bc298f",
+                    "spoc/cloud/schoolCloud/desktop/components/schoolCloudIntro.html": "691e29b53bdcd27739658fcebe0dc51b",
+                    "spoc/cloud/schoolCloud/desktop/modules/caseIntro/index.html": "ce6733a76e4c3a23f2fae4124d26ecdc",
+                    "spoc/cloud/schoolCloud/desktop/modules/courseResource/index.html": "e8a60ade66f29bffa7f70e584300e919",
+                    "spoc/cloud/schoolCloud/desktop/modules/help/index.html": "7a7b8b5522893277d5baffe405e2c279",
+                    "spoc/cloud/schoolCloud/desktop/modules/index/index.html": "4b9808f37070929c25356fbf43cccacd",
+                    "spoc/cloud/shared/mooc-cloud-consulting/statics/desktop.html": "30f76f7b2093e3aec8e5ed0e35e4a5eb",
+                    "spoc/cloud/shared/mooc-cloud-footer/statics/desktop.html": "a18d6cc357543c4314e6822055a6e783",
+                    "spoc/cloud/shared/mooc-cloud-freeuse/statics/desktop.html": "593c02d770f83b6b5e89f47cd96b364c",
+                    "spoc/cloud/shared/mooc-cloud-nav/statics/desktop.html": "2cfd279ac86de821352b6be7d9ca4869",
+                    "spoc/cloud/shared/mooc-person-info/statics/desktop.html": "604e74eb9c5e8002083b0dc0a1396353",
+                    "spoc/index/desktop/modules/spocIndex/index.html": "5082fadc1cd6c13526d02e0df9ec76c6",
+                    "spoc/shared/components/directPurchaseModal.html": "2593e7dd33cae60635321d735ee1f833",
+                    "spoc/shared/components/identifyStudentModal.html": "07ab5418bb9d7b686024c719eec635df",
+                    "spoc/shared/components/schoolUI.html": "4d0335c3d70c7a0f5311aa7f0ef04e3f",
+                    "spoc/university/detail/desktop/components/trialNotifyModal.html": "58041ca909476aac9c221f972ab03c80",
+                    "spoc/university/detail/desktop/modules/universityCenter/index.html": "eac1e0d73c02cf886ccc6cf7b8791123",
+                    "teacherPage/kaoyan/shared/components/boostingProgramPanel/wap/component.html": "d68d7572a7664897cba300927f040c80",
+                    "teacherPage/kaoyan/shared/components/boostingProgramPanel/web/component.html": "acf0e0d960bcd39492d8ab0e0611eb18",
+                    "teacherPage/kaoyan/shared/components/coupon-card/web/component.html": "a168fa8ac8fcd8952da94a597ad2b95b",
+                    "teacherPage/kaoyan/shared/components/kaoyanHeader/wap/component.html": "e124141e4b031d64cfce991474779315",
+                    "teacherPage/kaoyan/shared/components/kaoyanHeader/web/component.html": "4bc36a7f5aa60e949f5ffc3fa41dcc59",
+                    "teacherPage/kaoyan/shared/components/new-course-card/web/component.html": "fc82e2d4f8c37b9ee625f02dca992e48",
+                    "teacherPage/kaoyan/shared/components/new-course-panel/web/component.html": "a8feea904ba36e6473c453bfba5cd70f",
+                    "teacherPage/kaoyan/shared/components/teacherCouponPanel/web/component.html": "5ea17071d65554e69fa3f3ce75bb194d",
+                    "teacherPage/kaoyan/shared/components/teacherLivePanel/wap/component.html": "9fb2a1c777b96800cc2cab487d68004a",
+                    "teacherPage/kaoyan/shared/components/teacherLivePanel/web/component.html": "4a771124a166f2f7117eeb42abf0d0b8",
+                    "teacherPage/mooc/desktop/modules/course/index.html": "6187f215fc1d24b202b77536651a72db",
+                    "teacherPage/mooc/desktop/modules/discuss/index.html": "ec60a48bb75c32dae715b65d4bec3542",
+                    "teacherPage/mooc/desktop/modules/index/index.html": "f2797e9f14c93cef8270de5641bfa1a4",
+                    "university/detail/desktop/modules/universityCenter/index.html": "9b30175da2f35c10ad00abaf71031b88",
+                    "user/bargain/shared/components/bargain/component.html": "f9df91370d9b344946e23cbcd6a1541f",
+                    "user/bargain/shared/components/bargainList/component.html": "1b26ef5d393b7d92593e5f79a8c0829b",
+                    "user/coupons/shared/components/coupons/component.html": "7a63de130c925b19863521c2b6475be8",
+                    "user/coupons/shared/components/coupons/wap/component.html": "621bd02000df808514cfd83daef91921",
+                    "user/coupons/shared/components/exchange-success-modal/template.html": "c4f98fb45be5e7fd918e5c3e39449caa",
+                    "user/coupons/shared/components/jpkCoupon/wap/couponList.html": "aa78aee9464d708e3ece6cc869519192",
+                    "user/groupBuy/components/group-course-card/wap/component.html": "60dbc315c4b4b6477b8a7ae0d8462f01",
+                    "user/groupBuy/components/group-info/wap/component.html": "eb8532a60f2b20dc2ccca2c13b093489",
+                    "user/groupBuy/components/group-info-member-list/wap/component.html": "08cb7f462fc4d68f495da65c8c709b05",
+                    "user/groupBuy/components/group-info-step/wap/component.html": "159c4b9949c1cd8da2325d8153f35c6c",
+                    "user/groupBuy/components/my-group-list/wap/component.html": "a5538a08db0a650a587c257cf7fd30ec",
+                    "user/myOrder/JPKOrderCard/component.html": "ac38399e6b088aaa0526ee6dd1ed8b86",
+                    "user/myOrder/JPKOrderList/component.html": "180d897edcceb7f109a5499824adfe91",
+                    "user/myOrder/OrderTab/component.html": "a01c7d06c055bd50d954045a472eb40f",
+                    "user/setting/accountSetting/desktop/modules/accountSetting/index.html": "56cbb5a2fdc477d96e6e569dd14c3848",
+                    "user/setting/accountSetting/desktop/modules/mailSetting/index.html": "b8fb0e21d24e92fba71985270b92bcbe",
+                    "user/setting/personInfoEdit/desktop/modules/personInfoSetting/index.html": "bf7b94931f2829265a5a8af8deb774af",
+                    "user/teacherCenterEdit/desktop/modules/teacherCenterEdit/index.html": "26b692a82de8a1823986bcb427d94e70",
+                    "vip/VipPage/component.html": "3c328d628e28e5457a1835b79b93aa84",
+                    "vocation/all/desktop/modules/vocation/index.html": "38d6fe0a18ac4d938be65e7f53c41d44"
+                }
+            };
+        </script>
+        <script>
+            // 这个文件重写了string原型的replace方法、match方法、split方法和Function原型的bind方法
+            // 和react技术栈有冲突，需要fix一下
+            function fixStringProto() {
+                if (!window.moocTempReplace) {
+                    Object.defineProperty(window, "moocTempReplace", {
+                        enumerable: false,
+                        configurable: false,
+                        writable: false,
+                        value: String.prototype.replace
+                    });
+                }
+                if (!window.moocTempMatch) {
+                    Object.defineProperty(window, "moocTempMatch", {
+                        enumerable: false,
+                        configurable: false,
+                        writable: false,
+                        value: String.prototype.match
+                    });
+                }
+                if (!window.moocTempSplit) {
+                    Object.defineProperty(window, "moocTempSplit", {
+                        enumerable: false,
+                        configurable: false,
+                        writable: false,
+                        value: String.prototype.split
+                    });
+                }
+                if (!window.moocTempBind) {
+                    Object.defineProperty(window, "moocTempBind", {
+                        enumerable: false,
+                        configurable: false,
+                        writable: false,
+                        value: Function.prototype.bind
+                    });
+                }
+            }
+            fixStringProto();
+        </script>
+        <script>
+            if ("undefined" == typeof EDU)
+                EDU = function() {
+                    var e = {}
+                      , t = function() {
+                        return !1
+                    }
+                      , n = {};
+                    var i = function(t, n) {
+                        return e.toString.call(t) === "[object " + n + "]"
+                    };
+                    return function(e, a) {
+                        var o = n[e]
+                          , r = i(a, "Function");
+                        if (null != a && !r)
+                            o = a;
+                        if (r && (null == o || o.__dt__ === !0)) {
+                            var s = [];
+                            for (var d = 2, c = arguments.length; d < c; d++)
+                                s.push(arguments.callee(arguments[d]));
+                            var l = {};
+                            s.push.call(s, l, {}, t, []);
+                            var f = a.apply(null, s) || l;
+                            if (!o || !i(f, "Object"))
+                                o = f;
+                            else if (Object.keys)
+                                for (var u = Object.keys(f), d = 0, c = u.length, h; d < c; d++) {
+                                    h = u[d];
+                                    o[h] = f[h]
+                                }
+                            else
+                                for (var h in f)
+                                    o[h] = f[h];
+                            if (null != o && o.__dt__ === !0)
+                                delete o.__dt__
+                        }
+                        if (null == o)
+                            o = {
+                                __dt__: !0
+                            };
+                        n[e] = o;
+                        return o
+                    }
+                }();
+            window.__phoneAccountFunctionalitiesSwitch = true;
+            // 判断是否是cms页面，是的话，则不添加横屏事件，因为移动端那边有合规校验
+            var $$$nativeWindowKeys = ["postMessage", "blur", "focus", "close", "frames", "self", "window", "parent", "opener", "top", "length", "closed", "location", "document", "origin", "name", "history", "locationbar", "menubar", "personalbar", "scrollbars", "statusbar", "toolbar", "status", "frameElement", "navigator", "applicationCache", "customElements", "external", "screen", "innerWidth", "innerHeight", "scrollX", "pageXOffset", "scrollY", "pageYOffset", "screenX", "screenY", "outerWidth", "outerHeight", "devicePixelRatio", "clientInformation", "screenLeft", "screenTop", "defaultStatus", "defaultstatus", "styleMedia", "onanimationend", "onanimationiteration", "onanimationstart", "onsearch", "ontransitionend", "onwebkitanimationend", "onwebkitanimationiteration", "onwebkitanimationstart", "onwebkittransitionend", "isSecureContext", "onabort", "onblur", "oncancel", "oncanplay", "oncanplaythrough", "onchange", "onclick", "onclose", "oncontextmenu", "oncuechange", "ondblclick", "ondrag", "ondragend", "ondragenter", "ondragleave", "ondragover", "ondragstart", "ondrop", "ondurationchange", "onemptied", "onended", "onerror", "onfocus", "oninput", "oninvalid", "onkeydown", "onkeypress", "onkeyup", "onload", "onloadeddata", "onloadedmetadata", "onloadstart", "onmousedown", "onmouseenter", "onmouseleave", "onmousemove", "onmouseout", "onmouseover", "onmouseup", "onmousewheel", "onpause", "onplay", "onplaying", "onprogress", "onratechange", "onreset", "onresize", "onscroll", "onseeked", "onseeking", "onselect", "onstalled", "onsubmit", "onsuspend", "ontimeupdate", "ontoggle", "onvolumechange", "onwaiting", "onwheel", "ongotpointercapture", "onlostpointercapture", "onpointerdown", "onpointermove", "onpointerup", "onpointercancel", "onpointerover", "onpointerout", "onpointerenter", "onpointerleave", "onbeforeunload", "onhashchange", "onlanguagechange", "onmessage", "onmessageerror", "onoffline", "ononline", "onpagehide", "onpageshow", "onpopstate", "onrejectionhandled", "onstorage", "onunhandledrejection", "onunload", "performance", "stop", "open", "alert", "confirm", "prompt", "print", "requestAnimationFrame", "cancelAnimationFrame", "requestIdleCallback", "cancelIdleCallback", "captureEvents", "releaseEvents", "getComputedStyle", "matchMedia", "moveTo", "moveBy", "resizeTo", "resizeBy", "getSelection", "find", "getMatchedCSSRules", "webkitRequestAnimationFrame", "webkitCancelAnimationFrame", "btoa", "atob", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "createImageBitmap", "scroll", "scrollTo", "scrollBy", "onappinstalled", "onbeforeinstallprompt", "caches", "crypto", "ondevicemotion", "ondeviceorientation", "ondeviceorientationabsolute", "indexedDB", "webkitStorageInfo", "sessionStorage", "localStorage", "fetch", "onauxclick", "visualViewport", "speechSynthesis", "webkitRequestFileSystem", "webkitResolveLocalFileSystemURL", "openDatabase", "chrome", '__REGULAR_DEVTOOLS_GLOBAL_HOOK__', '$$$nativeWindowKeysCheckMap', '$$$nativeWindowKeys', '$$$globalErrors'];
+            var $$$nativeWindowKeysCheckMap = {}
+              , i = 0
+              , l = $$$nativeWindowKeys.length;
+            for (; i < l; i++) {
+                $$$nativeWindowKeysCheckMap[$$$nativeWindowKeys[i]] = 1;
+            }
+            window.__globalErrorEvents = [];
+            function errorEventHandler(e) {
+                window.__globalErrorEvents.push(e);
+            }
+            function addEvent(el, ev, fn) {
+                if (el) {
+                    if (el.addEventListener) {
+                        el.addEventListener(ev, fn);
+                    } else if (el.attachEvent) {
+                        el.attachEvent(ev, fn);
+                    }
+                }
+            }
+            addEvent(window, 'error', errorEventHandler);
+            if (localStorage.getItem('kyOutVendor')) {
+                // 上报完清空
+                var kyOutVendor = localStorage.getItem('kyOutVendor');
+                var xhr = new XMLHttpRequest();
+                xhr.withCredentials = true;
+                xhr.open('GET', 'https://www.icourse163.org/submit/user/trail.do?outVendor=' + kyOutVendor, true);
+                xhr.setRequestHeader('content-type', 'application/x-www-form-urlencoded; charset=UTF-8')
+                xhr.send();
+                xhr.onload = function() {
+                    console.log('上报完清空', kyOutVendor)
+                    localStorage.removeItem('kyOutVendor');
+                }
+            }
+            // delete window.addEvent; // error reported in ie9, why do this?
+        </script>
+        <script>
+            window.isMobilePhone = "true";
+            window.gaProduct = "mooc";
+            window.urlPrefix = {
+                indexPrefix: "/",
+                homePrefix: "/home.htm",
+                loginPrefix: "/member/login.htm",
+                logoutPrefix: "/passport/member/logout.htm",
+                searchPrefix: "/search.htm",
+                courseListPrefix: "/category/all",
+                universityListPrefix: "/university/view/all.htm",
+                universityPrefix: "/university/",
+                universityPreviewPrefix: "/university/preview/",
+                vocationIndexPrefix: "/vemooc",
+                courseInfoPrefix: "/course/",
+                courseInfoPreviewPrefix: "/course/preview/",
+                courseLearnPrefix: "/learn/",
+                courseLearnPreviewPrefix: "/learn/preview/",
+                courseLearnReviewPrefix: "/learn/review/",
+                learnForTeacherPrefix: "/learn/enroll/",
+                spocMainPrefix: "/spoc/schoolcloud/index.htm",
+                spocCourseInfoPrefix: "/spoc/course/",
+                spocCourseLearnPrefix: "/spoc/learn/",
+                spocUsityIdPrefix: "/spoc/university.htm?schoolId=",
+                spocUniversityListPrefix: "/university/view/all.htm",
+                spocUniversityPrefix: "/spoc/university/",
+                spocUniversityPreviewPrefix: "/spoc/university/preview/",
+                spocMemberPrefix: "/spoc/u/",
+                spocMemberPreviewPrefix: "/spoc/u/preview/",
+                memberPrefix: "/u/",
+                memberPreviewPrefix: "/u/preview/",
+                addMemberInfoPrefix: "https://www.icourse163.org/member/addMemberInfo.htm",
+                partnerSuperAdminPrefix: "/partnerAdmin/superAdmin.htm",
+                partnerEditorAdminPrefix: "/partnerAdmin/editorAdmin.htm",
+                columnistAdminPrefix: "/column/management/index.htm",
+                adminManagerPrefix: "/collegeAdmin/schoolPanel.htm",
+                adminTeacherPrefix: "/collegeAdmin/teacherPanel.htm",
+                coursecreatePrefix: "/collegeAdmin/courseCreate.htm",
+                adminSetMessagePrefix: "/collegeAdmin/setMessage.htm",
+                adminSettingPrefix: "/collegeAdmin/setting.htm",
+                adminToolsPrefix: "/collegeAdmin/tools.htm",
+                termManagePrefix: "/collegeAdmin/termManage/",
+                reviewQuizPrefix: "/review/quiz/{id}.htm",
+                reviewHwPrefix: "/review/hw/",
+                reviewTrainPrefix: "/review/train/",
+                teacherMainEditPrefix: "/user/teacherMainEdit.htm",
+                personInfoSettingPrefix: "/user/setting/personInfoEdit.htm",
+                accountSettingPrefix: "/user/setting/accountSetting.htm",
+                attachmentPrefix: "/homework/attachment.htm",
+                titleAttachmentPrefix: "/question/title/attachment.htm",
+                notSupportedPrefix: "/common/errors/notSupported.htm",
+                helpFrontPrefix: "/help/help.htm",
+                helpBackIndexPrefix: "/help/helpIndex.htm",
+                helpBackPrefix: "/help/manageHelp.htm",
+                couponsSuffix: "/user/myCoupons.htm",
+                scholarship2017TeamPrefix: "/scholarship2017/team/team.htm",
+                aboutUsPrefix: "/about/aboutus.htm",
+                contactUsPrefix: "/about/contactus.htm",
+                certApplyPrefix: "/cert/apply.htm",
+                certDesignPrefix: "/cert/certDesign/{id}.htm",
+                chargeCertDesignPrefix: "/cert/chargeCertDesign/{id}.htm",
+                payOrderPrefix: "/pay/order.htm",
+                donateCoursePrefix: "/donate/course.htm",
+                getTextPrefix: "/resource/getText.htm",
+                cdnReportPrefix: 'https://study.163.com/about/cdnReport.htm',
+                snsOAuthPrefix: "/passport/sns/doOAuth.htm",
+                ursAuthorPrefix: "https://www.icourse163.org/member/ursLogin.htm",
+                thirdBindCallbackHref: "https://www.icourse163.org/logingate/urs/bindCallback.htm",
+                icourseAuthorPrefix: "https://www.icourse163.org/member/icourseLogin.htm",
+                livePrefix: "/live/liveRoom.htm",
+                kaoYanAdminManagerPrefix: "/collegeAdmin/postgradExamSchoolPanel.htm",
+                kaoyaoOrderPrefix: "/collegeAdmin/kaoyanOrder.htm",
+                columnOrderPrefix: "/collegeAdmin/columnOrder.htm",
+                orderServicePrefix: "/order/service.htm"
+            };
+            window.defaultHost = "https://www.icourse163.org";
+            // 默认host 后面要改成 /
+            window.dynamicHost = "";
+            window.moocHost = "icourse163.org";
+            window.moocHref = "https://www.icourse163.org";
+            window.moocStaticHost = "mc.stu.126.net";
+            window.callAppDownloadHref = "https://www.icourse163.org/client/callAppDownload.htm";
+            window.NEJ_CONF = {
+                clipboard: '//mc.stu.126.net/res/swf/nej_clipboard.swf?0eba83544b107d7207d8936baab41283'
+            };
+            window.returnUrl = 'https://www.icourse163.org/'
+            window.serverTimeDiff = new Date().getTime() - 1782411710929;
+            window.serverTime = 1782411710929;
+            window.webUser = {
+                rightsTime: "-1",
+                lastRightsTime: "-1",
+                studyVipRightsTime: "-1",
+                studyVipLastRightsTime: "-1",
+                id: "1595146716",
+                nickName: "机器人250520253889黄泽美",
+                roles: [],
+                passport: "yd.cbda4874fa1f4be29@163.com",
+
+                personalUrlSuffix: "mooc61280931855432914",
+                smallFaceUrl: "https://study-image.nosdn.127.net/b415854b73234f3f98978149b6c11a64.png?imageView&quality=100&thumbnail=120y120",
+                largeFaceUrl: "https://study-image.nosdn.127.net/b415854b73234f3f98978149b6c11a64.png?imageView&quality=100&thumbnail=120y120",
+                loginId: "yd.cbda4874fa1f4be29@163.com",
+                loginType: "8",
+
+                email: "1143094619@qq.com",
+                schoolId: "8012",
+                end_key: "end_value"
+            };
+            window.cert_owner = 'true';
+            window.currentPageName = "courseLearn";
+            window.imageUrlMap = {
+                loading_circle_gif: "//mc.stu.126.net/res/images/ui/loading_circle.gif?00ef871b291bc03a497d608a5bd8ec99",
+                share_sprite: "//mc.stu.126.net/res/images/ui/shareUI.png?e2653a364a790663aed6c6ece19fd83a",
+                ui_sprite: "//mc.stu.126.net/res/images/ui/ui_sprite.png?5f7eedcf69b8a05d3ed53b4c1918de1c",
+                forum_icon_sprite: "//mc.stu.126.net/res/images/ui/forum_icon_v2.png?5cdf997ad4620a8fbd34a4dd269af3f4",
+                image_upload_swf: "//mc.stu.126.net/res/swf/imageUpload.swf?884965992b66cee07fb945929ac4b00f",
+                image_pdf_swf: "//mc.stu.126.net/res/swf/pdfReader.swf?74ddf86a5d97e5af891638154a0989d1",
+                image_video_swf: "//mc.stu.126.net/res/swf/moocPlayer.swf",
+                img_upd_select_swf: "//mc.stu.126.net/res/swf/DragCutUpload_mooc.swf?ac94fb92d65cb0f12a93a8ca00fa3df9",
+                img_default_big_head: "//edu-image.nosdn.127.net/457BE69DFFF1A6157EAF6D44EA2D8662.png?imageView&thumbnail=180y180&quality=100",
+                img_default_small_head: "//mc.stu.126.net/res/images/common/headImg/small.jpg?06517f5e438da035a4016abd8e661d2f",
+                img_default_unviersity_1: "//mc.stu.126.net/res/images/common/default/university1.png?55bbec907070a55ee4d333bc645445d1",
+                img_default_unviersity_2: "//mc.stu.126.net/res/images/common/default/university2.png?a00032f80fa68a6ea6135ee8df9ed7a4",
+                img_default_unviersity_3: "//mc.stu.126.net/res/images/common/default/university3.png?63f350451049f7803b014abab9408a4d",
+                img_default_unviersity_cert: "//mc.stu.126.net/res/images/common/default/universityCert.png?4c209d5c5ebddc91e80fcf34795ddae1",
+                img_default_course: "//edu-image.nosdn.127.net/65d6907b-b4ff-4409-bbcc-e4dcc285e00b.jpg?imageView&quality=100",
+                img_default_signature: "//mc.stu.126.net/res/images/common/signature_example.png?a15f9c690bfd58771de32d5c483dea59",
+                img_step_score_mail: "//mc.stu.126.net/res/images/common/step_score_mail.jpg?201e015a404c3c7aef85de694a4b6622"
+            };
+            window.swfUrlMap = {
+                CloudPlayer: "//mc.stu.126.net/res/swf/eduPlayer.swf?be877349a3014ffd45d3be0ba2633556",
+                cloudPlayerUI: "//mc.stu.126.net/res/swf/cloudPlayerUI.swf?83eaf96a4fa93df776e734c42d59ecc6"
+            }
+            window.ursBasicConfig = {
+                newCDN: 1,
+                // 代表使用的CDN是连通性更好的SNI域名
+                version: 4,
+                // 代表版本4
+                productKey: 'a3b396bb2f589bbc1151f0fa61d14747',
+                product: 'imooc',
+                promark: 'cjJVGQM',
+                mode: 'popup',
+                //product : 'urs',
+                //promark : 'RFYwJDP',
+                //productkey: 'bcaddd8933a501880ebef6b951fe8f8a',
+                host: 'www.icourse163.org',
+                cookieDomain: 'icourse163.org',
+                regCookieDomain: 'icourse163.org'
+            };
+            window.URSLoginConfig = {
+                newCDN: 1,
+                // 代表使用的CDN是连通性更好的SNI域名
+                version: 4,
+                // 代表版本4
+                mode: 'popup',
+                product: 'imooc',
+                productKey: 'a3b396bb2f589bbc1151f0fa61d14747',
+                promark: 'cjJVGQM',
+                host: 'www.icourse163.org',
+                cookieDomain: 'icourse163.org',
+                skin: 3,
+                page: 'login',
+                needUnLogin: 1,
+                defaultUnLogin: 1,
+                placeholder: {
+                    account: '常用邮箱或网易邮箱',
+                    pwd: '密码'
+                },
+                needPrepare: 1,
+                regUrl: '//zc.reg.163.com/regInitialized?pd=imooc&pkid=YeaYYzQ&pkht=www.icourse163.org',
+                coverBackground: "background:-webkit-radial-gradient(center,rgba(0,0,0,0.3),#000 75%);",
+                single: 1,
+                cssDomain: '//cmc.stu.126.net/u/css/cms/',
+                cssFiles: 'urs4moocweb.css',
+                frameSize: {
+                    'width': 380,
+                    'height': 282
+                },
+                logincb: function(cb) {}
+            };
+        </script>
+        <!--[if lt IE 9]>
+<script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/libH5Shiv_f4d9dea8e0ae8455500862bbb874d63c.js"></script>
+<![endif]-->
+        <script src="//edu-cms.nosdn.127.net/topics/js/hubble_mooc_DATracker.sync.1.6.11_74e3f0b40aa94f8006a013c7db9ac1b1.js"></script>
+        <script>
+            var params = {
+                truncateLength: 255,
+                persistence: "localStorage",
+                cross_subdomain_cookie: false,
+                use_app_track: true,
+                loaded: function(datracker) {
+                    console.log("注册打点全局自定义属性");
+                    DATracker.register_attributes({
+                        'user_id': '1595146716'
+                    });
+                }
+            };
+            if (navigator && navigator.userAgent && navigator.userAgent.toLocaleLowerCase().indexOf('edumooc') > -1) {
+                //APP内h5
+                DATracker.init("MA-8565-FF57FC8435B4", params);
+            } else {
+                DATracker.init("MA-A123-1F7E190156E8", params);
+            }
+            if (localStorage.getItem('isBrowerSupportWebp') === null) {
+                var isBrowerSupportWebp = function() {
+                    try {
+                        return document.createElement('canvas').toDataURL('image/webp', 0.5).indexOf('data:image/webp') === 0;
+                    } catch (err) {
+                        return false;
+                    }
+                }
+                localStorage.setItem('isBrowerSupportWebp', isBrowerSupportWebp())
+            }
+        </script>
+        <script>
+            var trackEvent = function(e) {
+                var isTrackEle = e.target.dataset;
+                var trackName = isTrackEle ? isTrackEle.track : '';
+                if (isTrackEle && trackName) {
+                    var trackIndex = 0;
+                    var arg = {};
+                    var trackList = Object.keys(isTrackEle).filter(i => i !== 'track');
+                    for (trackIndex = 0; trackIndex < trackList.length; trackIndex++) {
+                        arg[trackList[trackIndex]] = isTrackEle[trackList[trackIndex]];
+                    }
+                    if (!arg.user_id) {
+                        arg['user_id'] = window.webUser ? window.webUser.id : ''
+                    }
+                    if (!arg.pagename) {
+                        arg['pagename'] = window.currentPageName
+                    }
+                    console.warn('send track', trackName, arg);
+                    window.DATracker && window.DATracker.track(trackName, arg);
+                }
+            };
+            window.addEventListener('click', trackEvent);
+        </script>
+        <script src="//edu-cms.nosdn.127.net/topics/js/regular_mooc_855ddae161eaf47db272efc166066966.js"></script>
+        <script>
+            window.currentLanguage = '';
+        </script>
+        <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/libHammer_d259bb80e54c2a71dde8ceb6e29a0116.js"></script>
+        <link type="text/css" rel="stylesheet" href="https://edu-cms.nosdn.127.net/topics/css/antd-fix-v4.24.5_c294eccb6205048081aae43b83feb6e5.css"/>
+    </head>
+    <link type="text/css" rel="stylesheet" href="https://yds3-infra-arch.ydstatic.com/school-cdn-storage/mooc-static/katex/katex.min.css"/>
+    <link rel="stylesheet" href="//mc.stu.126.net/pub/s/pt_learn_learn_d292251c0d5b6fab9c4f5f78e80a3c7f.css"/>
+    <body class="
+
+">
+        <div class="f-dn" id="j-global-score-lock-container"></div>
+        <div id="j-global-ai-robot"></div>
+        <div id="j-activityBanner" style="display:none;"></div>
+        <div id="j-reactInjectAiMoocEntry" class="j-reactInjectAiMoocEntry" style="position:fixed;z-index:300;right:13px"></div>
+        <div id="j-activityRightBanner" class="f-dn ga-click" data-cate="201609奖学金" data-action="悬浮栏点击" style="position:fixed;z-index:300;text-align:right;right: 16px;bottom:183px;"></div>
+        <div id="j-appbanner" style="position:relative;z-index:300;"></div>
+        <div id="g-container">
+            <div class="m-nav-container f-f0">
+                <body>
+                    <div id="web-nav-container" style="position:sticky;z-index:999;top:0; width:100%"></div>
+                </body>
+            </div>
+            <div id="g-body">
+                <div class="m-cbg"></div>
+                <div class="j-notice notice" id="j-notice"></div>
+                <div id="j-learnCertified"></div>
+                <div class="m-learnhead">
+                    <div class="m-learnhead-left">
+                        <a hidefocus="true" target="_blank" class="schoolImg f-fl" title="东北大学" href="/university/NEU">
+                            <img class="schoolTrueImg" id="" src="https://nos.netease.com/edu-image/ACAB4C1B0610AB9088D6801CC6FC560D.png?imageView&amp;thumbnail=220y80&amp;quality=100" width="108" height="40" alt="东北大学">
+                        </a>
+                        <div class="f-fl info">
+                            <img class="f-fl courseImg" id="" src="https://edu-image.nosdn.127.net/FFA10E088831ABCD8BF007445F866C7D.jpg?imageView&amp;thumbnail=426y240&amp;quality=100" width="auto" height="48" alt="高等数学（二）">
+                            <div>
+                                <div class="f-cb" style="margin-bottom:6px">
+                                    <a hidefocus="true" class="f-fl" target="_blank" href="/course/NEU-1001956020">
+                                        <h4 class="f-fc3 courseTxt">高等数学（二）</h4>
+                                    </a>
+                                    <a href="javascript:void(0)">
+                                        <span class="tag f-f0 f-fl ga-click" style="background-color:#FFF4E8; color: #D37F24; border: 0.5px #F3BF86 solid;">认证学习</span>
+                                    </a>
+                                    <a target="_blank" href="https://www.icourse163.org/channel/2001.htm">
+                                        <span class="tag f-f0 f-fl ga-click" data-cate="201609奖学金" data-action="点击奖学金" style="background-color: #CBA265">一流课程</span>
+                                    </a>
+                                </div>
+                                <div class="learn-teacher-names-wrapper">
+                                    <h5 class="padding-top-5 learn-teacher-names" style="font-size:12px">
+                                        <a class="f-fcgreen" href="/u/mooc1464835862719" target="_blank">孙艳蕊</a>
+                                        、<a class="f-fcgreen" href="/u/mooc1470788973196" target="_blank">杨中兵</a>
+                                        、<a class="f-fcgreen" href="/u/mooc1464836114588" target="_blank">宋叔尼</a>
+                                        、<a class="f-fcgreen" href="/u/mooc1470898730010" target="_blank">孔庆海</a>
+                                        、<a class="f-fcgreen" href="/u/mooc1472799709491" target="_blank">韩志涛</a>
+                                        、<a class="f-fcgreen" href="/u/mooc1489129187756" target="_blank">袁媛</a>
+                                        、<a class="f-fcgreen" href="/u/mooc1489388825214" target="_blank">钱金花</a>
+                                        、<a class="f-fcgreen" href="/u/mooc1489109524110" target="_blank">沈海龙</a>
+                                        、<a class="f-fcgreen" href="/u/mooc1470796737075" target="_blank">刘静宜</a>
+                                        、<a class="f-fcgreen" href="/u/2326669055" target="_blank">韩海燕</a>
+                                    </h5>
+                                    <div class="learn-teacher-names-dropdown"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="m-learnhead-right btnActions">
+                        <div id="j-learnActionButtons"></div>
+                        <div class="common-btn comment f-dn" id="j-comment-link">
+                            <i></i>
+                            评价课程
+
+                        </div>
+                    </div>
+                </div>
+                <div class="f-cb learnPage">
+                    <div class="learnPageLeft">
+                        <div class="m-learnleft">
+                            <div id="j-learnMenu"></div>
+                            <div id="j-menuBottomBlock">
+                                <div class="m-coulshar f-bg hover hidden" id="communityTab"></div>
+                                <div class="m-coulshar f-bg f-cb hover hidden f-dn" id="wxItemTab" style="">
+                                    <div class="icon-left">
+                                        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                            <g opacity="1" transform="translate(0 0)  rotate(0 12 12)">
+                                                <path id="Union" fill-rule="evenodd" style="fill:#666666" transform="translate(4 2)  rotate(0 8 10)" opacity="1" d="M13.66 12.98L11.67 10L13.66 7.02C14.53 5.7 15 4.16 15 2.58L15 2C15.55 2 16 1.55 16 1C16 0.45 15.55 0 15 0L1 0C0.45 0 0 0.45 0 1C0 1.55 0.45 2 1 2L1 2.58C1 4.16 1.47 5.7 2.34 7.02L4.33 10L2.34 12.98C1.47 14.3 1 15.84 1 17.42L1 18C0.45 18 0 18.45 0 19C0 19.55 0.45 20 1 20L15 20C15.55 20 16 19.55 16 19C16 18.45 15.55 18 15 18L15 17.42C15 15.84 14.53 14.3 13.66 12.98Z M11.99 14.09L9.93 11L6.07 11L4.01 14.09C3.35 15.08 3 16.24 3 17.42L3 18L4.25 18L5.46 16.07C6.63 14.19 9.37 14.19 10.54 16.07L11.75 18L13 18L13 17.42C13 16.24 12.65 15.08 11.99 14.09Z M8.84849 17.1304C8.45849 16.5004 7.54849 16.5004 7.14849 17.1304L6.60849 18.0004L9.38849 18.0004L8.84849 17.1304Z M3 2.58C3 3.42 3.18 4.24 3.51 5L12.49 5C12.83 4.24 13 3.42 13 2.58L13 2L3 2L3 2.58Z M6.06703 9L9.92703 9L11.267 7L4.73703 7L6.06703 9Z "/>
+                                            </g>
+                                        </svg>
+                                    </div>
+                                    <p class="item-title">微信提醒课程进度</p>
+                                    <div class="hover-content">
+                                        <img src="//edu-image.nosdn.127.net/90912154-6594-4ed2-8f22-fe5dc0087762.jpg?imageView&thumbnail=258y258&quality=100">
+                                        <div class="triangle"></div>
+                                    </div>
+                                </div>
+                                <div class="m-coulshar f-bg f-cb hover hidden f-dn" id="appTab">
+                                    <div class="icon-left">
+                                        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                            <g opacity="1" transform="translate(0 0)  rotate(0 12 12)">
+                                                <path id="Rectangle 275 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(1.5 6.500000476837158)  rotate(0 5 2.5)" opacity="1" d="M2.5 2C2.22 2 2 2.22 2 2.5C2 2.78 2.22 3 2.5 3L7.5 3C7.78 3 8 2.78 8 2.5C8 2.22 7.78 2 7.5 2L2.5 2Z M0 2.5C0 3.88 1.12 5 2.5 5L7.5 5C8.88 5 10 3.88 10 2.5C10 1.12 8.88 0 7.5 0L2.5 0C1.12 0 0 1.12 0 2.5Z "/>
+                                                <path id="Rectangle 276 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(7.5 1.500000476837158)  rotate(0 2 2)" opacity="1" d="M0,2C0,3.1 0.9,4 2,4L3,4C3.55,4 4,3.55 4,3L4,2C4,0.9 3.1,0 2,0C0.9,0 0,0.9 0,2Z "/>
+                                                <path id="Rectangle 275 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(12.50000021721988 12.49999956556023)  rotate(179.9999950216869 5 2.5)" opacity="1" d="M2.5 2C2.22 2 2 2.22 2 2.5C2 2.78 2.22 3 2.5 3L7.5 3C7.78 3 8 2.78 8 2.5C8 2.22 7.78 2 7.5 2L2.5 2Z M0 2.5C0 3.88 1.12 5 2.5 5L7.5 5C8.88 5 10 3.88 10 2.5C10 1.12 8.88 0 7.5 0L2.5 0C1.12 0 0 1.12 0 2.5Z "/>
+                                                <path id="Rectangle 276 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(12.50000017377591 18.49999982622409)  rotate(179.9999950216869 2 2)" opacity="1" d="M0,2C0,3.1 0.9,4 2,4L3,4C3.55,4 4,3.55 4,3L4,2C4,0.9 3.1,0 2,0C0.9,0 0,0.9 0,2Z "/>
+                                                <path id="Rectangle 275 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(3.999999970187801 15.0000000596244)  rotate(-89.99999931675467 5 2.5)" opacity="1" d="M2.5 2C2.22 2 2 2.22 2 2.5C2 2.78 2.22 3 2.5 3L7.5 3C7.78 3 8 2.78 8 2.5C8 2.22 7.78 2 7.5 2L2.5 2Z M0 2.5C0 3.88 1.12 5 2.5 5L7.5 5C8.88 5 10 3.88 10 2.5C10 1.12 8.88 0 7.5 0L2.5 0C1.12 0 0 1.12 0 2.5Z "/>
+                                                <path id="Rectangle 276 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(1.499999976150242 12.50000014305905)  rotate(-89.99999931675467 2 2)" opacity="1" d="M0,2C0,3.1 0.9,4 2,4L3,4C3.55,4 4,3.55 4,3L4,2C4,0.9 3.1,0 2,0C0.9,0 0,0.9 0,2Z "/>
+                                                <path id="Rectangle 275 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(10.00000012914011 4.000000218556934)  rotate(90.00000250447806 5 2.5)" opacity="1" d="M2.5 2C2.22 2 2 2.22 2 2.5C2 2.78 2.22 3 2.5 3L7.5 3C7.78 3 8 2.78 8 2.5C8 2.22 7.78 2 7.5 2L2.5 2Z M0 2.5C0 3.88 1.12 5 2.5 5L7.5 5C8.88 5 10 3.88 10 2.5C10 1.12 8.88 0 7.5 0L2.5 0C1.12 0 0 1.12 0 2.5Z "/>
+                                                <path id="Rectangle 276 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(18.50000038941438 7.500000087422752)  rotate(90.00000250447806 2 2)" opacity="1" d="M0,2C0,3.1 0.9,4 2,4L3,4C3.55,4 4,3.55 4,3L4,2C4,0.9 3.1,0 2,0C0.9,0 0,0.9 0,2Z "/>
+                                            </g>
+                                        </svg>
+                                    </div>
+                                    <p class="item-title">扫码下载 APP</p>
+                                    <div class="hover-content">
+                                        <img src="//img-ph-mirror.nosdn.127.net/Rg6muO26iMOFWx9vwEHC-g==/6630234335885341999.png"></img>
+                                        <div class="triangle"></div>
+                                    </div>
+                                </div>
+                                <div id="j-recommend-textbook-sideBar" style="margin-top:20px"></div>
+                                <div class="m-coulshar f-bg f-cb hover hidden f-dn" id="help">
+                                    <div class="icon-left">
+                                        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                            <g opacity="1" transform="translate(0 0)  rotate(0 12 12)">
+                                                <path id="Ellipse 134 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(2 2)  rotate(0 10 10)" opacity="1" d="M18 10C18 5.58 14.42 2 10 2C5.58 2 2 5.58 2 10C2 14.42 5.58 18 10 18C14.42 18 18 14.42 18 10Z M20 10C20 4.48 15.52 0 10 0C4.48 0 0 4.48 0 10C0 15.52 4.48 20 10 20C15.52 20 20 15.52 20 10Z "/>
+                                                <path id="Ellipse 190" fill-rule="evenodd" style="fill:#666666" transform="translate(11 17)  rotate(0 1 1)" opacity="1" d="M1,0C0.45,0 0,0.45 0,1C0,1.55 0.45,2 1,2C1.55,2 2,1.55 2,1C2,0.45 1.55,0 1,0Z "/>
+                                                <path id="Ellipse 191 (Stroke)" fill-rule="evenodd" style="fill:#666666" transform="translate(8.170433044433594 6)  rotate(0 3.914783477783203 5)" opacity="1" d="M0.67,3.94C1.19,4.13 1.76,3.85 1.94,3.33C2.22,2.56 2.96,2 3.83,2C4.93,2 5.83,2.9 5.83,4C5.83,5.1 4.93,6 3.83,6C3.28,6 2.83,6.45 2.83,7L2.83,9C2.83,9.55 3.28,10 3.83,10C4.38,10 4.83,9.55 4.83,9L4.83,7.87C6.55,7.43 7.83,5.86 7.83,4C7.83,1.79 6.04,0 3.83,0C2.09,0 0.61,1.12 0.06,2.67C-0.13,3.19 0.15,3.76 0.67,3.94Z "/>
+                                            </g>
+                                        </svg>
+                                    </div>
+                                    <a href="/help/help.htm#/hf?t=0" target="_blank" class="item-title" style="color:#666666">帮助中心</a>
+                                </div>
+                                <div class="m-coulshar f-bg f-cb f-dn" id="j-courseshare">
+                                    <div id="j-coushare">
+                                        <div class="f-fl f-fc3 f-f0 text">课程分享</div>
+                                    </div>
+                                    <div class="noticeShare f-pr j-noticeShare f-f0" style="display:none">
+                                        <p>现在分享好课有奖哦~</p>
+                                        <p class="btns">
+                                            <span class="detail" id="j-activityDetail">查看活动详情</span>
+                                            <span id="j-ignoreActivityNotice">忽略</span>
+                                        </p>
+                                        <span class="u-icon-close f-pa" id="j-closeNotice"></span>
+                                        <div class="shareDialogArrow"></div>
+                                        <div class="shareDialogArrow1"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="learnPageContent">
+                        <div class="learnPageContentLeft">
+                            <div class="m-learnbox" id="courseLearn-inner-box"></div>
+                            <div class="m-recommend-content" id="j-recommend-content"></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="ydjpk-convert-modal"></div>
+                <div id="learn-footer-wrapper"></div>
+                <script>
+                    window.teachers = [{
+                        name: "孙艳蕊",
+                        href: "/u/mooc1464835862719"
+                    }, {
+                        name: "杨中兵",
+                        href: "/u/mooc1470788973196"
+                    }, {
+                        name: "宋叔尼",
+                        href: "/u/mooc1464836114588"
+                    }, {
+                        name: "孔庆海",
+                        href: "/u/mooc1470898730010"
+                    }, {
+                        name: "韩志涛",
+                        href: "/u/mooc1472799709491"
+                    }, {
+                        name: "袁媛",
+                        href: "/u/mooc1489129187756"
+                    }, {
+                        name: "钱金花",
+                        href: "/u/mooc1489388825214"
+                    }, {
+                        name: "沈海龙",
+                        href: "/u/mooc1489109524110"
+                    }, {
+                        name: "刘静宜",
+                        href: "/u/mooc1470796737075"
+                    }, {
+                        name: "韩海燕",
+                        href: "/u/2326669055"
+                    }]
+                    window.menuItemDtos = [{
+                        name: "公告",
+                        id: "1237617485",
+                        type: "1"
+                    }, {
+                        name: "评分标准",
+                        id: "1237617486",
+                        type: "2"
+                    }, {
+                        name: "课件",
+                        id: "1237617487",
+                        type: "3"
+                    }, {
+                        name: "测验与作业",
+                        id: "1237617488",
+                        type: "4"
+                    }, {
+                        name: "考试",
+                        id: "1237617489",
+                        type: "6"
+                    }, {
+                        name: "讨论区",
+                        id: "1237617490",
+                        type: "7"
+                    }]
+                    window.isNotCertifiedMoocShow = true;
+                    window.termClose = 0;
+                    window.isPreview = 0;
+                    window.canModifyCertifiedPreview = false;
+                    window.isCertifiedPreview = false;
+                    window.isCertifiedNotPreview = true
+                    window.isNeedOpenCloseTerm = '';
+                    window.isTermEnd = false;
+                    window.isEnroll = true;
+                    window.newTermId = '';
+                    window.courseDto = {
+                        id: 1001956020,
+                        shortName: "0701NEU005B",
+                        name: "高等数学（二）",
+                        productType: "1",
+                        schoolPanel: {
+                            shortName: "NEU",
+                            name: "东北大学",
+                            schoolType: "1"
+                        },
+                        lectorPanels: [{
+                            memberId: "1017565562",
+                            lectorType: 0
+                        }, {
+                            memberId: "1019154419",
+                            lectorType: 1
+                        }, {
+                            memberId: "1017565595",
+                            lectorType: 1
+                        }, {
+                            memberId: "1019181109",
+                            lectorType: 1
+                        }, {
+                            memberId: "1019619654",
+                            lectorType: 1
+                        }, {
+                            memberId: "1024956651",
+                            lectorType: 1
+                        }, {
+                            memberId: "1025063135",
+                            lectorType: 1
+                        }, {
+                            memberId: "1024949317",
+                            lectorType: 1
+                        }, {
+                            memberId: "1019159261",
+                            lectorType: 1
+                        }, {
+                            memberId: "6097898",
+                            lectorType: 1
+                        }
+                        ],
+                        ordinaryEditors: [{
+                            id: 1402198655
+                        }]
+                    };
+                    window.courseCardDto = {
+                        "schoolImgUrl": "https://nos.netease.com/edu-image/ACAB4C1B0610AB9088D6801CC6FC560D.png?imageView&thumbnail=220y80&quality=100",
+                        "channel": 1,
+                        "videoId": 1005858006,
+                        "termPanel": "com.netease.mooc.remote.dto.course.MocTermCardDto@702ede20",
+                        "mocTagDtos": ["com.netease.mooc.tag.dto.MocTagDto@55228acb"],
+                        "currentTermChargeable": 0,
+                        "currentTermId": 1476748448,
+                        "id": 1001956020,
+                        "isHasCourseRecommendTarget": false,
+                        "webVisible": 1,
+                        "shortName": "0701NEU005B",
+                        "status": 2,
+                        "schoolId": 8012,
+                        "gmtCreate": 1487642469066,
+                        "classroomSupport": 1,
+                        "originalCourseChannel": 0,
+                        "courseType": 1,
+                        "mode": 0,
+                        "spocToOocStatus": 0,
+                        "applyRoocStatus": 0,
+                        "weight": 0,
+                        "firstPublishTime": 1487815298435,
+                        "schoolPanel": "com.netease.mooc.remote.dto.course.MocSchoolCardDto@186574a7",
+                        "name": "高等数学（二）",
+                        "originModel": 0,
+                        "applyMoocStatus": 0,
+                        "ordinaryEditors": ["com.netease.mooc.remote.dto.course.MocOrdinaryEditorDto@3bd59d8d"],
+                        "fromCourseMode": -1,
+                        "productType": 1,
+                        "applyConvertChannelStatus": 0,
+                        "imgUrl": "https://edu-image.nosdn.127.net/FFA10E088831ABCD8BF007445F866C7D.jpg?imageView&thumbnail=426y240&quality=100"
+                    }
+
+                    window.termDto = {
+                        id: 1476748448,
+                        bigPhoto: "https://edu-image.nosdn.127.net/FFA10E088831ABCD8BF007445F866C7D.jpg?imageView&amp;thumbnail=426y240&amp;quality=100",
+                        mode: 0,
+                        supportAiLessonPlan: "0",
+                        supportFastQuiz: "",
+                        graphId: "",
+                        questionGraphId: "",
+                        skillGraphId: "",
+                        timeToFreeze: "5184000000",
+                        startTime: "1772071200000",
+                        endTime: "1784734200000",
+                        price: "0",
+                        certified: 1,
+                        //是否是认证学期字段
+                        chargeableCert: "1",
+                        //是否可以申请证书
+                        closeVisableStatus: "1",
+                        mocVipType: "0",
+                        guideVisiblePosition: "",
+                        studyVipFlag: 0,
+                        //是否是学业会员课程
+                        supportAiCapabilityFlag: 0,
+                        //是否是要增加AI辅助模块的考研课程
+                    };
+                    if (+window.termDto.price || window.isSpoc) {
+                        window.hideTermShare = true;
+                    }
+                    window.serverTime = 1782411710929;
+                    window.certificationRightsDto = {
+                        rightsType: 0,
+                        //0未购买 1购买贵 2买了便宜
+                        enrollClassroom: 1,
+                        //0 || 1 该学生是否绑定了慕课堂
+                        certified: 1,
+                        //0 || 1 是否认证学期
+                    };
+                    // 当前学习模式从url中取得 0 免费模式;100 认证模式;
+                    window.learnMode = 100;
+                    window.uploadHost = "https://upload.icourse163.org";
+                    window.qaForumId = "1237125469";
+                    window.moocQAForumId = "";
+                    window.quizForumId = "";
+                    window.lessonForumId = "1237125470";
+                    window.canAskTeacher = "1";
+                    window.donate = "0";
+                    // 隐藏成绩
+                    window.shouldShowScore = (window.isSpoc && window.isSpoc == 1) || (window.certificationRightsDto && (window.certificationRightsDto.enrollClassroom == 1 || window.certificationRightsDto.enrollAiClassroom == 1)) || (window.certificationRightsDto && window.certificationRightsDto.rightsType == 1 && window.certificationRightsDto.rightsEndTime > +new Date()) || location.href.indexOf('viewAnswer=true') > -1;
+                    window.shouldHiddenScore = !window.shouldShowScore && learnMode == 100;
+                </script>
+                <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/NIMWEB_f4c21bac9336d53671dfa4a4d10f4515.js"></script>
+                <script src="//res.wx.qq.com/open/js/jweixin-1.0.0.js"></script>
+                <script type="text/javascript" src="//cmc.stu.126.net/u/js/cms/crypto-js-4.0.0.min.js?1591252578811"></script>
+                <script type="text/javascript" src="//edu-cms.nosdn.127.net/topics/js/hls.js1.1.2_c902fb111b3c35a23a71584a19fcd54a.js"></script>
+                <script type="text/javascript" src="https://player.polyv.net/livesdk/polyv-live.min.js"></script>
+                <script type="text/javascript" src="https://player.polyv.net/jssdk/polyv-chatroom.min.js"></script>
+                <script type="text/javascript" src="https://player.polyv.net/resp/rtc-sdk/latest/polyv-rtc.min.js"></script>
+                <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/cryptoJS.min.js_b6dad544db87a1caa43ccd911ce6dd90.js"></script>
+                <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/videoAesUtilsMin_204f9019ddbd47da07f40a4dc117821b.js"></script>
+                <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/VIDEOPLAYER_a7718dbce0f38d36548068efb672bcf6.js"></script>
+                <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/core_2692eeb8a110dded418db112f8cf7402.js"></script>
+                <script onerror="javascript:window.errorEventHandler && window.errorEventHandler(event)" src="//mc.stu.126.net/pub/s/pt_learn_learn_cb74d23919f7c9adbe4c062e0fcdb122.js"></script>
+                <script>
+                    String.prototype.replace = window.moocTempReplace ? window.moocTempReplace : String.prototype.replace;
+                    String.prototype.match = window.moocTempMatch ? window.moocTempMatch : String.prototype.match;
+                    window.reactComponentLoadBootstrap.init({
+                        name: 'TextbookRecommendTextbookSideBox',
+                        container: document.querySelector("#j-recommend-textbook-sideBar"),
+                    }, {
+                        courseId: window.courseDto && window.courseDto.id,
+                        reference: "course_learn"
+                    }, {
+                        loadSuccessCb: function() {
+                            if (window.renderReactComponent && window.renderReactComponent['TextbookRecommendTextbookSideBox']) {
+                                var Component = window.renderReactComponent['TextbookRecommendTextbookSideBox'];
+                                Component.render(Component.component, Component.initialState, document.querySelector('#j-recommend-textbook-sideBar'));
+                            }
+                        }
+                    });
+                    // 全局成绩加锁点击事件
+                    var __validLockScoreContainer = document.getElementById('j-global-score-lock-container');
+                    if (window.renderReactComponent && window.renderReactComponent['LearnScoreLockBtn']) {
+                        window.renderReactComponent.ReactDOM.unmountComponentAtNode(__validLockScoreContainer);
+                        var LearnScoreLockBtn = window.renderReactComponent['LearnScoreLockBtn'];
+                        window.renderReactComponent.render(LearnScoreLockBtn.component, LearnScoreLockBtn.initialState, __validLockScoreContainer)
+                    } else {
+                        window.reactComponentLoadBootstrap.init({
+                            name: 'LearnScoreLockBtn',
+                            container: __validLockScoreContainer,
+                        }, {
+                            termId: window.termDto && window.termDto.id,
+                            showFreeLearnBtn: false
+                        });
+                    }
+                    // 全局成绩加锁点击事件
+                    document.body.addEventListener('click', function(event) {
+                        if (event.target.classList.contains('j-triggerLockScore')) {
+                            var btn = document.querySelector('#globalScoreLockBtn');
+                            if (btn) {
+                                btn.click();
+                            }
+                        }
+                    });
+                    if (isPreview == 1 || !(window.serverTime >= termDto.endTime && termDto.closeVisableStatus == 2)) {
+                        // 右小角 ai功能
+                        var aiRobotContainer = document.querySelector('#j-global-ai-robot');
+                        window.reactComponentLoadBootstrap.init({
+                            name: 'LearnAIAssistant',
+                            container: aiRobotContainer,
+                        }, {
+                            sceneType: 0,
+                            termId: window.termDto && window.termDto.id,
+                            courseId: window.courseDto && window.courseDto.id,
+                            courseName: window.courseDto && window.courseDto.name,
+                        });
+                        window.DATracker && window.DATracker.track('认证MOOC课程认证模式学习页-展示-iaw', {
+                            pagename: 'course',
+                            user_id: (window.webUser || {}).id,
+                            course_id: window.courseDto && window.courseDto.id,
+                            term_id: window.termDto && window.termDto.id,
+                        });
+                    }
+                    // 右上角各种button
+                    var __btnContainer = document.getElementById('j-learnActionButtons');
+                    var isKidSchool = window.courseDto && courseDto.schoolPanel && courseDto.schoolPanel.schoolType == 5;
+                    // 中少社幼儿园学校
+                    var isSimpleBtnMode = window.courseDto && courseDto.schoolPanel && courseDto.schoolPanel.schoolType == 6;
+                    // 简单按钮模式课程
+                    if (__btnContainer && !isKidSchool) {
+                        if (window.renderReactComponent && window.renderReactComponent['LearnActionButtons']) {
+                            window.renderReactComponent.ReactDOM.unmountComponentAtNode(__btnContainer);
+                            var LearnActionButtons = window.renderReactComponent['LearnActionButtons'];
+                            window.renderReactComponent.render(LearnActionButtons.component, LearnActionButtons.initialState, __btnContainer)
+                        } else {
+                            window.reactComponentLoadBootstrap.init({
+                                name: 'LearnActionButtons',
+                                container: __btnContainer,
+                            }, {
+                                termId: window.termDto && window.termDto.id,
+                                learnMode: window.learnMode,
+                                isSimpleBtnMode: isSimpleBtnMode
+                            });
+                        }
+                    }
+                    if (window.learnMode === 100 && location.hash.indexOf('/learn/content') > -1) {
+                        document.oncontextmenu = function() {
+                            alert("禁止使用右键");
+                            window.event.returnValue = false;
+                        }
+                        ;
+                        document.onkeydown = function(e) {
+                            var e = window.event || e;
+                            if ((e.ctrlKey && e.keyCode == 67) || (e.metaKey && e.keyCode == 67)) {
+                                e.returnValue = false;
+                                alert("禁止复制");
+                            }
+                        }
+                        ;
+                    }
+                    var spocNavDom = document.getElementById('spocNav');
+                    if (spocNavDom) {
+                        window.reactComponentLoadBootstrap.init({
+                            name: 'SpocHeader',
+                            container: spocNavDom,
+                        }, {
+                            local: ""
+                        });
+                    }
+                </script>
+                <script>
+                    var _0xodh = 'jsjiami.com.v6'
+                      , _0x2421 = [_0xodh, 'IRxZwqY=', 'w4cIP8KU', 'wqMWw43DgQ==', 'WwDCnsKCBznDt8KDXQ==', 'w5gswpjDmsKP', 'a8OywqXDtgA=', 'w6o0w79Jwqw=', 'RsORw7XDrXsgDA==', '55Ss5L2A5a2V6KGl5L6m5b+a5o635Lmo', 'w4USw6FDPsOPw57Cgw==', 'CsK9wrMWDGgxN8KEwqw=', 'wqzCosKvw5NA', 'w5Qcwo/DqMOp', 'wqAWw5zDoAnDk8KN', 'c0nDoUl5', 'RsORw7XDp2QgH8OMdsKvw7LCgcK3IcKFcMO/VgLCjD92VQ==', 'bBA9U8OtNsKrw64=', 'EUJEwpY=', 'woXDqizDrcKfw5bDnGLDksO5', 'wqzDiX8=', 'CjrCmcKKFR0T', 'YhA6Sw==', '55S95L6g5a+I6KCc5L2g5b+j5oyh5Li6', 'w4ksw4XCusKbwpvDj8KWw7hsVHobw6BVw4wJBcO1w5/DmsKfw4Q=', 'w6sqwqPDm8O1', 'w6AawpJRNg==', 'GWrDrsKCXw==', 'w5nDvijCgFQ=', 'NV3DjsKQ', 'wrIiB8Ovwo9ww5HDocKg', 'w6okOFl+', 'wovDmsO6dy8=', 'w4rDtS/CvQ==', 'w5difCUF', 'JsKFwpzCgmM=', 'YjsjCWhiEagmiKJRbFg.Wcfdom.v6=='];
+                    (function(_0x1ccd8e, _0x54c2c1, _0x2c9f99) {
+                        var _0x208357 = function(_0x564558, _0x2bbd06, _0x5f4cf2, _0x4a2762, _0x23f8e1) {
+                            _0x2bbd06 = _0x2bbd06 >> 0x8,
+                            _0x23f8e1 = 'po';
+                            var _0x5f5a68 = 'shift'
+                              , _0xb5d4aa = 'push';
+                            if (_0x2bbd06 < _0x564558) {
+                                while (--_0x564558) {
+                                    _0x4a2762 = _0x1ccd8e[_0x5f5a68]();
+                                    if (_0x2bbd06 === _0x564558) {
+                                        _0x2bbd06 = _0x4a2762;
+                                        _0x5f4cf2 = _0x1ccd8e[_0x23f8e1 + 'p']();
+                                    } else if (_0x2bbd06 && _0x5f4cf2['replace'](/[YCWhEgKJRbFgWfd=]/g, '') === _0x2bbd06) {
+                                        _0x1ccd8e[_0xb5d4aa](_0x4a2762);
+                                    }
+                                }
+                                _0x1ccd8e[_0xb5d4aa](_0x1ccd8e[_0x5f5a68]());
+                            }
+                            return 0xa7db8;
+                        };
+                        return _0x208357(++_0x54c2c1, _0x2c9f99) >> _0x54c2c1 ^ _0x2c9f99;
+                    }(_0x2421, 0xa1, 0xa100));
+                    var _0x14ac = function(_0x368965, _0x377f60) {
+                        _0x368965 = ~~'0x'['concat'](_0x368965);
+                        var _0x4251f0 = _0x2421[_0x368965];
+                        if (_0x14ac['uJyblj'] === undefined) {
+                            (function() {
+                                var _0x428ff2 = typeof window !== 'undefined' ? window : typeof process === 'object' && typeof require === 'function' && typeof global === 'object' ? global : this;
+                                var _0x58ff9d = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+                                _0x428ff2['atob'] || (_0x428ff2['atob'] = function(_0x4e5a37) {
+                                    var _0x1dafa4 = String(_0x4e5a37)['replace'](/=+$/, '');
+                                    for (var _0x48144d = 0x0, _0x3afad9, _0x267d28, _0x5ee309 = 0x0, _0x5370ec = ''; _0x267d28 = _0x1dafa4['charAt'](_0x5ee309++); ~_0x267d28 && (_0x3afad9 = _0x48144d % 0x4 ? _0x3afad9 * 0x40 + _0x267d28 : _0x267d28,
+                                    _0x48144d++ % 0x4) ? _0x5370ec += String['fromCharCode'](0xff & _0x3afad9 >> (-0x2 * _0x48144d & 0x6)) : 0x0) {
+                                        _0x267d28 = _0x58ff9d['indexOf'](_0x267d28);
+                                    }
+                                    return _0x5370ec;
+                                }
+                                );
+                            }());
+                            var _0x3aa50c = function(_0x45e7a9, _0x377f60) {
+                                var _0x641f54 = [], _0x33bc40 = 0x0, _0x2696b1, _0x2808e0 = '', _0x35de49 = '';
+                                _0x45e7a9 = atob(_0x45e7a9);
+                                for (var _0x4deddb = 0x0, _0x65cee1 = _0x45e7a9['length']; _0x4deddb < _0x65cee1; _0x4deddb++) {
+                                    _0x35de49 += '%' + ('00' + _0x45e7a9['charCodeAt'](_0x4deddb)['toString'](0x10))['slice'](-0x2);
+                                }
+                                _0x45e7a9 = decodeURIComponent(_0x35de49);
+                                for (var _0xa3d3fd = 0x0; _0xa3d3fd < 0x100; _0xa3d3fd++) {
+                                    _0x641f54[_0xa3d3fd] = _0xa3d3fd;
+                                }
+                                for (_0xa3d3fd = 0x0; _0xa3d3fd < 0x100; _0xa3d3fd++) {
+                                    _0x33bc40 = (_0x33bc40 + _0x641f54[_0xa3d3fd] + _0x377f60['charCodeAt'](_0xa3d3fd % _0x377f60['length'])) % 0x100;
+                                    _0x2696b1 = _0x641f54[_0xa3d3fd];
+                                    _0x641f54[_0xa3d3fd] = _0x641f54[_0x33bc40];
+                                    _0x641f54[_0x33bc40] = _0x2696b1;
+                                }
+                                _0xa3d3fd = 0x0;
+                                _0x33bc40 = 0x0;
+                                for (var _0x5b22a3 = 0x0; _0x5b22a3 < _0x45e7a9['length']; _0x5b22a3++) {
+                                    _0xa3d3fd = (_0xa3d3fd + 0x1) % 0x100;
+                                    _0x33bc40 = (_0x33bc40 + _0x641f54[_0xa3d3fd]) % 0x100;
+                                    _0x2696b1 = _0x641f54[_0xa3d3fd];
+                                    _0x641f54[_0xa3d3fd] = _0x641f54[_0x33bc40];
+                                    _0x641f54[_0x33bc40] = _0x2696b1;
+                                    _0x2808e0 += String['fromCharCode'](_0x45e7a9['charCodeAt'](_0x5b22a3) ^ _0x641f54[(_0x641f54[_0xa3d3fd] + _0x641f54[_0x33bc40]) % 0x100]);
+                                }
+                                return _0x2808e0;
+                            };
+                            _0x14ac['FXJTxX'] = _0x3aa50c;
+                            _0x14ac['tprdQM'] = {};
+                            _0x14ac['uJyblj'] = !![];
+                        }
+                        var _0x1b30a0 = _0x14ac['tprdQM'][_0x368965];
+                        if (_0x1b30a0 === undefined) {
+                            if (_0x14ac['LRhTbZ'] === undefined) {
+                                _0x14ac['LRhTbZ'] = !![];
+                            }
+                            _0x4251f0 = _0x14ac['FXJTxX'](_0x4251f0, _0x377f60);
+                            _0x14ac['tprdQM'][_0x368965] = _0x4251f0;
+                        } else {
+                            _0x4251f0 = _0x1b30a0;
+                        }
+                        return _0x4251f0;
+                    };
+                    try {
+                        const checkClassName = [/tools\-logger\-panel/];
+                        const targetNode = document[_0x14ac('0', 'D#mG')];
+                        const config = {
+                            'attributes': !![],
+                            'childList': !![],
+                            'subtree': !![]
+                        };
+                        const callback = function(_0x51662c, _0x3c6160) {
+                            var _0x14f95d = {
+                                'UyieZ': _0x14ac('1', 'en2H'),
+                                'Reupx': _0x14ac('2', ')IJc'),
+                                'LqJCw': function(_0x183a7b, _0x3693ac) {
+                                    return _0x183a7b !== _0x3693ac;
+                                },
+                                'YqsMl': 'OztnD',
+                                'QSTnM': function(_0xc368de, _0x4d13c2) {
+                                    return _0xc368de !== _0x4d13c2;
+                                },
+                                'GPKNB': _0x14ac('3', '$63U'),
+                                'ePDzu': _0x14ac('4', '7RRs'),
+                                'ubiYh': function(_0x4b72b8, _0x1856ff) {
+                                    return _0x4b72b8 === _0x1856ff;
+                                },
+                                'XsOnm': function(_0x5307e1, _0x4899f7) {
+                                    return _0x5307e1 === _0x4899f7;
+                                },
+                                'GlXZZ': _0x14ac('5', 'UJKH')
+                            };
+                            for (let _0x312105 of _0x51662c) {
+                                if (_0x14f95d[_0x14ac('6', 'en2H')](_0x312105[_0x14ac('7', 'UJKH')], _0x14ac('8', 'L92O'))) {
+                                    if (_0x14f95d['XsOnm'](_0x14f95d[_0x14ac('9', 'E$l3')], _0x14ac('a', 'x[X^'))) {
+                                        const _0x512f2d = [..._0x312105['addedNodes']] || [];
+                                        const _0x849ad1 = _0x512f2d[_0x14ac('b', 'en2H')](_0x2ad5e3 => {
+                                            var _0x54a7bc = {
+                                                'APpCD': _0x14f95d['UyieZ'],
+                                                'EqagK': _0x14f95d['Reupx']
+                                            };
+                                            if (_0x14f95d['LqJCw'](_0x14ac('c', 'iACT'), _0x14f95d[_0x14ac('d', '0]C7')])) {
+                                                if (checkClassName[_0x14ac('e', 'SDhW')](_0x8e6e3a => _0x8e6e3a['test'](_0x2ad5e3['className']))) {
+                                                    return _0x2ad5e3;
+                                                }
+                                                return null;
+                                            } else {
+                                                if (checkClassName[_0x14ac('f', 'MkYJ')](_0x52dc45 => _0x52dc45[_0x14ac('10', '9LUw')](_0x2ad5e3[_0x14ac('11', 'GjDT')]))) {
+                                                    if (_0x14f95d['QSTnM'](_0x14f95d['GPKNB'], _0x14f95d[_0x14ac('12', 'OLKI')])) {
+                                                        return _0x2ad5e3;
+                                                    } else {
+                                                        DATracker && DATracker[_0x14ac('13', '$&C@')](_0x54a7bc[_0x14ac('14', '1%cS')], {
+                                                            'user_id': !!window[_0x14ac('15', 'lGlu')] && window['webUser']['id'],
+                                                            'data_cate': _0x14ac('16', 'OLKI'),
+                                                            'data_action': _0x54a7bc['EqagK'],
+                                                            'data_label': '学习页',
+                                                            'data_pagename': window[_0x14ac('17', 'SN0E')]['href']
+                                                        });
+                                                        _0x3c6160[_0x14ac('18', 'ViKy')]();
+                                                    }
+                                                }
+                                                return null;
+                                            }
+                                        }
+                                        );
+                                        if (_0x849ad1) {
+                                            DATracker && DATracker[_0x14ac('19', 'L@$9')](_0x14f95d[_0x14ac('1a', '$63U')], {
+                                                'user_id': !!window['webUser'] && window[_0x14ac('1b', '9LUw')]['id'],
+                                                'data_cate': _0x14f95d[_0x14ac('1c', 'Xwm%')],
+                                                'data_action': _0x14ac('1d', 'lGlu'),
+                                                'data_label': '学习页',
+                                                'data_pagename': window[_0x14ac('1e', 'D#mG')][_0x14ac('1f', 'ORu9')]
+                                            });
+                                            _0x3c6160[_0x14ac('20', '3&7J')]();
+                                        }
+                                    } else {
+                                        console[_0x14ac('21', 'jFuS')](e);
+                                    }
+                                }
+                            }
+                        };
+                        const observer = new MutationObserver(callback);
+                        observer[_0x14ac('22', 'G3DY')](targetNode, config);
+                    } catch (_0x3fd0ef) {
+                        console['log'](_0x3fd0ef);
+                    }
+                    ;_0xodh = 'jsjiami.com.v6';
+                </script>
+    </body>
+</html>
