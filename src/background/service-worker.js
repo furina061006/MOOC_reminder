@@ -1112,14 +1112,6 @@ const API_TERM_DTO_RPC_MM = 'mm-course/web/j/courseBean.getMocTermDto.rpc';
 const API_DEADLINE_FIELDS = ['deadline', 'endTime', 'submitEndTime', 'evaluationEndTime', 'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'];
 const API_SCORE_FIELDS = ['mark', 'score', 'studentScore', 'finalMark'];
 const API_TOTAL_FIELDS = ['totalMark', 'totalScore', 'fullMark', 'allMark'];
-const API_PHASE_FIELDS = ['homeworkPhase', 'phase', 'currentPhase', 'evaluationPhase', 'homeworkStatus', 'status'];
-function apiMapPhase(raw) {
-  if (raw == null) return null;
-  if (raw === 'submit' || raw === 'SUBMIT' || raw === 0) return 'submit';
-  if (raw === 'peerreview' || raw === 'PEER_REVIEW' || raw === 'review' || raw === 'REVIEW' || raw === 1) return 'peerreview';
-  if (raw === 'results' || raw === 'RESULTS' || raw === 'graded' || raw === 'GRADED' || raw === 2) return 'results';
-  return null;
-}
 
 function apiPad(n) { return String(n).padStart(2, '0'); }
 
@@ -1179,7 +1171,6 @@ function apiExtractHomework(input, course) {
     const score = apiFirstNumber(node, API_SCORE_FIELDS);
     const totalScore = apiFirstNumber(node, API_TOTAL_FIELDS);
     const hasSignal = deadlineMs != null || (score != null && totalScore != null);
-    const hwPhase = apiMapPhase(apiFirstNumber(node, API_PHASE_FIELDS) !== null ? apiFirstNumber(node, API_PHASE_FIELDS) : (node.homeworkPhase || node.phase || node.homeworkStatus || null));
     if (typeof name === 'string' && name.trim() && hasSignal &&
         /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)) {
       const homeworkId = String(node.id || node.jobId || node.quizId || node.testId || node.homeworkId || '') || ('h' + (out.length + 1));
@@ -1204,7 +1195,6 @@ function apiExtractHomework(input, course) {
           status: done ? 'completed' : 'unfinished',
           checkedOff: done, manuallyCheckedOff: false,
           autoDetectedCompleted: done, completionReason: done ? 'auto' : null,
-          hwPhase: hwPhase,
           deadline, deadlineRaw: deadline ? '(API)' : null,
           score, totalScore, source: 'api', pageUrl: pageUrl
         });
