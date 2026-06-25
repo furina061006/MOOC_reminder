@@ -1088,6 +1088,10 @@ async function setApiStatus(status) {
   await chrome.storage.local.set({
     [KEYS.API_STATUS]: { ...status, checkedAt: new Date().toISOString() }
   });
+  // 同步错误到 sync_errors，确保设置页错误报告可见
+  if (status.status === 'api_unavailable' || status.status === 'api_no_session') {
+    await addSyncError('API: ' + (status.message || '后台接口不可用'));
+  }
 }
 
 // ─── icourse163 API — background, no-tab homework refresh ───────────────
@@ -1379,11 +1383,10 @@ async function apiRefreshAllKnownCourses() {
         failures: failureDetails.slice(0, 3),
         csrfFound: csrfFound
       });
-      await addSyncError('API refresh failed: ' + JSON.stringify(failureDetails.slice(0, 2)));
     }
     return { ok: okCount > 0, changed, courses: courses.length, okCount, failed };
   } catch (e) {
-    await addSyncError('API refresh: ' + e.message);
+    await addSyncError('API: ' + e.message);
     return { ok: false, reason: e.message, okCount: 0, changed: 0 };
   } finally {
     apiRefreshInFlight = false;
