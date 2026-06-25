@@ -431,6 +431,7 @@ function renderDiagnostics() {
     apiBlock = '<div style="padding:8px 12px;margin-bottom:6px;background:#fff3cd;border-radius:6px;font-size:12px;color:#856404;">'
       + '<span style="display:inline-flex;vertical-align:middle;margin-right:4px;">' + wIcon('alert-triangle', 14, '#856404') + '</span>'
       + '<span>后台抓取失败：' + escapeHtml(csrfNote) + '</span>'
+      + (api.failures && api.failures.length > 0 ? '<br><span style="font-size:11px;opacity:0.8;">端点: ' + escapeHtml(api.failures.map(function(f) { return (f.details && f.details.endpoint) || f.message; }).join(' | ')) + '</span>' : '')
       + '</div>';
   } else if (api && api.status === 'api_no_session') {
     apiBlock = '<div style="padding:8px 12px;margin-bottom:6px;background:#fff3cd;border-radius:6px;font-size:12px;color:#856404;">'
@@ -822,7 +823,8 @@ function updateFooter() {
           dom.apiTime.textContent = 'API: ' + (min < 1 ? '刚刚' : min + ' 分钟前');
           dom.apiTime.style.color = '';
         } else {
-          dom.apiTime.textContent = 'API: 断开';
+          var ep = (api.endpoints && api.endpoints.length > 0) ? ' [' + api.endpoints[0] + ']' : '';
+          dom.apiTime.textContent = 'API: 断开' + ep;
           dom.apiTime.style.color = 'var(--overdue, #dc3545)';
         }
       } catch {

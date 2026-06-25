@@ -1381,7 +1381,8 @@ async function apiRefreshAllKnownCourses() {
         status: 'api_unavailable',
         message: first ? ('后台接口暂不可用：' + first.message + '。' + csrfNote) : '后台接口暂不可用，已回退到打开页面时抓取',
         failures: failureDetails.slice(0, 3),
-        csrfFound: csrfFound
+        csrfFound: csrfFound,
+        endpoints: (failureDetails.length > 0 ? failureDetails.map(function(f) { return f.details && f.details.endpoint; }).filter(Boolean) : []).slice(0, 3)
       });
     }
     return { ok: okCount > 0, changed, courses: courses.length, okCount, failed };
