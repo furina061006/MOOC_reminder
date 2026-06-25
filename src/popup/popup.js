@@ -749,7 +749,9 @@ function createHomeworkItem(item) {
 
 function updateSummary() {
   const safe = Array.isArray(state.allItems) ? state.allItems.filter(Boolean) : [];
-  const unfinished = safe.filter(i => i && !i.checkedOff);
+  const mutedIds = new Set(Array.isArray(state.settings.mutedCourseIds) ? state.settings.mutedCourseIds : []);
+  const visible = safe.filter(i => i && !mutedIds.has(i.courseId));
+  const unfinished = visible.filter(i => i && !i.checkedOff);
   const overdue = unfinished.filter(i => isOverdue(i)).length;
   const soon    = unfinished.filter(i => !isOverdue(i) && isDueWithin(i, 48)).length;
   const normal  = unfinished.filter(i => !isOverdue(i) && !isDueWithin(i, 48)).length;
@@ -761,8 +763,10 @@ function updateSummary() {
 
 function updateFooter() {
   const safe = Array.isArray(state.allItems) ? state.allItems.filter(Boolean) : [];
+  const mutedIds = new Set(Array.isArray(state.settings.mutedCourseIds) ? state.settings.mutedCourseIds : []);
+  const visible = safe.filter(i => i && !mutedIds.has(i.courseId));
   // Badge truth: all unfinished items, including overdue ones.
-  const count = safe.filter(i => i && !i.checkedOff).length;
+  const count = visible.filter(i => i && !i.checkedOff).length;
 
   if (dom.totalCount) dom.totalCount.textContent = '共 ' + count + ' 项未完成';
 
