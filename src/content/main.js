@@ -565,13 +565,28 @@
     if (/加载中|loading|请稍候|spinner/i.test(text)) return null;
 
 
-    // Detect type (优先用按钮文字判断)
+    // Detect type
+    // 按钮文字优先——用 .j-quizBtn 的文字判断（最可靠）
     var btnEl = el.querySelector('.j-quizBtn');
     var btnText = btnEl ? (btnEl.textContent || '') : '';
     let type = 'homework';
-    if (btnText.indexOf('测验') >= 0 || /测验|quiz/i.test(text)) type = 'quiz';
-    else if (btnText.indexOf('考试') >= 0 || /考试|exam/i.test(text)) type = 'exam';
-    else if (/讨论|discussion/i.test(text)) type = 'discussion';
+    if (btnText.indexOf('测验') >= 0) type = 'quiz';
+    else if (btnText.indexOf('考试') >= 0) type = 'exam';
+
+    // 按钮无指示，查元素全文（考试优先于测验，防止考试项被“测验”标签文字误伤）
+    if (type === 'homework') {
+      if (/\u8003\u8bd5|exam/i.test(text)) type = 'exam';
+      else if (/\u6d4b\u9a8c|quiz/i.test(text)) type = 'quiz';
+      else if (/\u8ba8\u8bba|discussion/i.test(text)) type = 'discussion';
+    }
+
+    // 路由默认：examlist 只会有考试
+    if (type === 'homework') {
+      var pageRoute = getCurrentHashRoute();
+      if (/\/learn\/examlist|\/learn\/exam\b/i.test(pageRoute)) {
+        type = 'exam';
+      }
+    }
 
     // ── 作业多阶段处理（提交/互评/成绩） ──
     var homeworkPhase = null;
@@ -739,7 +754,7 @@
 
     // Check text patterns
     const completeTextPatterns = [
-      '已完成', '已提交', '已批阅', '已通过',
+      '已完成', '已成功提交', '已提交', '已批阅', '已通过',
       '测验得分', '作业得分', '考试得分',   // 具体得分项目，不是"最高得分"这种说明文字
       '得分：',                            // 有冒号的具体分数
       '已互评', '互评已完成', '已评价', '已评分',
