@@ -331,7 +331,7 @@ function applyFilter() {
       var dl = new Date(item.deadline).getTime();
       if (dl >= _now) return false;
       if (item.type === 'quiz' || item.type === 'exam') return true;
-      if (item.type === 'homework' && item.checkedOff) return true;
+      if (item.type === 'homework') return true;
       return false;
     } catch { return false; }
   }
