@@ -272,21 +272,6 @@ const MESSAGE_HANDLERS = {
     return { success: true, added: result.added, updated: result.updated };
   },
 
-  // Content script proxies API call (bypasses SW CORS/auth limits)
-  async PROXY_API_DATA(msg) {
-    if (!msg.course || !msg.rawData) return { success: false, error: 'Invalid payload' };
-    try {
-      const items = apiExtractHomework(msg.rawData, msg.course);
-      if (items.length === 0) return { success: true, itemCount: 0 };
-      const result = await reconcileHomeworkData(msg.course, items);
-      await updateBadgeFromStorage();
-      return { success: true, added: result.added, updated: result.updated, itemCount: items.length };
-    } catch (e) {
-      console.warn('[MOOC Reminder] PROXY_API_DATA error:', e.message);
-      return { success: false, error: e.message };
-    }
-  },
-
   // Popup marks an item as completed
   async MARK_COMPLETED(msg) {
     if (!msg.homeworkUid || typeof msg.checkedOff !== 'boolean') {
