@@ -1107,6 +1107,7 @@ const ICOURSE_ORIGIN = 'https://www.icourse163.org';
 const CSRF_COOKIE_NAME = 'NTESSTUDYSI';
 const API_TERM_DTO_RPC = 'web/j/courseBean.getMocTermDto.rpc';
 const API_TERM_DTO_DWR = 'dwr/call/plaincall/CourseBean.getMocTermDto.dwr';
+const API_TERM_DTO_RPC_MM = 'mm-course/web/j/courseBean.getMocTermDto.rpc';
 
 const API_DEADLINE_FIELDS = ['deadline', 'endTime', 'submitEndTime', 'evaluationEndTime', 'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'];
 const API_SCORE_FIELDS = ['mark', 'score', 'studentScore', 'finalMark'];
@@ -1254,6 +1255,29 @@ async function apiFetchRpcTermDto(csrfKey, termId) {
   return { text, endpoint: API_TERM_DTO_RPC };
 }
 
+async function apiFetchRpcTermDtoMm(csrfKey, termId) {
+  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO_RPC_MM}?csrfKey=${encodeURIComponent(csrfKey)}`;
+  const body = `termId=${encodeURIComponent(termId)}&gatewayType=3`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      'Origin': ICOURSE_ORIGIN,
+      'Referer': ICOURSE_ORIGIN + '/learn/'
+    },
+    body
+  });
+  const text = await resp.text();
+  if (!resp.ok) {
+    throw makeApiError('rpc-mm', 'HTTP ' + resp.status, { endpoint: API_TERM_DTO_RPC_MM, status: resp.status, body: responseSnippet(text) });
+  }
+  if (/非法跨域|csrf|forbidden|error/i.test(text)) {
+    throw makeApiError('rpc-mm', 'server rejected request', { endpoint: API_TERM_DTO_RPC_MM, body: responseSnippet(text) });
+  }
+  return { text, endpoint: API_TERM_DTO_RPC_MM };
+}
+
 async function apiFetchDwrTermDto(termId) {
   const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO_DWR}`;
   // DWR format used by public icourse163 downloaders. batchId/scriptSessionId
@@ -1294,6 +1318,15 @@ async function apiFetchTermDto(csrfKey, termId) {
   const hasCsrf = !!csrfKey;
   try {
     const result = await apiFetchRpcTermDto(csrfKey, termId);
+    result.csrfOk = hasCsrf;
+    return result;
+  } catch (e) {
+    e.details = e.details || {};
+    e.details.csrfKeyFound = hasCsrf;
+    errors.push(e.details || { message: e.message });
+  }
+  try {
+    const result = await apiFetchRpcTermDtoMm(csrfKey, termId);
     result.csrfOk = hasCsrf;
     return result;
   } catch (e) {
