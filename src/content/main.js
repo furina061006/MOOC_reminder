@@ -44,6 +44,7 @@
   let currentRoute = '';
   let isScraping = false;
   let selectorConfig = null;
+  let domScrapingDisabled = false;   // 设置页关闭 DOM 抓取后跳过自动爬
 
   // ─── Initialization ───────────────────────────────────
 
@@ -55,6 +56,15 @@
       console.error('[MOOC Reminder] Failed to load selectors:', e);
       selectorConfig = getDefaultSelectors();
     }
+
+    // 查询设置：是否需要 DOM 抓取
+    try {
+      var resp = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+      if (resp && resp.settings) {
+        domScrapingDisabled = (resp.settings.domScrapingEnabled === false);
+        if (domScrapingDisabled) console.log('[MOOC Reminder] DOM scraping disabled by settings, API-only mode');
+      }
+    } catch {}
 
     // Detect current route
     currentRoute = getCurrentHashRoute();
@@ -73,8 +83,9 @@
       waitAndScrape();
     }
 
-    // Periodic re-scrape on relevant pages (every 30s)
+    // Periodic re-scrape on relevant pages (every 30s), only if DOM enabled
     setInterval(() => {
+      if (domScrapingDisabled) return;
       const route = getCurrentHashRoute();
       if (isHomeworkRelevantRoute(route)) {
         waitAndScrape();
@@ -115,7 +126,7 @@
       const newRoute = getCurrentHashRoute();
       if (newRoute !== currentRoute) {
         currentRoute = newRoute;
-        if (isHomeworkRelevantRoute(newRoute)) {
+        if (isHomeworkRelevantRoute(newRoute) && !domScrapingDisabled) {
           waitAndScrape();
         }
       }
@@ -142,6 +153,7 @@
   }
 
   function checkRouteChange() {
+    if (domScrapingDisabled) return;
     const newRoute = getCurrentHashRoute();
     if (newRoute !== currentRoute) {
       currentRoute = newRoute;
