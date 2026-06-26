@@ -64,13 +64,54 @@
     }
   }
 
+  // ─── BATCH_API_FETCH handler (same logic as main.js) ───
+  // Runs on ALL icourse163.org pages, not just /learn/*
+  chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
+    if (!msg || typeof msg !== 'object') return false;
+    if (msg.type === 'BATCH_API_FETCH') {
+      var courseList = Array.isArray(msg.courses) ? msg.courses : [];
+      // Add current page's course if not already in list
+      try {
+        var tid = new URL(location.href).searchParams.get('tid');
+        var m = location.pathname.match(/\/(?:spoc\/)?learn\/([^/?#]+)/i);
+        if (tid && m) {
+          var has = courseList.some(function(c){ return c.courseId === m[1]; });
+          if (!has) courseList.push({ courseId: m[1], termId: tid, courseName: '', schoolName: '' });
+        }
+      } catch {}
+      if (courseList.length === 0) { try { sendResponse([]); } catch {} return false; }
+      (async function() {
+        var csrf = '';
+        try { var c = document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);?/i); csrf = c ? c[1] : ''; } catch {}
+        if (!csrf) { try { sendResponse([]); } catch {} return; }
+        for (var i = 0; i < courseList.length; i++) {
+          var c = courseList[i];
+          if (!c || !c.termId) continue;
+          try {
+            var text = await new Promise(function(resolve, reject) {
+              var xhr = new XMLHttpRequest();
+              xhr.open('POST', 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
+              xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+              xhr.onload = function() { resolve(xhr.responseText); };
+              xhr.onerror = function() { reject(); };
+              xhr.send(JSON.stringify({ termId: parseInt(c.termId, 10) }));
+            });
+            if (text.length < 50) continue;
+            chrome.runtime.sendMessage({ type: 'COURSE_API_DATA', course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' }, rawData: text }).catch(function(){});
+          } catch {}
+        }
+        try { sendResponse([]); } catch {}
+      })();
+      return true;
+    }
+    return false;
+  });
+
   function start() {
     harvest();
-    // The homepage renders the course panel asynchronously; re-harvest as the
-    // DOM settles, then stop after a short window to stay cheap.
     var observer = new MutationObserver(function () { harvest(); });
-    try { observer.observe(document.body, { childList: true, subtree: true }); } catch { /* no body yet */ }
-    setTimeout(function () { try { observer.disconnect(); } catch { /* ignore */ } }, 8000);
+    try { observer.observe(document.body, { childList: true, subtree: true }); } catch {}
+    setTimeout(function () { try { observer.disconnect(); } catch {} }, 8000);
   }
 
   if (document.readyState === 'loading') {
