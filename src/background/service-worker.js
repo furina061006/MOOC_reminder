@@ -1362,7 +1362,16 @@ function apiExtractHomework(input, course) {
     const nextLesson = node.lessonId || (looksLikeLesson(node) ? node.id : lessonId);
     for (const key of Object.keys(node)) {
       const v = node[key];
-      if (v && typeof v === 'object') visit(v, nextChapter, nextLesson);
+      if (v && typeof v === 'object') {
+        visit(v, nextChapter, nextLesson);
+      } else if (typeof v === 'string' && v.length > 50 && (v.charAt(0) === '{' || v.charAt(0) === '[')) {
+        // 内嵌 JSON 字符串（如 jsonContent, outline 等字段可能存为 JSON 文本）
+        var embedded = apiCoerceJson(v);
+        if (embedded && typeof embedded === 'object') {
+          console.log('[MOOC Reminder] apiExtractHomework: found embedded JSON in key "' + key + '" len=' + v.length);
+          visit(embedded, nextChapter, nextLesson);
+        }
+      }
     }
   }
   visit(data, '', '');

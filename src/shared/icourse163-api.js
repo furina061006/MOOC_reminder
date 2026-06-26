@@ -289,7 +289,13 @@ export function extractHomeworkFromTermDto(input, course) {
     const nextLesson = node.lessonId || (looksLikeLesson(node) ? node.id : lessonId);
     for (const key of Object.keys(node)) {
       const v = node[key];
-      if (v && typeof v === 'object') visit(v, nextChapter, nextLesson);
+      if (v && typeof v === 'object') {
+        visit(v, nextChapter, nextLesson);
+      } else if (typeof v === 'string' && v.length > 50 && (v.charAt(0) === '{' || v.charAt(0) === '[')) {
+        // 内嵌 JSON 字符串（如 jsonContent, outline 等字段可能存为 JSON 文本）
+        const embedded = coerceJson(v);
+        if (embedded && typeof embedded === 'object') visit(embedded, nextChapter, nextLesson);
+      }
     }
   }
 
