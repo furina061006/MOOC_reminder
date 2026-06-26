@@ -1286,7 +1286,9 @@ function apiExtractHomework(input, course) {
         const deadline = deadlineMs != null ? apiMsToLocalIso(deadlineMs) : null;
         // 完成判定：有分数 OR 节点含 "已提交/已完成" 文本
         var submitted = parseInt(node.usedTryCount,10) > 0 && (parseInt(node.type,10) === 3);
-        var done = (score != null && totalScore != null && score > 0) || submitted || apiHasCompletedText(node, 0);
+        // 互评中不算完成（等待评分），已公布的才算
+        var inPeerReview = apiDetectPhase(node) === 'peerreview';
+        var done = (score != null && totalScore != null && score > 0) || (submitted && !inPeerReview) || apiHasCompletedText(node, 0);
         out.push({
           uid, courseId: course.courseId, termId: course.termId,
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
