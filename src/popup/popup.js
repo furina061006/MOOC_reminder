@@ -154,10 +154,13 @@ async function init() {
       if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning');
       chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
       await sleepPopup(1000);
-      // 第二次：等 API 数据到达
+      // 第二次：轮询 storage 直到数据到达（最多 15 秒）
       await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
-      await sleepPopup(3000);
-      await loadData();
+      for (var retry = 0; retry < 30; retry++) {
+        await sleepPopup(500);
+        await loadData();
+        if (state.allItems.length > 0) break;
+      }
       render();
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
       if (state.allItems.length === 0) {
