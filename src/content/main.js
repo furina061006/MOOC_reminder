@@ -873,6 +873,11 @@
       const dashIndex = schoolCourseId.indexOf('-');
       const school = dashIndex >= 0 ? schoolCourseId.substring(0, dashIndex) : '';
 
+      // SPOC 诊断日志
+      if (isSpoc) {
+        console.log('[MOOC Reminder] SPOC course detected:', JSON.stringify({ schoolCourseId, termId, school, pathParts }));
+      }
+
       return { schoolCourseId, school, courseId: schoolCourseId, termId, isSpoc };
     } catch {
       return { schoolCourseId: '', school: '', courseId: '', termId: '', isSpoc: false };
@@ -1071,13 +1076,20 @@
     }
 
     var results = [];
+    var isSpocPage = pageMeta && pageMeta.isSpoc;
     for (var i = 0; i < courses.length; i++) {
       var c = courses[i];
       if (!c || !c.termId) continue;
+
+      var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
+      if (courseIsSpoc) {
+        console.log('[MOOC Reminder] SPOC API fetch for:', c.courseId, 'termId:', c.termId, 'courseName:', c.courseName);
+      }
+
       try {
+        // 主端点：getLastLearnedMocTermDto（MOOC/SPOC 通用尝试）
         var url = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
         var body = JSON.stringify({ termId: parseInt(c.termId, 10) });
-        // 必须用 XHR 而非 fetch——fetch 在此站点认证行为与 XHR 不同
         var text = await new Promise(function(resolve, reject) {
           var xhr = new XMLHttpRequest();
           xhr.open('POST', url, true);
@@ -1086,7 +1098,32 @@
           xhr.onerror = function() { reject(new Error('XHR failed')); };
           xhr.send(body);
         });
-        if (text.length < 50) { console.debug('[MOOC Reminder] API empty for', c.courseId); continue; }
+
+        // SPOC 诊断：输出响应长度和前200字符
+        if (courseIsSpoc) {
+          console.log('[MOOC Reminder] SPOC API response length:', text.length, 'preview:', text.substring(0, 200));
+        }
+
+        // 如果 Moc 端点返回空，SPOC 课程尝试 Spoc 端点
+        if (text.length < 50 && courseIsSpoc) {
+          console.log('[MOOC Reminder] SPOC: Moc endpoint returned short/empty, trying Spoc endpoint...');
+          try {
+            var spocUrl = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
+            text = await new Promise(function(resolve, reject) {
+              var xhr2 = new XMLHttpRequest();
+              xhr2.open('POST', spocUrl, true);
+              xhr2.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+              xhr2.onload = function() { resolve(xhr2.responseText); };
+              xhr2.onerror = function() { reject(new Error('XHR failed')); };
+              xhr2.send(body);
+            });
+            console.log('[MOOC Reminder] SPOC: Spoc endpoint response length:', text.length, 'preview:', text.substring(0, 200));
+          } catch(spocErr) {
+            console.debug('[MOOC Reminder] SPOC: Spoc endpoint also failed:', spocErr.message);
+          }
+        }
+
+        if (text.length < 50) { console.debug('[MOOC Reminder] API empty for', c.courseId, '(type:', c.courseType || 'unknown', ')'); continue; }
         results.push({
           course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' },
           rawData: text

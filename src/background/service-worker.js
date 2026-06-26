@@ -278,14 +278,17 @@ const MESSAGE_HANDLERS = {
     if (!msg.course || !msg.rawData) return { success: false, error: 'Invalid payload' };
     try {
       const items = apiExtractHomework(msg.rawData, msg.course);
-      if (items.length === 0) return { success: true, itemCount: 0 };
+      if (items.length === 0) {
+        console.log('[MOOC Reminder] COURSE_API_DATA: 0 items extracted for', msg.course.courseId, '(courseName:', msg.course.courseName || '?', 'rawData len:', (msg.rawData||'').length, ')');
+        return { success: true, itemCount: 0 };
+      }
       const result = await reconcileHomeworkData(msg.course, items);
       await updateBadgeFromStorage();
       await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
-      console.log(`[MOOC Reminder] Course API data: ${items.length} items from ${msg.course.courseId}`);
+      console.log(`[MOOC Reminder] Course API data: ${items.length} items from ${msg.course.courseId} (${msg.course.courseName || ''})`);
       return { success: true, added: result.added, updated: result.updated, itemCount: items.length };
     } catch (e) {
-      console.warn('[MOOC Reminder] COURSE_API_DATA error:', e.message);
+      console.warn('[MOOC Reminder] COURSE_API_DATA error:', e.message, 'courseId:', msg.course?.courseId);
       return { success: false, error: e.message };
     }
   },
@@ -325,8 +328,10 @@ const MESSAGE_HANDLERS = {
     const known = new Set(existing.map(c => c && c.courseId));
     let registered = 0;
     let newCourses = 0;
+    let spocCount = 0;
     for (const c of msg.courses) {
       if (!c || !c.courseId || !c.termId) continue;
+      if (c.courseType === 'spoc') spocCount++;
       if (!known.has(c.courseId)) newCourses++;
       await upsertCourse({
         courseId: c.courseId,
@@ -337,6 +342,7 @@ const MESSAGE_HANDLERS = {
       });
       registered++;
     }
+    console.log('[MOOC Reminder] COURSE_LINKS: registered', registered, 'courses, new:', newCourses, 'SPOC:', spocCount);
     // Only kick a (heavy) background refresh when a genuinely new course appeared.
     if (newCourses > 0) {
       apiRefreshAllKnownCourses().catch(() => {});
@@ -1215,7 +1221,9 @@ async function setApiStatus(status) {
 const ICOURSE_ORIGIN = 'https://www.icourse163.org';
 const CSRF_COOKIE_NAME = 'NTESSTUDYSI';
 const API_TERM_DTO_RPC = 'web/j/courseBean.getMocTermDto.rpc';
+const API_TERM_DTO_SPOC_RPC = 'web/j/courseBean.getSpocTermDto.rpc';
 const API_TERM_DTO_DWR = 'dwr/call/plaincall/CourseBean.getMocTermDto.dwr';
+const API_TERM_DTO_SPOC_DWR = 'dwr/call/plaincall/CourseBean.getSpocTermDto.dwr';
 
 const API_DEADLINE_FIELDS = ['deadline', 'endTime', 'submitEndTime', 'evaluateEnd', 'evaluationEndTime', 'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'];
 const API_SCORE_FIELDS = ['userScore', 'mark', 'score', 'studentScore', 'finalMark'];
@@ -1408,8 +1416,8 @@ function responseSnippet(text) {
   return String(text || '').replace(/\s+/g, ' ').slice(0, 180);
 }
 
-async function apiFetchRpcTermDto(csrfKey, termId) {
-  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO_RPC}?csrfKey=${encodeURIComponent(csrfKey)}`;
+async function apiFetchRpcTermDto(csrfKey, termId, endpoint) {
+  const url = `${ICOURSE_ORIGIN}/${endpoint}?csrfKey=${encodeURIComponent(csrfKey)}`;
   const body = `termId=${encodeURIComponent(termId)}&gatewayType=3`;
   const resp = await fetch(url, {
     method: 'POST',
@@ -1423,25 +1431,25 @@ async function apiFetchRpcTermDto(csrfKey, termId) {
   });
   const text = await resp.text();
   if (!resp.ok) {
-    throw makeApiError('rpc', 'HTTP ' + resp.status, { endpoint: API_TERM_DTO_RPC, status: resp.status, body: responseSnippet(text) });
+    throw makeApiError('rpc', 'HTTP ' + resp.status, { endpoint, status: resp.status, body: responseSnippet(text) });
   }
   if (/非法跨域|csrf|forbidden|error/i.test(text)) {
-    throw makeApiError('rpc', 'server rejected request', { endpoint: API_TERM_DTO_RPC, body: responseSnippet(text) });
+    throw makeApiError('rpc', 'server rejected request', { endpoint, body: responseSnippet(text) });
   }
-  return { text, endpoint: API_TERM_DTO_RPC };
+  return { text, endpoint };
 }
 
-async function apiFetchDwrTermDto(termId) {
-  const url = `${ICOURSE_ORIGIN}/${API_TERM_DTO_DWR}`;
-  // DWR format used by public icourse163 downloaders. batchId/scriptSessionId
-  // values are tolerated by many DWR deployments when empty; this is a fallback
-  // only, so failures are diagnostic rather than fatal to DOM scraping.
+async function apiFetchDwrTermDto(termId, endpoint) {
+  const url = `${ICOURSE_ORIGIN}/${endpoint}`;
+  // Extract method name from endpoint: "dwr/call/plaincall/CourseBean.getMocTermDto.dwr"
+  const methodMatch = endpoint.match(/CourseBean\.(\w+)\.dwr$/);
+  const methodName = methodMatch ? methodMatch[1] : 'getMocTermDto';
   const body = [
     'callCount=1',
     'scriptSessionId=',
     'httpSessionId=',
     'c0-scriptName=CourseBean',
-    'c0-methodName=getMocTermDto',
+    'c0-methodName=' + methodName,
     'c0-id=0',
     'c0-param0=number:' + encodeURIComponent(termId),
     'c0-param1=boolean:true',
@@ -1458,19 +1466,19 @@ async function apiFetchDwrTermDto(termId) {
   });
   const text = await resp.text();
   if (!resp.ok) {
-    throw makeApiError('dwr', 'HTTP ' + resp.status, { endpoint: API_TERM_DTO_DWR, status: resp.status, body: responseSnippet(text) });
+    throw makeApiError('dwr', 'HTTP ' + resp.status, { endpoint, status: resp.status, body: responseSnippet(text) });
   }
   if (/exception|forbidden|csrf|非法跨域/i.test(text)) {
-    throw makeApiError('dwr', 'server rejected request', { endpoint: API_TERM_DTO_DWR, body: responseSnippet(text) });
+    throw makeApiError('dwr', 'server rejected request', { endpoint, body: responseSnippet(text) });
   }
-  return { text, endpoint: API_TERM_DTO_DWR };
+  return { text, endpoint };
 }
 
 async function apiFetchTermDto(csrfKey, termId) {
   const errors = [];
   const hasCsrf = !!csrfKey;
   try {
-    const result = await apiFetchRpcTermDto(csrfKey, termId);
+    const result = await apiFetchRpcTermDto(csrfKey, termId, API_TERM_DTO_RPC);
     result.csrfOk = hasCsrf;
     return result;
   } catch (e) {
@@ -1479,7 +1487,7 @@ async function apiFetchTermDto(csrfKey, termId) {
     errors.push(e.details || { message: e.message });
   }
   try {
-    const result = await apiFetchDwrTermDto(termId);
+    const result = await apiFetchDwrTermDto(termId, API_TERM_DTO_DWR);
     result.csrfOk = hasCsrf;
     return result;
   } catch (e) {
@@ -1490,10 +1498,71 @@ async function apiFetchTermDto(csrfKey, termId) {
   throw makeApiError('termDto', 'all endpoints failed', { termId, errors, csrfKeyFound: hasCsrf });
 }
 
+async function apiFetchTermDtoSpoc(csrfKey, termId) {
+  const errors = [];
+  const hasCsrf = !!csrfKey;
+  try {
+    const result = await apiFetchRpcTermDto(csrfKey, termId, API_TERM_DTO_SPOC_RPC);
+    result.csrfOk = hasCsrf;
+    return result;
+  } catch (e) {
+    e.details = e.details || {};
+    e.details.csrfKeyFound = hasCsrf;
+    errors.push(e.details || { message: e.message });
+  }
+  try {
+    const result = await apiFetchDwrTermDto(termId, API_TERM_DTO_SPOC_DWR);
+    result.csrfOk = hasCsrf;
+    return result;
+  } catch (e) {
+    e.details = e.details || {};
+    e.details.csrfKeyFound = hasCsrf;
+    errors.push(e.details || { message: e.message });
+  }
+  throw makeApiError('termDtoSpoc', 'all SPOC endpoints failed', { termId, errors, csrfKeyFound: hasCsrf });
+}
+
 async function apiRefreshCourse(course, csrfKey) {
   if (!course || !course.termId) return { changed: 0, itemCount: 0, endpoint: null };
-  const fetched = await apiFetchTermDto(csrfKey, course.termId);
+  const courseIsSpoc = course.courseType === 'spoc';
+
+  // 先尝试 Moc 端点
+  let fetched;
+  try {
+    fetched = await apiFetchTermDto(csrfKey, course.termId);
+  } catch (e) {
+    // Moc 端点全部失败，SPOC 课程尝试 Spoc 端点
+    if (courseIsSpoc) {
+      console.log('[MOOC Reminder] SPOC: Moc endpoints failed for', course.courseId, ', trying SPOC endpoints...');
+      try {
+        fetched = await apiFetchTermDtoSpoc(csrfKey, course.termId);
+        console.log('[MOOC Reminder] SPOC: SPOC endpoint succeeded for', course.courseId);
+      } catch (e2) {
+        console.warn('[MOOC Reminder] SPOC: All endpoints failed for', course.courseId, e2.message);
+        return { changed: 0, itemCount: 0, endpoint: null };
+      }
+    } else {
+      throw e;
+    }
+  }
+
   const items = apiExtractHomework(fetched.text, course);
+  if (items.length === 0 && courseIsSpoc) {
+    // Moc 端点成功但提取到 0 条，尝试 Spoc 端点
+    console.log('[MOOC Reminder] SPOC: Moc endpoint returned 0 items for', course.courseId, ', trying SPOC endpoint...');
+    try {
+      const spocFetched = await apiFetchTermDtoSpoc(csrfKey, course.termId);
+      const spocItems = apiExtractHomework(spocFetched.text, course);
+      if (spocItems.length > 0) {
+        console.log('[MOOC Reminder] SPOC: SPOC endpoint returned', spocItems.length, 'items for', course.courseId);
+        const result = await reconcileHomeworkData(course, spocItems);
+        return { changed: result.added + result.updated, itemCount: spocItems.length, endpoint: spocFetched.endpoint };
+      }
+    } catch (e2) {
+      console.debug('[MOOC Reminder] SPOC: SPOC endpoint also failed:', e2.message);
+    }
+    return { changed: 0, itemCount: 0, endpoint: fetched.endpoint };
+  }
   if (items.length > 0) {
     const result = await reconcileHomeworkData(course, items);
     return { changed: result.added + result.updated, itemCount: items.length, endpoint: fetched.endpoint };

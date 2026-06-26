@@ -59,7 +59,11 @@
     if (found.length > 0) {
       try {
         chrome.runtime.sendMessage({ type: 'COURSE_LINKS', courses: found });
-        console.log('[MOOC Reminder] Discovered', found.length, 'course link(s)');
+        var spocCount = found.filter(function(c){ return c.courseType === 'spoc'; }).length;
+        console.log('[MOOC Reminder] Discovered', found.length, 'course link(s), SPOC:', spocCount);
+        if (spocCount > 0) {
+          console.log('[MOOC Reminder] SPOC courses:', found.filter(function(c){ return c.courseType === 'spoc'; }).map(function(c){ return c.courseId + ' (' + c.courseName + ')'; }));
+        }
       } catch { /* SW asleep / context gone — fine, retried next load */ }
     }
   }
@@ -107,20 +111,51 @@
         var csrf = '';
         try { var c2 = document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);?/i); csrf = c2 ? c2[1] : ''; } catch {}
         if (!csrf) { try { sendResponse([]); } catch {} return; }
+        var isSpocPage = /\/spoc\/learn\//i.test(location.href);
         for (var i = 0; i < courseList.length; i++) {
           var c = courseList[i];
           if (!c || !c.termId) continue;
+          var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
           try {
+            var apiUrl = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
+            var apiBody = JSON.stringify({ termId: parseInt(c.termId, 10) });
             var text = await new Promise(function(resolve, reject) {
               var xhr = new XMLHttpRequest();
-              xhr.open('POST', 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
+              xhr.open('POST', apiUrl, true);
               xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
               xhr.onload = function() { resolve(xhr.responseText); };
               xhr.onerror = function() { reject(); };
-              xhr.send(JSON.stringify({ termId: parseInt(c.termId, 10) }));
+              xhr.send(apiBody);
             });
+
+            // SPOC 诊断日志
+            if (courseIsSpoc) {
+              console.log('[MOOC Reminder] course-discovery SPOC API for', c.courseId, 'len:', text.length, 'preview:', text.substring(0, 150));
+            }
+
+            // SPOC 课程 Moc 端点返回空时，尝试 Spoc 端点
+            if (text.length < 50 && courseIsSpoc) {
+              console.log('[MOOC Reminder] course-discovery SPOC: Moc endpoint short, trying Spoc endpoint...');
+              try {
+                var spocUrl = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
+                text = await new Promise(function(resolve, reject) {
+                  var xhr2 = new XMLHttpRequest();
+                  xhr2.open('POST', spocUrl, true);
+                  xhr2.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+                  xhr2.onload = function() { resolve(xhr2.responseText); };
+                  xhr2.onerror = function() { reject(); };
+                  xhr2.send(apiBody);
+                });
+                console.log('[MOOC Reminder] course-discovery SPOC: Spoc endpoint len:', text.length, 'preview:', text.substring(0, 150));
+              } catch(spocErr) {
+                console.debug('[MOOC Reminder] course-discovery SPOC: Spoc endpoint failed:', spocErr.message);
+              }
+            }
+
             if (text.length > 50) {
               chrome.runtime.sendMessage({ type: 'COURSE_API_DATA', course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' }, rawData: text }).catch(function(){});
+            } else {
+              console.log('[MOOC Reminder] course-discovery: API empty for', c.courseId, 'type:', c.courseType || '?', 'len:', text.length);
             }
           } catch {}
         }
