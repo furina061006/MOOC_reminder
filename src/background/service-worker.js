@@ -1149,6 +1149,19 @@ const API_TOTAL_FIELDS = ['totalMark', 'totalScore', 'fullMark', 'allMark'];
 
 function apiPad(n) { return String(n).padStart(2, '0'); }
 
+function apiHasCompletedText(node, depth) {
+  if (!node || typeof node !== 'object' || (depth||0) > 6) return false;
+  var d = depth || 0;
+  var pat = /已完成|已成功提交|已提交|已批阅|已通过|已互评|查看成绩|查看分数/i;
+  for (var key of Object.keys(node)) {
+    var v = node[key];
+    if (typeof v === 'string' && pat.test(v)) return true;
+    if (Array.isArray(v)) { for (var e of v) { if (e && typeof e === 'object' && apiHasCompletedText(e, d + 1)) return true; } }
+    else if (v && typeof v === 'object' && apiHasCompletedText(v, d + 1)) return true;
+  }
+  return false;
+}
+
 function apiFirstNumber(obj, fields) {
   for (const f of fields) {
     const v = obj[f];
@@ -1221,7 +1234,8 @@ function apiExtractHomework(input, course) {
       if (!seen.has(uid)) {
         seen.add(uid);
         const deadline = deadlineMs != null ? apiMsToLocalIso(deadlineMs) : null;
-        const done = score != null && totalScore != null && score > 0;
+        // 完成判定：有分数 OR 节点含 "已提交/已完成" 文本
+        var done = (score != null && totalScore != null && score > 0) || apiHasCompletedText(node, 0);
         out.push({
           uid, courseId: course.courseId, termId: course.termId,
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
