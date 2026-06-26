@@ -117,12 +117,13 @@
           if (!c || !c.termId) continue;
           var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
           try {
-            var apiUrl = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
-            var apiBody = JSON.stringify({ termId: parseInt(c.termId, 10) });
+            // ═══ 使用 getMocTermDto.rpc（完整课程大纲），form-encoded body ═══
+            var apiUrl = 'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
+            var apiBody = 'termId=' + encodeURIComponent(c.termId) + '&gatewayType=3';
             var text = await new Promise(function(resolve, reject) {
               var xhr = new XMLHttpRequest();
               xhr.open('POST', apiUrl, true);
-              xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+              xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
               xhr.onload = function() { resolve(xhr.responseText); };
               xhr.onerror = function() { reject(); };
               xhr.send(apiBody);
@@ -130,23 +131,23 @@
 
             // SPOC 诊断日志
             if (courseIsSpoc) {
-              console.log('[MOOC Reminder] course-discovery SPOC API for', c.courseId, 'len:', text.length, 'preview:', text.substring(0, 150));
+              console.log('[MOOC Reminder] course-discovery SPOC API (getMocTermDto) len:', text.length, 'preview:', text.substring(0, 200));
             }
 
             // SPOC 课程 Moc 端点返回空时，尝试 Spoc 端点
             if (text.length < 50 && courseIsSpoc) {
               console.log('[MOOC Reminder] course-discovery SPOC: Moc endpoint short, trying Spoc endpoint...');
               try {
-                var spocUrl = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
+                var spocUrl = 'https://www.icourse163.org/web/j/courseBean.getSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
                 text = await new Promise(function(resolve, reject) {
                   var xhr2 = new XMLHttpRequest();
                   xhr2.open('POST', spocUrl, true);
-                  xhr2.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+                  xhr2.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
                   xhr2.onload = function() { resolve(xhr2.responseText); };
                   xhr2.onerror = function() { reject(); };
                   xhr2.send(apiBody);
                 });
-                console.log('[MOOC Reminder] course-discovery SPOC: Spoc endpoint len:', text.length, 'preview:', text.substring(0, 150));
+                console.log('[MOOC Reminder] course-discovery SPOC: Spoc endpoint len:', text.length, 'preview:', text.substring(0, 200));
               } catch(spocErr) {
                 console.debug('[MOOC Reminder] course-discovery SPOC: Spoc endpoint failed:', spocErr.message);
               }

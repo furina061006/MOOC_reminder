@@ -1087,13 +1087,14 @@
       }
 
       try {
-        // 主端点：getLastLearnedMocTermDto（MOOC/SPOC 通用尝试）
-        var url = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
-        var body = JSON.stringify({ termId: parseInt(c.termId, 10) });
+        // ═══ 主端点：getMocTermDto（完整课程大纲，含所有章节+作业）═══
+        // 使用 form-encoded body（与 SW 后台 API 一致），而非 JSON
+        var url = 'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
+        var body = 'termId=' + encodeURIComponent(c.termId) + '&gatewayType=3';
         var text = await new Promise(function(resolve, reject) {
           var xhr = new XMLHttpRequest();
           xhr.open('POST', url, true);
-          xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+          xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
           xhr.onload = function() { resolve(xhr.responseText); };
           xhr.onerror = function() { reject(new Error('XHR failed')); };
           xhr.send(body);
@@ -1101,23 +1102,23 @@
 
         // SPOC 诊断：输出响应长度和前200字符
         if (courseIsSpoc) {
-          console.log('[MOOC Reminder] SPOC API response length:', text.length, 'preview:', text.substring(0, 200));
+          console.log('[MOOC Reminder] SPOC API (getMocTermDto) response length:', text.length, 'preview:', text.substring(0, 250));
         }
 
-        // 如果 Moc 端点返回空，SPOC 课程尝试 Spoc 端点
+        // 如果 Moc 端点返回空/短，SPOC 课程尝试 Spoc 端点
         if (text.length < 50 && courseIsSpoc) {
           console.log('[MOOC Reminder] SPOC: Moc endpoint returned short/empty, trying Spoc endpoint...');
           try {
-            var spocUrl = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
+            var spocUrl = 'https://www.icourse163.org/web/j/courseBean.getSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
             text = await new Promise(function(resolve, reject) {
               var xhr2 = new XMLHttpRequest();
               xhr2.open('POST', spocUrl, true);
-              xhr2.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+              xhr2.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
               xhr2.onload = function() { resolve(xhr2.responseText); };
               xhr2.onerror = function() { reject(new Error('XHR failed')); };
               xhr2.send(body);
             });
-            console.log('[MOOC Reminder] SPOC: Spoc endpoint response length:', text.length, 'preview:', text.substring(0, 200));
+            console.log('[MOOC Reminder] SPOC: Spoc endpoint response length:', text.length, 'preview:', text.substring(0, 250));
           } catch(spocErr) {
             console.debug('[MOOC Reminder] SPOC: Spoc endpoint also failed:', spocErr.message);
           }

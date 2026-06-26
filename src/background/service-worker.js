@@ -1366,6 +1366,23 @@ function apiExtractHomework(input, course) {
     }
   }
   visit(data, '', '');
+  console.log('[MOOC Reminder] apiExtractHomework: visited', visited, 'nodes, found', out.length, 'candidate items for', course.courseId, course.courseName || '');
+  if (out.length === 0) {
+    // 诊断：输出数据中的关键字段帮助定位
+    var topKeys = data ? Object.keys(data) : [];
+    console.log('[MOOC Reminder] apiExtractHomework: top-level keys:', topKeys);
+    var resultObj = data && data.result;
+    if (resultObj && typeof resultObj === 'object') {
+      console.log('[MOOC Reminder] apiExtractHomework: result keys:', Object.keys(resultObj));
+      var mtd = resultObj.mocTermDto || resultObj.spocTermDto || resultObj.termDto;
+      if (mtd && typeof mtd === 'object') {
+        console.log('[MOOC Reminder] apiExtractHomework: termDto keys:', Object.keys(mtd).slice(0, 20));
+        // 查找可能的章节/课程结构
+        var structKeys = Object.keys(mtd).filter(function(k){ return /chapter|lesson|unit|content|outline|course/i.test(k); });
+        console.log('[MOOC Reminder] apiExtractHomework: structure-related keys:', structKeys);
+      }
+    }
+  }
   // 去重：名字几乎相同且共前缀的噪音项（如 "期末测试题" vs "期末测试"）
   for (var i = out.length - 1; i >= 0; i--) {
     var nameA = out[i].title || '';
