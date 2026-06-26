@@ -1042,7 +1042,16 @@
   // Runs in the icourse163.org origin, so cookies + CSRF are
   // handled automatically by the browser. GinsMooc-inspired.
   async function batchApiFetch(courses) {
-    if (!Array.isArray(courses) || courses.length === 0) return [];
+    if (!Array.isArray(courses)) courses = [];
+    // 始终加上当前页面的课程（防止 storage 无记录时 courses 为空）
+    var pageMeta = parseCourseUrl(window.location.href);
+    if (pageMeta && pageMeta.courseId && pageMeta.termId) {
+      var hasCurrent = courses.some(function(c){ return c.courseId === pageMeta.courseId; });
+      if (!hasCurrent) {
+        courses.push({ courseId: pageMeta.courseId, termId: pageMeta.termId, courseName: '', schoolName: '' });
+      }
+    }
+    if (courses.length === 0) return [];
 
     var csrf = '';
     try {
