@@ -147,10 +147,26 @@ async function init() {
   window.__popup_ok = true;
   try { document.body.classList.add('loaded'); } catch {}
 
-  // 首次打开无数据，自动触发一次后台刷新
+  // 首次打开无数据，自动触发刷新并轮询等待数据到达
   if (state.allItems.length === 0) {
     console.log('[Popup] No items, auto-refreshing...');
-    try { await handleRefresh(); } catch {}
+    try {
+      await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
+      // 轮询最多 3 次，每次等 2 秒，直到数据出现
+      for (var retry = 0; retry < 3; retry++) {
+        await sleepPopup(2000);
+        await loadData();
+        if (state.allItems.length > 0) {
+          console.log('[Popup] Auto-refresh got', state.allItems.length, 'items');
+          render();
+          break;
+        }
+      }
+      if (state.allItems.length === 0) {
+        console.log('[Popup] Auto-refresh: still no items after retries');
+        try { showToast('请打开 MOOC 课程页面后重试'); } catch {}
+      }
+    } catch {}
   }
 }
 
