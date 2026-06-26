@@ -146,6 +146,12 @@ async function init() {
   console.log('[Popup] init done, items:', state.items.length, 'courses:', state.courses.length);
   window.__popup_ok = true;
   try { document.body.classList.add('loaded'); } catch {}
+
+  // 首次打开无数据，自动触发一次后台刷新
+  if (state.allItems.length === 0) {
+    console.log('[Popup] No items, auto-refreshing...');
+    try { await handleRefresh(); } catch {}
+  }
 }
 
 // ─── Storage Self-Repair ────────────────────────────────
