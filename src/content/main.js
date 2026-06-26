@@ -1104,6 +1104,34 @@
           });
         }
 
+        // ═══ SPOC 前置：checkTermLearn.dwr（页面先调这个再调 getLastLearnedMocTermDto）═══
+        if (courseIsSpoc) {
+          try {
+            await xhrFetch(
+              'https://www.icourse163.org/dwr/call/plaincall/CourseBean.checkTermLearn.dwr',
+              'text/plain;charset=UTF-8',
+              ['callCount=1', 'scriptSessionId=', 'httpSessionId=', 'c0-scriptName=CourseBean', 'c0-methodName=checkTermLearn', 'c0-id=0', 'c0-param0=number:' + tid2, 'batchId=0'].join('\n'));
+            console.log('[MOOC Reminder] SPOC: checkTermLearn.dwr called');
+          } catch(ePre) { console.debug('[MOOC Reminder] SPOC: checkTermLearn failed:', ePre.message); }
+        }
+
+        // 0) getLastLearnedMocTermDto JSON — SPOC 页面实际用的格式（code:0 已验证）
+        //    页面会调两次，第二次可能返回完整数据
+        //    页面会调两次，第二次可能返回完整数据
+        for (var retry = 0; retry < 2; retry++) {
+          if (text && text.length > 2000) break; // 已拿到完整数据
+          try {
+            text = await xhrFetch(
+              'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + csrfKey2,
+              'application/json;charset=UTF-8',
+              JSON.stringify({ termId: parseInt(c.termId, 10) }));
+            if (courseIsSpoc) console.log('[MOOC Reminder] SPOC LastLearned retry', retry, 'len=' + text.length);
+            if (text.length < 2000) text = null; // 数据太小说明 chapters 是空的
+          } catch(eRetry) { text = null; }
+          if (!text && retry === 0) await sleep(500); // 两次调用间短暂延迟
+        }
+        if (text) console.log('[MOOC Reminder] Got full data from LastLearned, len=' + text.length);
+
         // 1) getMocTermDto.rpc + gatewayType=3（MOOC 首选）
         try {
           text = await xhrFetch(
