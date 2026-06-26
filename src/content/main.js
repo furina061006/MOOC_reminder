@@ -105,8 +105,11 @@
         return true; // async response
       }
       if (msg.type === 'BATCH_API_FETCH') {
-        try { sendResponse([]); } catch {}
-        batchApiFetch(msg.courses || []);
+        batchApiFetch(msg.courses || []).then(results => {
+          try { sendResponse(results || []); } catch {}
+        }).catch(err => {
+          try { sendResponse([]); } catch {}
+        });
         return true;
       }
       return false;

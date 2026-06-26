@@ -78,11 +78,10 @@
         }
       } catch {}
       if (courseList.length === 0) return false;
-      try { sendResponse([]); } catch {}
       (async function() {
         var csrf = '';
         try { var c = document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);?/i); csrf = c ? c[1] : ''; } catch {}
-        if (!csrf) return;
+        if (!csrf) { try { sendResponse([]); } catch {} return; }
         for (var i = 0; i < courseList.length; i++) {
           var c = courseList[i];
           if (!c || !c.termId) continue;
@@ -100,6 +99,7 @@
             }
           } catch {}
         }
+        try { sendResponse([]); } catch {}
       })();
       return true;
     }

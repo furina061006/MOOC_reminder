@@ -951,12 +951,17 @@ async function performPeriodicScrape() {
     // 把已知课程发一份给 content script，让它用页面上下文拉 API
     const courses = await getCourses();
     if (courses.length > 0) {
+      var courseData = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
       for (const tab of tabs) {
         try {
-          chrome.tabs.sendMessage(tab.id, {
-            type: 'BATCH_API_FETCH',
-            courses: courses.map(c => ({ courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }))
-          }).catch(() => {});
+          await chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: courseData }).catch(async function() {
+            // Tab 可能被 discard，注入 course-discovery.js 重试
+            try {
+              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/course-discovery.js'] });
+              await sleep(2000);
+              await chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: courseData });
+            } catch {}
+          });
         } catch {}
       }
     }
@@ -1008,12 +1013,17 @@ async function triggerManualScrape() {
     // 把已知课程发给 content script 做页面上下文 API 抓取
     const courses = await getCourses();
     if (courses.length > 0) {
+      var courseData = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
       for (const tab of tabs) {
         try {
-          chrome.tabs.sendMessage(tab.id, {
-            type: 'BATCH_API_FETCH',
-            courses: courses.map(c => ({ courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }))
-          }).catch(() => {});
+          await chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: courseData }).catch(async function() {
+            // Tab 可能被 discard，注入 course-discovery.js 重试
+            try {
+              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/course-discovery.js'] });
+              await sleep(2000);
+              await chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: courseData });
+            } catch {}
+          });
         } catch {}
       }
     }
