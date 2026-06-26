@@ -25,7 +25,7 @@ export const DEFAULT_SETTINGS = {
   autoDismissErrors: false,    // auto-clear sync errors from the UI
   showSnoozeButton: true,       // show snooze button in popup
   showCourseMute: true,         // show course mute button
-  domScrapingEnabled: true         // allow DOM scraping alongside API
+  domScrapingEnabled: false         // allow DOM scraping alongside API
 };
 
 function clampInt(value, min, max, fallback) {

@@ -42,7 +42,7 @@ const DEFAULT_SETTINGS = {
   autoDismissErrors: false,
   showSnoozeButton: true,
   showCourseMute: true,
-  domScrapingEnabled: true
+  domScrapingEnabled: false
 };
 
 function clampInt(value, min, max, fallback) {

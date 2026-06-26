@@ -25,7 +25,7 @@ const DEFAULTS = {
   autoDismissErrors: false,
   showSnoozeButton: true,
   showCourseMute: true,
-  domScrapingEnabled: true
+  domScrapingEnabled: false
 };
 
 function $(id) { return document.getElementById(id); }
