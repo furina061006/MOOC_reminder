@@ -93,6 +93,14 @@
         });
         return true; // async response
       }
+      if (msg.type === 'BATCH_API_FETCH') {
+        batchApiFetch(msg.courses || []).then(results => {
+          try { sendResponse(results || []); } catch {}
+        }).catch(err => {
+          try { sendResponse([]); } catch {}
+        });
+        return true;
+      }
       return false;
     });
 
@@ -1016,6 +1024,63 @@
         }
       }
     };
+  }
+
+  // ─── Batch API Fetch (page-context) ───────────────────
+  // Runs in the icourse163.org origin, so cookies + CSRF are
+  // handled automatically by the browser. GinsMooc-inspired.
+  async function batchApiFetch(courses) {
+    if (!Array.isArray(courses) || courses.length === 0) return [];
+
+    var csrf = '';
+    try {
+      var m = document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);?/i);
+      csrf = m ? m[1] : '';
+    } catch {}
+    if (!csrf) {
+      console.log('[MOOC Reminder] No NTESSTUDYSI cookie found, cannot do API fetches');
+      return [];
+    }
+
+    var results = [];
+    for (var i = 0; i < courses.length; i++) {
+      var c = courses[i];
+      if (!c || !c.termId) continue;
+      try {
+        var url = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
+        var body = JSON.stringify({ termId: parseInt(c.termId, 10) });
+        var resp = await fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json;charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: body
+        });
+        if (!resp.ok) { console.debug('[MOOC Reminder] API fetch failed for', c.courseId, resp.status); continue; }
+        var text = await resp.text();
+        if (text.length < 50) { console.debug('[MOOC Reminder] API empty for', c.courseId); continue; }
+        results.push({
+          course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' },
+          rawData: text
+        });
+      } catch(e) {
+        console.debug('[MOOC Reminder] API fetch error for', c.courseId, e.message);
+      }
+    }
+    // 逐个返回给 SW 以更新存储（不依赖 sendResponse 已完成则另行处理）
+    for (var j = 0; j < results.length; j++) {
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'COURSE_API_DATA',
+          course: results[j].course,
+          rawData: results[j].rawData
+        });
+      } catch {}
+    }
+    console.log('[MOOC Reminder] Batch API fetch done:', results.length, 'courses fetched');
+    return results;
   }
 
   // ─── Boot ─────────────────────────────────────────────

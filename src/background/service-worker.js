@@ -202,11 +202,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
   switch (alarm.name) {
     case 'periodic-scrape':
-      // Tab-based DOM scrape (if a course tab is open) AND tab-less API refresh
-      // of every known course — the latter is what lets us stay current without
-      // the user keeping a course page open.
+      // Tab-based DOM scrape + content-script-proxied API fetch for all courses.
+      // The content script uses page-context same-origin requests to bypass CSRF.
       await performPeriodicScrape();
-      await apiRefreshAllKnownCourses();
       break;
     case 'badge-refresh':
       await updateBadgeFromStorage();
@@ -270,6 +268,23 @@ const MESSAGE_HANDLERS = {
     await updateBadgeFromStorage();
     console.log(`[MOOC Reminder] Reconciled: +${result.added} added, ~${result.updated} updated`);
     return { success: true, added: result.added, updated: result.updated };
+  },
+
+  // Content script proxies API results (page-context same-origin fetch)
+  async COURSE_API_DATA(msg) {
+    if (!msg.course || !msg.rawData) return { success: false, error: 'Invalid payload' };
+    try {
+      const items = apiExtractHomework(msg.rawData, msg.course);
+      if (items.length === 0) return { success: true, itemCount: 0 };
+      const result = await reconcileHomeworkData(msg.course, items);
+      await updateBadgeFromStorage();
+      await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
+      console.log(`[MOOC Reminder] Course API data: ${items.length} items from ${msg.course.courseId}`);
+      return { success: true, added: result.added, updated: result.updated, itemCount: items.length };
+    } catch (e) {
+      console.warn('[MOOC Reminder] COURSE_API_DATA error:', e.message);
+      return { success: false, error: e.message };
+    }
   },
 
   // Popup marks an item as completed
@@ -901,6 +916,19 @@ async function performPeriodicScrape() {
       return;
     }
 
+    // 把已知课程发一份给 content script，让它用页面上下文拉 API
+    const courses = await getCourses();
+    if (courses.length > 0) {
+      for (const tab of tabs) {
+        try {
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'BATCH_API_FETCH',
+            courses: courses.map(c => ({ courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }))
+          }).catch(() => {});
+        } catch {}
+      }
+    }
+
     let scrapedCount = 0;
     for (const tab of tabs) {
       try {
@@ -941,14 +969,25 @@ async function triggerManualScrape() {
     });
 
     if (tabs.length === 0) {
-      if (apiResult && apiResult.okCount > 0) {
-        return { success: true, scrapedCount: apiChanged, tabsScanned: 0, viaApi: true };
-      }
+      // 没有打开的页面——不可能。让用户打开任一课程页面即可
       return {
         success: false,
-        error: '没有打开的课程页面；后台接口也未刷新成功（请确认已登录 icourse163，或打开任一课程页面）',
+        error: '请打开任一 icourse163 课程页面后重试',
         scrapedCount: 0
       };
+    }
+
+    // 把已知课程发给 content script 做页面上下文 API 抓取
+    const courses = await getCourses();
+    if (courses.length > 0) {
+      for (const tab of tabs) {
+        try {
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'BATCH_API_FETCH',
+            courses: courses.map(c => ({ courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }))
+          }).catch(() => {});
+        } catch {}
+      }
     }
 
     let totalItems = 0;
