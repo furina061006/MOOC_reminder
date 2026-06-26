@@ -41,7 +41,8 @@ const DEFAULT_SETTINGS = {
   autoDismissErrors: false,
   showSnoozeButton: true,
   showExternalLink: true,
-  showCourseMute: true
+  showCourseMute: true,
+  domScrapingEnabled: true
 };
 
 function clampInt(value, min, max, fallback) {
@@ -75,7 +76,8 @@ function normalizeSettings(stored) {
     autoDismissErrors: s.autoDismissErrors === true,
     showSnoozeButton: s.showSnoozeButton !== false,
     showExternalLink: s.showExternalLink !== false,
-    showCourseMute: s.showCourseMute !== false
+    showCourseMute: s.showCourseMute !== false,
+    domScrapingEnabled: s.domScrapingEnabled !== false
   };
 }
 
@@ -941,20 +943,25 @@ async function performPeriodicScrape() {
       }
     }
 
+    var settings = normalizeSettings(await getUserSettings());
+    var doDomScrape = settings.domScrapingEnabled !== false;
+
     let scrapedCount = 0;
-    for (const tab of tabs) {
-      try {
-        // Try sending SCRAPE_NOW message to content script
-        const response = await chrome.tabs.sendMessage(tab.id, {
-          type: 'SCRAPE_NOW'
+    if (doDomScrape) {
+      for (const tab of tabs) {
+        try {
+          const response = await chrome.tabs.sendMessage(tab.id, {
+            type: 'SCRAPE_NOW'
         });
 
         const processed = await processScrapeResponse(response);
         scrapedCount += processed.itemCount;
-      } catch (e) {
-        // Tab might not have content script ready — skip
-        console.debug('[MOOC Reminder] Could not scrape tab', tab.id, e.message);
+        } catch (e) {
+          console.debug('[MOOC Reminder] Could not scrape tab', tab.id, e.message);
+        }
       }
+    } else {
+      console.log('[MOOC Reminder] DOM scraping disabled, using API-only mode');
     }
 
     await updateBadgeFromStorage();
@@ -967,10 +974,6 @@ async function performPeriodicScrape() {
 
 async function triggerManualScrape() {
   console.log('[MOOC Reminder] Manual scrape triggered');
-
-  // First try the tab-less API refresh of every known course.
-  const apiResult = await apiRefreshAllKnownCourses();
-  const apiChanged = (apiResult && apiResult.changed) || 0;
 
   try {
     const tabs = await chrome.tabs.query({
@@ -1005,10 +1008,12 @@ async function triggerManualScrape() {
     let totalItems = 0;
     let errorCount = 0;
 
-    for (const tab of tabs) {
-      try {
-        const response = await chrome.tabs.sendMessage(tab.id, {
-          type: 'SCRAPE_NOW'
+    var s = normalizeSettings(await getUserSettings());
+    if (s.domScrapingEnabled !== false) {
+      for (const tab of tabs) {
+        try {
+          const response = await chrome.tabs.sendMessage(tab.id, {
+            type: 'SCRAPE_NOW'
         });
 
         const processed = await processScrapeResponse(response);
@@ -1035,12 +1040,13 @@ async function triggerManualScrape() {
         }
       }
     }
+    } // end domScrapingEnabled guard
 
     await updateBadgeFromStorage();
 
     return {
       success: true,
-      scrapedCount: totalItems + apiChanged,
+      scrapedCount: totalItems,
       tabsScanned: tabs.length,
       errors: errorCount
     };

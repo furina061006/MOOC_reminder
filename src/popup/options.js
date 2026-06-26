@@ -25,7 +25,8 @@ const DEFAULTS = {
   autoDismissErrors: false,
   showSnoozeButton: true,
   showExternalLink: true,
-  showCourseMute: true
+  showCourseMute: true,
+  domScrapingEnabled: true
 };
 
 function $(id) { return document.getElementById(id); }
@@ -83,6 +84,7 @@ function populate(settings) {
   safeSetChecked('show-snooze-btn', s.showSnoozeButton !== false);
   safeSetChecked('show-external-link', s.showExternalLink !== false);
   safeSetChecked('show-course-mute', s.showCourseMute !== false);
+  safeSetChecked('dom-scrape', s.domScrapingEnabled !== false);
   safeSetChecked('digest-enabled', s.dailyDigestEnabled === true);
   safeSetValue('digest-hour', s.dailyDigestHour);
   const leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULTS.notifyLeadHours;
@@ -124,7 +126,8 @@ function collect() {
     autoDismissErrors: safeGetChecked('auto-dismiss-errors'),
     showSnoozeButton: safeGetChecked('show-snooze-btn'),
     showExternalLink: safeGetChecked('show-external-link'),
-    showCourseMute: safeGetChecked('show-course-mute')
+    showCourseMute: safeGetChecked('show-course-mute'),
+    domScrapingEnabled: safeGetChecked('dom-scrape')
   };
 }
 
