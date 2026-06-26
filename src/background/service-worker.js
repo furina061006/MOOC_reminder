@@ -515,12 +515,6 @@ const MESSAGE_HANDLERS = {
     return { success: true };
   },
 
-  // Popup checks if any MOOC tab is open (before attempting refresh)
-  async HAS_TABS() {
-    const tabs = await chrome.tabs.query({ url: ['https://www.icourse163.org/*'] });
-    return { success: true, hasTabs: tabs.length > 0 };
-  },
-
   // Refresh badge only
   async REFRESH_BADGE() {
     await updateBadgeFromStorage();
@@ -941,7 +935,12 @@ async function performPeriodicScrape() {
 
   try {
     // Find open icourse163 tabs
-    const tabs = await chrome.tabs.query({ url: ['https://www.icourse163.org/*'] });
+    const tabs = await chrome.tabs.query({
+      url: [
+        'https://www.icourse163.org/learn/*',
+        'https://www.icourse163.org/spoc/learn/*'
+      ]
+    });
 
     if (tabs.length === 0) {
       console.log('[MOOC Reminder] No icourse163 tabs open, skipping periodic scrape');
@@ -951,17 +950,12 @@ async function performPeriodicScrape() {
     // 把已知课程发一份给 content script，让它用页面上下文拉 API
     const courses = await getCourses();
     if (courses.length > 0) {
-      var courseData = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
       for (const tab of tabs) {
         try {
-          await chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: courseData }).catch(async function() {
-            // Tab 可能被 discard，注入 course-discovery.js 重试
-            try {
-              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/course-discovery.js'] });
-              await sleep(2000);
-              await chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: courseData });
-            } catch {}
-          });
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'BATCH_API_FETCH',
+            courses: courses.map(c => ({ courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }))
+          }).catch(() => {});
         } catch {}
       }
     }
@@ -999,7 +993,12 @@ async function triggerManualScrape() {
   console.log('[MOOC Reminder] Manual scrape triggered');
 
   try {
-    const tabs = await chrome.tabs.query({ url: ['https://www.icourse163.org/*'] });
+    const tabs = await chrome.tabs.query({
+      url: [
+        'https://www.icourse163.org/learn/*',
+        'https://www.icourse163.org/spoc/learn/*'
+      ]
+    });
 
     if (tabs.length === 0) {
       // 没有打开的页面——不可能。让用户打开任一课程页面即可
@@ -1013,17 +1012,12 @@ async function triggerManualScrape() {
     // 把已知课程发给 content script 做页面上下文 API 抓取
     const courses = await getCourses();
     if (courses.length > 0) {
-      var courseData = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
       for (const tab of tabs) {
         try {
-          await chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: courseData }).catch(async function() {
-            // Tab 可能被 discard，注入 course-discovery.js 重试
-            try {
-              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/course-discovery.js'] });
-              await sleep(2000);
-              await chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: courseData });
-            } catch {}
-          });
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'BATCH_API_FETCH',
+            courses: courses.map(c => ({ courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }))
+          }).catch(() => {});
         } catch {}
       }
     }
