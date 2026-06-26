@@ -793,16 +793,18 @@
     }
 
     // ── SPOC 专用完成检测 ──
-    // .u-quizHwListItem 没有 .down 类 → 已完成（SPOC 只展开未完成条目）
+    // .u-quizHwListItem 没有 .down 类且 .j-detail 为空 → 已完成
     var hwListItem = el.closest ? el.closest('.u-quizHwListItem') : null;
     if (!hwListItem) hwListItem = el.classList && el.classList.contains('u-quizHwListItem') ? el : null;
     if (hwListItem) {
       var hwCls = '';
       try { hwCls = hwListItem.className || ''; if (typeof hwCls !== 'string') hwCls = String(hwCls); } catch(e) {}
-      // 没有 .down 且 .j-detail 为空 → 已完成（SPOC 核心特征）
       if (!/\bdown\b/.test(hwCls)) {
         var detail = hwListItem.querySelector('.j-detail');
-        if (!detail || (detail.textContent || '').trim().length < 5) return true;
+        if (!detail || (detail.textContent || '').trim().length < 5) {
+          console.log('[MOOC Reminder] SPOC completed by: no .down + empty .j-detail');
+          return true;
+        }
       }
     }
 
@@ -811,17 +813,14 @@
     if (!validScore && hwListItem) validScore = hwListItem.querySelector('.j-validScore');
     if (validScore) {
       var scoreText = (validScore.textContent || '').trim();
-      if (/得分/.test(scoreText) && !/0\.00/.test(scoreText)) return true;
+      if (/得分/.test(scoreText) && !/0\.00/.test(scoreText)) {
+        console.log('[MOOC Reminder] SPOC completed by: validScore "' + scoreText + '"');
+        return true;
+      }
     }
 
-    // .j-submitCount 非零 → 至少提交过
-    var submitCount = el.querySelector ? el.querySelector('.j-submitCount') : null;
-    if (!submitCount && hwListItem) submitCount = hwListItem.querySelector('.j-submitCount');
-    if (submitCount) {
-      var scText = (submitCount.textContent || '').trim();
-      var scMatch = scText.match(/^(\d+)\//);
-      if (scMatch && parseInt(scMatch[1], 10) > 0) return true;
-    }
+    // .j-submitCount 非零 → 至少提交过（但不等同于已完成，不 return true）
+    // 移除 submitCount 判定 —— 提交过不等于已完成
 
     // Check child elements for status indicators
     try {
@@ -1291,39 +1290,50 @@
   }
 
   async function silentSpocIframeScrape(pageMeta, course) {
-    var url = window.location.origin + '/spoc/learn/' + pageMeta.courseId + '?tid=' + pageMeta.termId + '#/learn/testlist';
-    console.log('[MOOC Reminder] SPOC silent iframe loading:', url);
-    try {
-      var items = await new Promise(function(resolve) {
-        var iframe = document.createElement('iframe');
-        iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;border:none;';
-        iframe.src = url;
-        var done = false;
-        var timeout = setTimeout(function() { if (!done) { done = true; try { document.body.removeChild(iframe); } catch {} resolve([]); } }, 20000);
-        iframe.onload = function() {
-          if (done) return;
-          var tries = 0;
-          var poll = setInterval(function() {
-            tries++;
-            try {
-              var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
-              if (!doc || !doc.body) { if (tries > 40) { clearInterval(poll); if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve([]); } } return; }
-              var found = extractItemsFromDoc(doc, pageMeta);
-              if (found.length > 0 || tries > 30) {
-                clearInterval(poll);
-                if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve(found); }
-              }
-            } catch(e) { if (tries > 40) { clearInterval(poll); if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve([]); } } }
-          }, 800);
-        };
-        iframe.onerror = function() { if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve([]); } };
-        document.body.appendChild(iframe);
-      });
-      if (items.length > 0) {
-        console.log('[MOOC Reminder] SPOC iframe got', items.length, 'items');
-        await chrome.runtime.sendMessage({ type: 'HOMEWORK_DATA', course: { courseId: course.courseId, termId: course.termId, courseName: course.courseName || '', courseType: 'spoc', courseUrl: url }, homeworkItems: items });
-      }
-    } catch(e) { console.debug('[MOOC Reminder] SPOC iframe error:', e.message); }
+    var allItems = [];
+
+    // 抓取测验/作业页和考试页
+    var routes = ['#/learn/testlist', '#/learn/examlist'];
+    for (var ri = 0; ri < routes.length; ri++) {
+      var url = window.location.origin + '/spoc/learn/' + pageMeta.courseId + '?tid=' + pageMeta.termId + routes[ri];
+      console.log('[MOOC Reminder] SPOC silent iframe loading:', url);
+      try {
+        var items = await new Promise(function(resolve) {
+          var iframe = document.createElement('iframe');
+          iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;border:none;';
+          iframe.src = url;
+          var done = false;
+          var timeout = setTimeout(function() { if (!done) { done = true; try { document.body.removeChild(iframe); } catch {} resolve([]); } }, 20000);
+          iframe.onload = function() {
+            if (done) return;
+            var tries = 0;
+            var poll = setInterval(function() {
+              tries++;
+              try {
+                var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+                if (!doc || !doc.body) { if (tries > 40) { clearInterval(poll); if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve([]); } } return; }
+                var found = extractItemsFromDoc(doc, pageMeta);
+                if (found.length > 0 || tries > 30) {
+                  clearInterval(poll);
+                  if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve(found); }
+                }
+              } catch(e) { if (tries > 40) { clearInterval(poll); if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve([]); } } }
+            }, 800);
+          };
+          iframe.onerror = function() { if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve([]); } };
+          document.body.appendChild(iframe);
+        });
+        if (items.length > 0) {
+          console.log('[MOOC Reminder] SPOC iframe from', routes[ri], 'got', items.length, 'items');
+          allItems = allItems.concat(items);
+        }
+      } catch(e) { console.debug('[MOOC Reminder] SPOC iframe error for', routes[ri], ':', e.message); }
+    }
+
+    if (allItems.length > 0) {
+      console.log('[MOOC Reminder] SPOC iframe total:', allItems.length, 'items');
+      await chrome.runtime.sendMessage({ type: 'HOMEWORK_DATA', course: { courseId: course.courseId, termId: course.termId, courseName: course.courseName || '', courseType: 'spoc', courseUrl: window.location.href }, homeworkItems: allItems });
+    }
   }
 
   function extractItemsFromDoc(doc, urlMeta) {
