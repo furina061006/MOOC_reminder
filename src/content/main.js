@@ -1052,7 +1052,10 @@
     if (pageMeta && pageMeta.courseId && pageMeta.termId) {
       var hasCurrent = courses.some(function(c){ return c.courseId === pageMeta.courseId; });
       if (!hasCurrent) {
-        courses.push({ courseId: pageMeta.courseId, termId: pageMeta.termId, courseName: '', schoolName: '' });
+        var pageName = '';
+        try { var h = document.querySelector('h1, .course-name, [class*="courseTitle"], .m-coursename'); if (h) pageName = h.textContent.trim(); } catch {}
+        if (!pageName) { try { pageName = document.title.replace(/[_-]\s*中国大学MOOC.*$/i, '').trim(); } catch {} }
+        courses.push({ courseId: pageMeta.courseId, termId: pageMeta.termId, courseName: pageName, schoolName: '' });
       }
     }
     if (courses.length === 0) return [];

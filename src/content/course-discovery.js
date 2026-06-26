@@ -74,7 +74,12 @@
         var m = location.pathname.match(/\/(?:spoc\/)?learn\/([^/?#]+)/i);
         if (tid && m) {
           var has = courseList.some(function(c){ return c.courseId === m[1]; });
-          if (!has) courseList.push({ courseId: m[1], termId: tid, courseName: '', schoolName: '' });
+          if (!has) {
+            var pageName = '';
+            try { var h = document.querySelector('h1, .course-name, [class*="courseTitle"], .m-coursename'); if (h) pageName = h.textContent.trim(); } catch {}
+            if (!pageName) { try { pageName = document.title.replace(/[_-]\s*中国大学MOOC.*$/i, '').trim(); } catch {} }
+            courseList.push({ courseId: m[1], termId: tid, courseName: pageName, schoolName: '' });
+          }
         }
       } catch {}
       if (courseList.length === 0) return false;
