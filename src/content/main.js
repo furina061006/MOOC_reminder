@@ -105,9 +105,12 @@
         return true; // async response
       }
       if (msg.type === 'BATCH_API_FETCH') {
+        console.log('[MOOC Reminder] BATCH_API_FETCH received, courses:', (msg.courses||[]).length);
         batchApiFetch(msg.courses || []).then(results => {
+          console.log('[MOOC Reminder] BATCH_API_FETCH done, results:', results.length);
           try { sendResponse(results || []); } catch {}
         }).catch(err => {
+          console.warn('[MOOC Reminder] BATCH_API_FETCH error:', err.message);
           try { sendResponse([]); } catch {}
         });
         return true;
@@ -1042,6 +1045,7 @@
   // Runs in the icourse163.org origin, so cookies + CSRF are
   // handled automatically by the browser. GinsMooc-inspired.
   async function batchApiFetch(courses) {
+    console.log('[MOOC Reminder] batchApiFetch called, courses:', courses.length);
     if (!Array.isArray(courses)) courses = [];
     // 始终加上当前页面的课程（防止 storage 无记录时 courses 为空）
     var pageMeta = parseCourseUrl(window.location.href);
@@ -1098,7 +1102,16 @@
         });
       } catch {}
     }
-    console.log('[MOOC Reminder] Batch API fetch done:', results.length, 'courses fetched');
+    console.log('[MOOC Reminder] Batch API fetch done:', results.length, 'courses fetched, sending COURSE_API_DATA...');
+    for (var j = 0; j < results.length; j++) {
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'COURSE_API_DATA',
+          course: results[j].course,
+          rawData: results[j].rawData
+        });
+      } catch { console.log('[MOOC Reminder] COURSE_API_DATA send failed for', results[j].course.courseId); }
+    }
     return results;
   }
 
