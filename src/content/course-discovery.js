@@ -117,46 +117,74 @@
           if (!c || !c.termId) continue;
           var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
           try {
-            // ═══ 使用 getMocTermDto.rpc（完整课程大纲），form-encoded body ═══
-            var apiUrl = 'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
-            var apiBody = 'termId=' + encodeURIComponent(c.termId) + '&gatewayType=3';
-            var text = await new Promise(function(resolve, reject) {
-              var xhr = new XMLHttpRequest();
-              xhr.open('POST', apiUrl, true);
-              xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
-              xhr.onload = function() { resolve(xhr.responseText); };
-              xhr.onerror = function() { reject(); };
-              xhr.send(apiBody);
-            });
+            // ═══ API 端点链式 fallback（同 main.js batchApiFetch）═══
+            var text = null;
 
-            // SPOC 诊断日志
-            if (courseIsSpoc) {
-              console.log('[MOOC Reminder] course-discovery SPOC API (getMocTermDto) len:', text.length, 'preview:', text.substring(0, 200));
-            }
+            // 1) getMocTermDto.rpc + gatewayType=3
+            try {
+              text = await new Promise(function(resolve, reject) {
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', 'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                xhr.onload = function() { resolve(xhr.responseText); };
+                xhr.onerror = function() { reject(); };
+                xhr.send('termId=' + encodeURIComponent(c.termId) + '&gatewayType=3');
+              });
+              if (courseIsSpoc) console.log('[MOOC Reminder] discovery SPOC endpoint 1 (getMocTermDto+gw): len=' + text.length);
+              if (text.length < 100 || /"code":-/.test(text)) text = null;
+            } catch(e) { text = null; }
 
-            // SPOC 课程 Moc 端点返回空时，尝试 Spoc 端点
-            if (text.length < 50 && courseIsSpoc) {
-              console.log('[MOOC Reminder] course-discovery SPOC: Moc endpoint short, trying Spoc endpoint...');
+            // 2) getMocTermDto.rpc 不带 gatewayType
+            if (!text) {
               try {
-                var spocUrl = 'https://www.icourse163.org/web/j/courseBean.getSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
                 text = await new Promise(function(resolve, reject) {
                   var xhr2 = new XMLHttpRequest();
-                  xhr2.open('POST', spocUrl, true);
+                  xhr2.open('POST', 'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
                   xhr2.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
                   xhr2.onload = function() { resolve(xhr2.responseText); };
                   xhr2.onerror = function() { reject(); };
-                  xhr2.send(apiBody);
+                  xhr2.send('termId=' + encodeURIComponent(c.termId));
                 });
-                console.log('[MOOC Reminder] course-discovery SPOC: Spoc endpoint len:', text.length, 'preview:', text.substring(0, 200));
-              } catch(spocErr) {
-                console.debug('[MOOC Reminder] course-discovery SPOC: Spoc endpoint failed:', spocErr.message);
-              }
+                if (courseIsSpoc) console.log('[MOOC Reminder] discovery SPOC endpoint 2 (getMocTermDto no gw): len=' + text.length);
+                if (text.length < 100 || /"code":-/.test(text)) text = null;
+              } catch(e) { text = null; }
             }
 
-            if (text.length > 50) {
+            // 3) getSpocTermDto.rpc
+            if (!text && courseIsSpoc) {
+              try {
+                text = await new Promise(function(resolve, reject) {
+                  var xhr3 = new XMLHttpRequest();
+                  xhr3.open('POST', 'https://www.icourse163.org/web/j/courseBean.getSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
+                  xhr3.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                  xhr3.onload = function() { resolve(xhr3.responseText); };
+                  xhr3.onerror = function() { reject(); };
+                  xhr3.send('termId=' + encodeURIComponent(c.termId));
+                });
+                console.log('[MOOC Reminder] discovery SPOC endpoint 3 (getSpocTermDto): len=' + text.length);
+                if (text.length < 100 || /"code":-/.test(text)) text = null;
+              } catch(e) { text = null; }
+            }
+
+            // 4) fallback: getLastLearnedMocTermDto.rpc (JSON)
+            if (!text) {
+              try {
+                text = await new Promise(function(resolve, reject) {
+                  var xhr4 = new XMLHttpRequest();
+                  xhr4.open('POST', 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
+                  xhr4.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+                  xhr4.onload = function() { resolve(xhr4.responseText); };
+                  xhr4.onerror = function() { reject(); };
+                  xhr4.send(JSON.stringify({ termId: parseInt(c.termId, 10) }));
+                });
+                console.log('[MOOC Reminder] discovery endpoint 4 (LastLearned fallback): len=' + text.length);
+              } catch(e) { text = null; }
+            }
+
+            if (text && text.length > 50) {
               chrome.runtime.sendMessage({ type: 'COURSE_API_DATA', course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' }, rawData: text }).catch(function(){});
             } else {
-              console.log('[MOOC Reminder] course-discovery: API empty for', c.courseId, 'type:', c.courseType || '?', 'len:', text.length);
+              console.log('[MOOC Reminder] course-discovery: API empty/failed for', c.courseId, 'type:', c.courseType || '?', 'textLen:', text ? text.length : 0);
             }
           } catch {}
         }
