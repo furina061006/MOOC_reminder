@@ -827,21 +827,18 @@ async function handleRefresh() {
   try { if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning'); } catch {}
 
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
-    console.log('[Popup] TRIGGER_SCRAPE response:', response);
-
-    // 等待 content script 的 BATCH_API_FETCH 完成并写入 storage
-    await sleepPopup(2500);
-    await loadData();
-    render();
-
-    if (response && response.success) {
-      showToast('刷新成功，扫描到 ' + (response.scrapedCount || 0) + ' 项');
-    } else if (response && response.error) {
-      showToast(response.error);
-    } else {
-      showToast('刷新完成（无新数据）');
+    // 第一次：预热
+    chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
+    await sleepPopup(1000);
+    // 第二次：轮询 storage 直到数据到达
+    await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
+    for (var retry = 0; retry < 30; retry++) {
+      await sleepPopup(500);
+      await loadData();
+      if (state.allItems.length > 0) break;
     }
+    render();
+    showToast(state.allItems.length > 0 ? '刷新成功' : '请打开 MOOC 课程页面后重试');
   } catch(e) {
     console.error('[Popup] handleRefresh failed:', e.message);
     // 刷新失败也重新渲染（应用当前filter）
