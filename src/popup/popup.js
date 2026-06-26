@@ -828,7 +828,11 @@ function hasMoocTabs() {
   return chrome.runtime.sendMessage({ type: 'HAS_TABS' }).then(function(r) { return r && r.hasTabs; }).catch(function() { return false; });
 }
 
+var _refreshing = false;
+
 async function handleRefresh() {
+  if (_refreshing) { console.log('[Popup] refresh already in progress'); return; }
+  _refreshing = true;
   console.log('[Popup] handleRefresh');
   try { if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning'); } catch {}
 
@@ -838,6 +842,7 @@ async function handleRefresh() {
       await loadData(); render();
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
       if (state.allItems.length > 0) { showToast('已加载缓存数据'); } else { showToast('请打开 MOOC 课程页面后刷新'); }
+      _refreshing = false;
       return;
     }
     // 预热 SW + 首次抓取
@@ -855,12 +860,12 @@ async function handleRefresh() {
     showToast(state.lastSync && state.lastSync !== prevSync ? '刷新成功' : '请打开 MOOC 课程页面后重试');
   } catch(e) {
     console.error('[Popup] handleRefresh failed:', e.message);
-    // 刷新失败也重新渲染（应用当前filter）
     try { await loadData(); render(); } catch {}
     showToast('刷新失败: ' + e.message);
   }
 
   try { if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning'); } catch {}
+  _refreshing = false;
 }
 
 function handleOpenSettings() {
