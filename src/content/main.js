@@ -1256,40 +1256,79 @@
   }
 
   function extractItemsFromDoc(doc, urlMeta) {
-    var items = [], seen = new Set();
-    function buildItem(el, pos) {
-      var t = (el.textContent || '').trim();
-      if (t.length < 10 || /加载中|loading/i.test(t)) return null;
-      var btn = el.querySelector('.j-quizBtn'); var btnT = btn ? (btn.textContent || '') : '';
-      var type = 'homework';
-      if (btnT.indexOf('测验') >= 0) type = 'quiz'; else if (btnT.indexOf('考试') >= 0) type = 'exam';
-      if (type === 'homework') { if (/期末|考试|exam/i.test(t)) type = 'exam'; else if (/测验|quiz/i.test(t)) type = 'quiz'; }
-      var sm = t.match(/(\d{1,3}(?:\.\d+)?)\s*[\/分]\s*(\d{1,3}(?:\.\d+)?)(?![\/\-年.\d])/);
-      var sc = sm ? parseFloat(sm[1]) : null, ts = sm ? parseFloat(sm[2]) : null;
-      if (sc && ts && sc <= 31 && ts <= 31) sc = ts = null;
-      var dl = t.match(/(\d{4}[年\-\/]\d{1,2}[月\-\/]\d{1,2}日?\s*\d{1,2}:\d{2})/);
-      if (!dl && !sc) return null;
-      var titleEl = el.querySelector('.j-name, [class*="name"], h3, h4, .item-title, [class*="title"]');
-      var title = (titleEl ? titleEl.textContent : '').trim() || t.substring(0, 50).trim();
-      title = title.replace(/\s+/g, ' ').replace(/(截止时间?|提交截止).*$/i, '').trim();
-      if (!title || title.length < 2 || /一键互评|不再提醒/i.test(title)) return null;
-      var cls = ''; try { cls = el.className || ''; if (typeof cls !== 'string') cls = String(cls); } catch(e) {}
-      var done = /已完成|已提交|已批阅|已通过|得分|查看成绩|查看分数|done|finished|completed/i.test(t + ' ' + cls);
-      var hid = 'hw_' + (function(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(16).padStart(8,'0');})(type+'|'+title+'|'+(dl?dl[1]:''));
-      return { uid: urlMeta.courseId+'_tid'+urlMeta.termId+'_ch_le_'+hid, courseId: urlMeta.courseId, termId: urlMeta.termId, chapterId:'', lessonId:'', homeworkId: hid, title: title, type: type, courseName: (doc.title||'').replace(/[_-]\s*中国大学MOOC.*$/i,'').trim(), schoolName:'', status: done?'completed':'unfinished', checkedOff: done, manuallyCheckedOff: false, autoDetectedCompleted: done, completionReason: done?'auto':null, deadline: dl?parseChineseDateInline(dl[1]):null, deadlineRaw: dl?dl[1]:null, firstSeen: new Date().toISOString(), lastUpdated: new Date().toISOString(), pageUrl: doc.location?doc.location.href:'', score: sc, totalScore: ts, source:'iframe' };
+    // 复用主 buildHomeworkItem 的完整逻辑（阶段检测、完成判定、分数解析等）
+    var fakeCourseMeta = { courseName: (doc.title || '').replace(/[_-]\s*中国大学MOOC.*$/i, '').trim(), schoolName: '' };
+    var items = [], seenFallback = new Set();
+
+    // 策略1: .u-quizHwListItem
+    var itemEls = doc.querySelectorAll('.u-quizHwListItem');
+    for (var i = 0; i < itemEls.length; i++) {
+      try {
+        var item = buildHomeworkItem(itemEls[i], urlMeta, fakeCourseMeta, '', '', i);
+        if (item) { items.push(item); seenFallback.add(itemEls[i]); }
+      } catch(e) {}
     }
-    // strategies
-    var els = doc.querySelectorAll('.u-quizHwListItem');
-    for (var i=0;i<els.length;i++) { var it = buildItem(els[i],i); if(it){items.push(it);seen.add(els[i]);} }
-    if (!items.length) {
-      var times = doc.querySelectorAll('.j-submitTime');
-      for (var j2=0;j2<times.length;j2++) { var p = times[j2].closest('div[class]'); if(p&&!seen.has(p)){seen.add(p);var it2=buildItem(p,j2);if(it2)items.push(it2);} }
+
+    // 策略2: .j-submitTime → 父容器
+    if (items.length === 0) {
+      var timeEls = doc.querySelectorAll('.j-submitTime');
+      for (var j = 0; j < timeEls.length; j++) {
+        var parent = timeEls[j].closest('div[class]');
+        if (parent && !seenFallback.has(parent)) {
+          seenFallback.add(parent);
+          try {
+            var item2 = buildHomeworkItem(parent, urlMeta, fakeCourseMeta, '', '', j);
+            if (item2) items.push(item2);
+          } catch(e) {}
+        }
+      }
     }
-    if (!items.length) {
-      ['[class*="quizHwItem"]','.j-quiz-item','.m-quiz-item','.j-test-item','tr[class*="row"]'].forEach(function(s){
-        try { var e3=doc.querySelectorAll(s); for(var k=0;k<e3.length;k++){if(!seen.has(e3[k])){seen.add(e3[k]);var it3=buildItem(e3[k],k);if(it3)items.push(it3);}} if(items.length)return; } catch(e){}
-      });
+
+    // 策略3: fallback 选择器
+    if (items.length === 0) {
+      var fallbackSelectors = [
+        '.m-chapterQuizHwItem', '[class*="quizHwItem"]',
+        '.j-quiz-item', '.m-quiz-item', '.j-test-item',
+        'tr[class*="row"]', 'tr[class*="item"]'
+      ];
+      for (var s = 0; s < fallbackSelectors.length; s++) {
+        try {
+          var els = doc.querySelectorAll(fallbackSelectors[s]);
+          for (var k = 0; k < els.length; k++) {
+            if (!seenFallback.has(els[k])) {
+              seenFallback.add(els[k]);
+              var item3 = buildHomeworkItem(els[k], urlMeta, fakeCourseMeta, '', '', k);
+              if (item3) items.push(item3);
+            }
+          }
+          if (items.length > 0) break;
+        } catch(e) {}
+      }
     }
+
+    // 策略4 (SPOC): u-btn 按钮 → 向上找容器
+    if (items.length === 0) {
+      var btns = doc.querySelectorAll('.u-btn-default, .u-btn, a[class*="btn"][href*="test"], a[class*="btn"][href*="quiz"], a[class*="btn"][href*="exam"], a[class*="btn"][href*="homework"]');
+      for (var bi = 0; bi < btns.length; bi++) {
+        try {
+          var container = btns[bi];
+          for (var d = 0; d < 5 && container; d++) {
+            container = container.parentElement;
+            if (!container || container === doc.body) break;
+            var cc = (container.className || '').toString();
+            if (/menu|nav|header|sidebar|tab/i.test(cc)) continue;
+            if (seenFallback.has(container)) { container = null; break; }
+            var ct = (container.textContent || '').trim();
+            if (ct.length > 30 && /\d{1,2}[月\/]\d{1,2}日?|\d{4}[年\-\/]|截止|deadline/i.test(ct)) break;
+          }
+          if (!container || seenFallback.has(container)) continue;
+          seenFallback.add(container);
+          var item4 = buildHomeworkItem(container, urlMeta, fakeCourseMeta, '', '', bi);
+          if (item4) items.push(item4);
+        } catch(e) {}
+      }
+    }
+
     console.log('[MOOC Reminder] SPOC iframe extractItems: found', items.length, 'from doc');
     return items;
   }
