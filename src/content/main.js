@@ -1088,91 +1088,80 @@
 
       try {
         // ═══ API 端点链式 fallback ═══
-        // 不同课程类型（MOOC/SPOC）接受的参数格式可能不同
         var text = null;
+        var csrfKey2 = encodeURIComponent(csrf);
+        var tid2 = encodeURIComponent(c.termId);
 
-        // 1) 首选：getMocTermDto.rpc + form body（SW 后台同款，MOOC 课程验证可用）
-        try {
-          var url1 = 'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
-          var body1 = 'termId=' + encodeURIComponent(c.termId) + '&gatewayType=3';
-          text = await new Promise(function(resolve, reject) {
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', url1, true);
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
-            xhr.onload = function() { resolve(xhr.responseText); };
-            xhr.onerror = function() { reject(new Error('XHR failed')); };
-            xhr.send(body1);
+        // 辅助：Promise-based XHR
+        function xhrFetch(url, contentType, body) {
+          return new Promise(function(resolve, reject) {
+            var x = new XMLHttpRequest();
+            x.open('POST', url, true);
+            if (contentType) x.setRequestHeader('Content-Type', contentType);
+            x.onload = function() { resolve(x.responseText); };
+            x.onerror = function() { reject(new Error('XHR failed')); };
+            x.send(body);
           });
-          if (courseIsSpoc) {
-            console.log('[MOOC Reminder] SPOC endpoint 1 (getMocTermDto+gatewayType): len=' + text.length, 'preview:', text.substring(0, 150));
-          }
-          // 如果返回错误（code != 0），尝试下一步
-          if (text.length < 100 || /"code":-/.test(text)) {
-            if (courseIsSpoc) console.log('[MOOC Reminder] SPOC: endpoint 1 returned error/too-short, trying next...');
-            text = null;
-          }
+        }
+
+        // 1) getMocTermDto.rpc + gatewayType=3（MOOC 首选）
+        try {
+          text = await xhrFetch(
+            'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfKey2,
+            'application/x-www-form-urlencoded;charset=UTF-8',
+            'termId=' + tid2 + '&gatewayType=3');
+          if (courseIsSpoc) console.log('[MOOC Reminder] EP1 getMocTermDto+gw3: len=' + text.length, 'preview:', text.substring(0, 120));
+          if (text.length < 100 || /"code":-/.test(text)) text = null;
         } catch(e1) { text = null; }
 
         // 2) getMocTermDto.rpc 不带 gatewayType
-        if (!text) {
-          try {
-            var url2 = 'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
-            var body2 = 'termId=' + encodeURIComponent(c.termId);
-            text = await new Promise(function(resolve, reject) {
-              var xhr2 = new XMLHttpRequest();
-              xhr2.open('POST', url2, true);
-              xhr2.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
-              xhr2.onload = function() { resolve(xhr2.responseText); };
-              xhr2.onerror = function() { reject(new Error('XHR failed')); };
-              xhr2.send(body2);
-            });
-            if (courseIsSpoc) {
-              console.log('[MOOC Reminder] SPOC endpoint 2 (getMocTermDto no gatewayType): len=' + text.length, 'preview:', text.substring(0, 150));
-            }
-            if (text.length < 100 || /"code":-/.test(text)) {
-              if (courseIsSpoc) console.log('[MOOC Reminder] SPOC: endpoint 2 also failed, trying Spoc endpoint...');
-              text = null;
-            }
-          } catch(e2) { text = null; }
-        }
+        if (!text) { try {
+          text = await xhrFetch(
+            'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfKey2,
+            'application/x-www-form-urlencoded;charset=UTF-8',
+            'termId=' + tid2);
+          if (courseIsSpoc) console.log('[MOOC Reminder] EP2 getMocTermDto: len=' + text.length, 'preview:', text.substring(0, 120));
+          if (text.length < 100 || /"code":-/.test(text)) text = null;
+        } catch(e2) { text = null; }}
 
-        // 3) SPOC: getSpocTermDto.rpc（不带 gatewayType）
-        if (!text && courseIsSpoc) {
-          try {
-            var url3 = 'https://www.icourse163.org/web/j/courseBean.getSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
-            var body3 = 'termId=' + encodeURIComponent(c.termId);
-            text = await new Promise(function(resolve, reject) {
-              var xhr3 = new XMLHttpRequest();
-              xhr3.open('POST', url3, true);
-              xhr3.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
-              xhr3.onload = function() { resolve(xhr3.responseText); };
-              xhr3.onerror = function() { reject(new Error('XHR failed')); };
-              xhr3.send(body3);
-            });
-            console.log('[MOOC Reminder] SPOC endpoint 3 (getSpocTermDto): len=' + text.length, 'preview:', text.substring(0, 150));
-            if (text.length < 100 || /"code":-/.test(text)) {
-              console.log('[MOOC Reminder] SPOC: endpoint 3 also failed, falling back to LastLearned...');
-              text = null;
-            }
-          } catch(e3) { text = null; }
-        }
+        // 3) DWR endpoint（SW 后台 fallback，无需 csrfKey）
+        if (!text) { try {
+          text = await xhrFetch(
+            'https://www.icourse163.org/dwr/call/plaincall/CourseBean.getMocTermDto.dwr',
+            'text/plain;charset=UTF-8',
+            ['callCount=1', 'scriptSessionId=', 'httpSessionId=', 'c0-scriptName=CourseBean', 'c0-methodName=getMocTermDto', 'c0-id=0', 'c0-param0=number:' + tid2, 'c0-param1=boolean:true', 'batchId=0'].join('\n'));
+          console.log('[MOOC Reminder] EP3 DWR: len=' + text.length, 'preview:', text.substring(0, 120));
+          if (text.length < 100 || /exception|forbidden|非法跨域/i.test(text)) text = null;
+        } catch(e3) { text = null; }}
 
-        // 4) 最终 fallback: getLastLearnedMocTermDto.rpc (JSON body) — 之前可用但数据有限
-        if (!text) {
-          try {
-            var url4 = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
-            var body4 = JSON.stringify({ termId: parseInt(c.termId, 10) });
-            text = await new Promise(function(resolve, reject) {
-              var xhr4 = new XMLHttpRequest();
-              xhr4.open('POST', url4, true);
-              xhr4.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
-              xhr4.onload = function() { resolve(xhr4.responseText); };
-              xhr4.onerror = function() { reject(new Error('XHR failed')); };
-              xhr4.send(body4);
-            });
-            console.log('[MOOC Reminder] endpoint 4 (getLastLearnedMocTermDto fallback): len=' + text.length, 'preview:', text.substring(0, 150));
-          } catch(e4) { text = null; }
-        }
+        // 4) getMocTermDto.rpc + courseId（SPOC 可能需要双参数）
+        if (!text && courseIsSpoc) { try {
+          text = await xhrFetch(
+            'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfKey2,
+            'application/x-www-form-urlencoded;charset=UTF-8',
+            'termId=' + tid2 + '&courseId=' + encodeURIComponent(c.courseId || ''));
+          console.log('[MOOC Reminder] EP4 +courseId: len=' + text.length, 'preview:', text.substring(0, 120));
+          if (text.length < 100 || /"code":-/.test(text)) text = null;
+        } catch(e4) { text = null; }}
+
+        // 5) getMocTermDto.rpc + JSON body
+        if (!text) { try {
+          text = await xhrFetch(
+            'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfKey2,
+            'application/json;charset=UTF-8',
+            JSON.stringify({ termId: parseInt(c.termId, 10) }));
+          console.log('[MOOC Reminder] EP5 getMocTermDto JSON: len=' + text.length, 'preview:', text.substring(0, 120));
+          if (text.length < 100 || /"code":-/.test(text)) text = null;
+        } catch(e5) { text = null; }}
+
+        // 6) 最终兜底: getLastLearnedMocTermDto.rpc (JSON)
+        if (!text) { try {
+          text = await xhrFetch(
+            'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + csrfKey2,
+            'application/json;charset=UTF-8',
+            JSON.stringify({ termId: parseInt(c.termId, 10) }));
+          console.log('[MOOC Reminder] EP6 LastLearned fallback: len=' + text.length, 'preview:', text.substring(0, 120));
+        } catch(e6) { text = null; }}
 
         if (!text || text.length < 50) { console.debug('[MOOC Reminder] API empty/failed for', c.courseId, '(type:', c.courseType || 'unknown', ') textLen:', text ? text.length : 0); continue; }
         results.push({

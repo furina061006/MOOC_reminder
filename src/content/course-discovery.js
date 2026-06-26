@@ -119,67 +119,79 @@
           try {
             // ═══ API 端点链式 fallback（同 main.js batchApiFetch）═══
             var text = null;
+            var csrfK = encodeURIComponent(csrf);
+            var tId = encodeURIComponent(c.termId);
+
+            // 辅助：Promise-based XHR
+            function xhrFetch(url, ct, body) {
+              return new Promise(function(resolve, reject) {
+                var x = new XMLHttpRequest();
+                x.open('POST', url, true);
+                if (ct) x.setRequestHeader('Content-Type', ct);
+                x.onload = function() { resolve(x.responseText); };
+                x.onerror = function() { reject(); };
+                x.send(body);
+              });
+            }
 
             // 1) getMocTermDto.rpc + gatewayType=3
             try {
-              text = await new Promise(function(resolve, reject) {
-                var xhr = new XMLHttpRequest();
-                xhr.open('POST', 'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
-                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
-                xhr.onload = function() { resolve(xhr.responseText); };
-                xhr.onerror = function() { reject(); };
-                xhr.send('termId=' + encodeURIComponent(c.termId) + '&gatewayType=3');
-              });
-              if (courseIsSpoc) console.log('[MOOC Reminder] discovery SPOC endpoint 1 (getMocTermDto+gw): len=' + text.length);
+              text = await xhrFetch(
+                'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfK,
+                'application/x-www-form-urlencoded;charset=UTF-8',
+                'termId=' + tId + '&gatewayType=3');
+              if (courseIsSpoc) console.log('[MOOC Reminder] disc EP1 +gw3: len=' + text.length);
               if (text.length < 100 || /"code":-/.test(text)) text = null;
             } catch(e) { text = null; }
 
             // 2) getMocTermDto.rpc 不带 gatewayType
-            if (!text) {
-              try {
-                text = await new Promise(function(resolve, reject) {
-                  var xhr2 = new XMLHttpRequest();
-                  xhr2.open('POST', 'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
-                  xhr2.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
-                  xhr2.onload = function() { resolve(xhr2.responseText); };
-                  xhr2.onerror = function() { reject(); };
-                  xhr2.send('termId=' + encodeURIComponent(c.termId));
-                });
-                if (courseIsSpoc) console.log('[MOOC Reminder] discovery SPOC endpoint 2 (getMocTermDto no gw): len=' + text.length);
-                if (text.length < 100 || /"code":-/.test(text)) text = null;
-              } catch(e) { text = null; }
-            }
+            if (!text) { try {
+              text = await xhrFetch(
+                'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfK,
+                'application/x-www-form-urlencoded;charset=UTF-8',
+                'termId=' + tId);
+              if (courseIsSpoc) console.log('[MOOC Reminder] disc EP2 no-gw: len=' + text.length);
+              if (text.length < 100 || /"code":-/.test(text)) text = null;
+            } catch(e) { text = null; }}
 
-            // 3) getSpocTermDto.rpc
-            if (!text && courseIsSpoc) {
-              try {
-                text = await new Promise(function(resolve, reject) {
-                  var xhr3 = new XMLHttpRequest();
-                  xhr3.open('POST', 'https://www.icourse163.org/web/j/courseBean.getSpocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
-                  xhr3.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
-                  xhr3.onload = function() { resolve(xhr3.responseText); };
-                  xhr3.onerror = function() { reject(); };
-                  xhr3.send('termId=' + encodeURIComponent(c.termId));
-                });
-                console.log('[MOOC Reminder] discovery SPOC endpoint 3 (getSpocTermDto): len=' + text.length);
-                if (text.length < 100 || /"code":-/.test(text)) text = null;
-              } catch(e) { text = null; }
-            }
+            // 3) DWR endpoint
+            if (!text) { try {
+              text = await xhrFetch(
+                'https://www.icourse163.org/dwr/call/plaincall/CourseBean.getMocTermDto.dwr',
+                'text/plain;charset=UTF-8',
+                ['callCount=1', 'scriptSessionId=', 'httpSessionId=', 'c0-scriptName=CourseBean', 'c0-methodName=getMocTermDto', 'c0-id=0', 'c0-param0=number:' + tId, 'c0-param1=boolean:true', 'batchId=0'].join('\n'));
+              console.log('[MOOC Reminder] disc EP3 DWR: len=' + text.length);
+              if (text.length < 100 || /exception|forbidden|非法跨域/i.test(text)) text = null;
+            } catch(e) { text = null; }}
 
-            // 4) fallback: getLastLearnedMocTermDto.rpc (JSON)
-            if (!text) {
-              try {
-                text = await new Promise(function(resolve, reject) {
-                  var xhr4 = new XMLHttpRequest();
-                  xhr4.open('POST', 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf), true);
-                  xhr4.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
-                  xhr4.onload = function() { resolve(xhr4.responseText); };
-                  xhr4.onerror = function() { reject(); };
-                  xhr4.send(JSON.stringify({ termId: parseInt(c.termId, 10) }));
-                });
-                console.log('[MOOC Reminder] discovery endpoint 4 (LastLearned fallback): len=' + text.length);
-              } catch(e) { text = null; }
-            }
+            // 4) getMocTermDto.rpc + courseId
+            if (!text && courseIsSpoc) { try {
+              text = await xhrFetch(
+                'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfK,
+                'application/x-www-form-urlencoded;charset=UTF-8',
+                'termId=' + tId + '&courseId=' + encodeURIComponent(c.courseId || ''));
+              console.log('[MOOC Reminder] disc EP4 +courseId: len=' + text.length);
+              if (text.length < 100 || /"code":-/.test(text)) text = null;
+            } catch(e) { text = null; }}
+
+            // 5) getMocTermDto.rpc + JSON body
+            if (!text) { try {
+              text = await xhrFetch(
+                'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfK,
+                'application/json;charset=UTF-8',
+                JSON.stringify({ termId: parseInt(c.termId, 10) }));
+              console.log('[MOOC Reminder] disc EP5 JSON: len=' + text.length);
+              if (text.length < 100 || /"code":-/.test(text)) text = null;
+            } catch(e) { text = null; }}
+
+            // 6) fallback: getLastLearnedMocTermDto.rpc (JSON)
+            if (!text) { try {
+              text = await xhrFetch(
+                'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + csrfK,
+                'application/json;charset=UTF-8',
+                JSON.stringify({ termId: parseInt(c.termId, 10) }));
+              console.log('[MOOC Reminder] disc EP6 LastLearned: len=' + text.length);
+            } catch(e) { text = null; }}
 
             if (text && text.length > 50) {
               try {
