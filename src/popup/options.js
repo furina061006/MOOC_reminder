@@ -200,6 +200,7 @@ async function save() {
     try {
       const resp = await chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', settings: settings });
       if (resp && resp.success) {
+        console.log('[Options] save OK, domScrapingEnabled:', resp.settings && resp.settings.domScrapingEnabled);
         populate(resp.settings);
         showStatus('✓ 已保存');
         try { if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS(); } catch {}
@@ -218,6 +219,7 @@ async function save() {
   try {
     const raw = await chrome.storage.local.get('user_settings');
     const merged = Object.assign({}, raw.user_settings || DEFAULTS, settings);
+    console.log('[Options] save fallback, domScrapingEnabled:', merged.domScrapingEnabled);
     await chrome.storage.local.set({ user_settings: merged });
     showStatus('✓ 已保存（本地）');
   } catch (e2) {

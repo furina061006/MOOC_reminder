@@ -504,7 +504,7 @@ const MESSAGE_HANDLERS = {
     await chrome.storage.local.set({ [KEYS.USER_SETTINGS]: saved });
     await setupAlarms();
     await updateBadgeFromStorage();
-    console.log('[MOOC Reminder] Settings updated, alarms reconfigured');
+    console.log('[MOOC Reminder] Settings updated, domScrapingEnabled:', saved.domScrapingEnabled);
     return { success: true, settings: saved };
   },
 
@@ -597,8 +597,8 @@ async function reconcileHomeworkData(course, newItems) {
       newItem.firstSeen = existing.firstSeen;
       newItem.lastUpdated = new Date().toISOString();
 
-      // API 自动检测优先：若已存条目已完成，新数据不可回退为未完成
-      if (existing.checkedOff && !newItem.checkedOff && !newItem.manuallyCheckedOff) {
+      // apiCompleted 标记保护：API 确认的完成状态不被 DOM 数据回退
+      if (existing.apiCompleted && !newItem.apiCompleted && !newItem.manuallyCheckedOff) {
         newItem.checkedOff = true;
         newItem.autoDetectedCompleted = true;
         if (!newItem.completionReason) newItem.completionReason = 'auto';
@@ -626,6 +626,7 @@ async function reconcileHomeworkData(course, newItems) {
         // 保留手动勾选状态（Object.assign 会覆盖）
         var wasManual = dupExisting.manuallyCheckedOff;
         var wasCheckedOff = dupExisting.checkedOff;
+        var wasApiCompleted = dupExisting.apiCompleted;
         var oldCompletionReason = dupExisting.completionReason;
         var oldFirstSeen = dupExisting.firstSeen;
         var oldUid = dupExisting.uid;
@@ -641,7 +642,7 @@ async function reconcileHomeworkData(course, newItems) {
           existingItems[dupIdx].previousUid = oldUid;
         }
         // API 自动检测优先：若已存条目已完成，新数据不可回退
-        if (!existingItems[dupIdx].checkedOff && wasCheckedOff) {
+        if (!existingItems[dupIdx].checkedOff && wasApiCompleted) {
           existingItems[dupIdx].checkedOff = true;
           existingItems[dupIdx].completionReason = existingItems[dupIdx].completionReason || 'auto';
         }
@@ -656,25 +657,7 @@ async function reconcileHomeworkData(course, newItems) {
         updated++;
       } else {
         // --- Genuinely new item ---
-        // 兜底去重：用课程+标题匹配已有条目，如已有完成版则保留完成状态
-        var merged = false;
-        for (var mi = 0; mi < existingItems.length; mi++) {
-          var e = existingItems[mi];
-          if (e.courseId !== newItem.courseId || !e.title || !newItem.title) continue;
-          var ta = String(e.title).replace(/\s+/g,'');
-          var tb = String(newItem.title).replace(/\s+/g,'');
-          if (ta === tb || (ta.length > 3 && tb.length > 3 && (ta.indexOf(tb)===0 || tb.indexOf(ta)===0))) {
-            // 同名条目，保留已完成状态
-            if (e.checkedOff && !newItem.checkedOff) newItem.checkedOff = true;
-            if (e.firstSeen) newItem.firstSeen = e.firstSeen;
-            existingItems[mi] = Object.assign({}, e, newItem);
-            updated++;
-            merged = true;
-            break;
-          }
-        }
-        if (!merged) {
-          if (autoDetect && newItem.autoDetectedCompleted) {
+        if (autoDetect && newItem.autoDetectedCompleted) {
             newItem.checkedOff = true;
             newItem.completionReason = 'auto';
           }
@@ -682,7 +665,6 @@ async function reconcileHomeworkData(course, newItems) {
           newItem.lastUpdated = newItem.firstSeen;
           existingItems.push(newItem);
           added++;
-        }
       }
     }
   }
@@ -1299,7 +1281,8 @@ function apiExtractHomework(input, course) {
           autoDetectedCompleted: done, completionReason: done ? 'auto' : null,
           hwPhase: apiDetectPhase(node),
           deadline, deadlineRaw: deadline ? '(API)' : null,
-          score, totalScore, source: 'api', pageUrl: course.pageUrl || ''
+          score, totalScore, source: 'api', pageUrl: course.pageUrl || '',
+          apiCompleted: done
         });
       }
     }
