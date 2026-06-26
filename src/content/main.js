@@ -1140,7 +1140,78 @@
       } else {
         console.log('[MOOC Reminder] No course data found on window after scan');
       }
+      // 也试试 React Fiber 树
+      scanReactFiberTree();
     } catch(e) { console.debug('[MOOC Reminder] scanWindowForCourseData error:', e.message); }
+  }
+
+  function scanReactFiberTree() {
+    try {
+      var root = document.getElementById('root') || document.getElementById('app') || document.body;
+      var fiberKey = Object.keys(root).find(function(k) { return k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'); });
+      if (!fiberKey) {
+        // React 18+ uses a different pattern
+        var allKeys = Object.keys(root);
+        console.log('[MOOC Reminder] React fiber: root element keys:', allKeys.filter(function(k) { return k.startsWith('__'); }));
+        // Try _reactRootContainer
+        var rootContainer = root._reactRootContainer || root.__reactContainer$;
+        if (rootContainer) {
+          console.log('[MOOC Reminder] React: found _reactRootContainer');
+        }
+      }
+      if (fiberKey) {
+        console.log('[MOOC Reminder] React fiber found:', fiberKey);
+        var fiber = root[fiberKey];
+        var depth = 0;
+        var stateNodes = [];
+        function walkFiber(node, d) {
+          if (!node || d > 30 || stateNodes.length > 50) return;
+          try {
+            if (node.memoizedState && typeof node.memoizedState === 'object') {
+              // Check if this state looks like course data
+              var ms = node.memoizedState;
+              if (ms.termId || ms.chapters || ms.courseData || ms.homeworkList || ms.testList || ms.examList) {
+                stateNodes.push({ depth: d, keys: Object.keys(ms).slice(0, 15), preview: JSON.stringify(ms).substring(0, 300) });
+              }
+              // Also check for arrays
+              if (Array.isArray(ms) && ms.length > 0) {
+                var first = ms[0];
+                if (first && typeof first === 'object') {
+                  var fk = Object.keys(first);
+                  if (fk.indexOf('deadline') >= 0 || fk.indexOf('homeworkId') >= 0 || fk.indexOf('quizId') >= 0 || fk.indexOf('examId') >= 0) {
+                    stateNodes.push({ depth: d, arrayLen: ms.length, keys: fk.slice(0, 15), preview: JSON.stringify(first).substring(0, 300) });
+                  }
+                }
+              }
+              // Recurse into memoizedState chain (useState/useReducer hooks)
+              if (ms.next) walkFiber(ms.next, d);
+            }
+            // Check stateNode for class components
+            if (node.stateNode && node.stateNode.state && typeof node.stateNode.state === 'object') {
+              var cs = node.stateNode.state;
+              var ck = Object.keys(cs);
+              if (ck.indexOf('homeworkList') >= 0 || ck.indexOf('testList') >= 0 || ck.indexOf('data') >= 0) {
+                stateNodes.push({ depth: d, classState: true, keys: ck.slice(0, 15), preview: JSON.stringify(cs).substring(0, 300) });
+              }
+            }
+          } catch(e) {}
+          walkFiber(node.child, d + 1);
+          walkFiber(node.sibling, d);
+          if (node.child) walkFiber(node.child, d + 1);
+          else if (node.sibling) walkFiber(node.sibling, d);
+          else if (node.return) walkFiber(node.return.sibling, d);
+        }
+        walkFiber(fiber, 0);
+        if (stateNodes.length > 0) {
+          console.log('[MOOC Reminder] === REACT STATE DATA FOUND ===');
+          stateNodes.forEach(function(sn) {
+            console.log('[MOOC Reminder]   depth=' + sn.depth, 'keys:', sn.keys, 'arrayLen:', sn.arrayLen || '', 'preview:', sn.preview);
+          });
+        } else {
+          console.log('[MOOC Reminder] React fiber scanned, no course data found in component state');
+        }
+      }
+    } catch(e) { console.debug('[MOOC Reminder] scanReactFiberTree error:', e.message); }
   }
 
   function checkEmbeddedData() {
