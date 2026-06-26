@@ -824,6 +824,8 @@ async function handleCheckOff(uid, checked) {
 
 function sleepPopup(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
+let lastRefreshSuccess = 0; // 上次刷新成功的时间戳
+
 async function handleRefresh() {
   console.log('[Popup] handleRefresh');
   try { if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning'); } catch {}
@@ -843,7 +845,19 @@ async function handleRefresh() {
       }
     }
     render();
-    showToast(success ? '刷新成功' : '请打开 MOOC 课程页面后重试');
+
+    if (success) {
+      var now = Date.now();
+      // 超过 2 分钟没成功刷新过 → 提示再按一次
+      if (now - lastRefreshSuccess > 120000) {
+        showToast('刷新成功 · 建议再按一次确保完整');
+      } else {
+        showToast('刷新成功');
+      }
+      lastRefreshSuccess = now;
+    } else {
+      showToast('请打开 MOOC 课程页面后重试');
+    }
   } catch(e) {
     console.error('[Popup] handleRefresh failed:', e.message);
     try { await loadData(); render(); } catch {}
