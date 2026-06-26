@@ -95,6 +95,9 @@
     // 诊断：检查页面是否有内嵌 JSON 数据（SSR 初始状态）
     checkEmbeddedData();
 
+    // 诊断：扫描 window 全局对象寻找课程数据（domooc 思路）
+    setTimeout(function() { scanWindowForCourseData(); }, 3000);
+
     // Detect current route
     currentRoute = getCurrentHashRoute();
 
@@ -1055,6 +1058,89 @@
     const tzMin = pad(Math.abs(tzOffset) % 60);
 
     return `${y}-${pad(mo + 1)}-${pad(d)}T${pad(h)}:${pad(m)}:00${tzSign}${tzHour}:${tzMin}`;
+  }
+
+  function scanWindowForCourseData() {
+    console.log('[MOOC Reminder] Scanning window for course data...');
+    var seen = new WeakSet();
+    var found = [];
+
+    function safeStr(v, maxLen) {
+      try { var s = typeof v === 'string' ? v : JSON.stringify(v); return s.substring(0, maxLen || 120); } catch(e) { return '[unstringable]'; }
+    }
+
+    function visit(obj, path, depth) {
+      if (depth > 4 || !obj || typeof obj !== 'object' || seen.has(obj)) return;
+      seen.add(obj);
+      try {
+        var keys = Object.keys(obj);
+        // 检查是否有课程数据特征
+        var hasTerm = keys.indexOf('termId') >= 0 || keys.indexOf('mocTermDto') >= 0 || keys.indexOf('chapters') >= 0;
+        var hasScore = keys.indexOf('userScore') >= 0 || keys.indexOf('scorePubStatus') >= 0 || keys.indexOf('evaluateStart') >= 0;
+        var hasHomework = keys.indexOf('homeworkId') >= 0 || keys.indexOf('quizId') >= 0 || keys.indexOf('examId') >= 0 || keys.indexOf('jobId') >= 0;
+        var hasOutline = keys.indexOf('outline') >= 0 || keys.indexOf('outlineStructure') >= 0 || keys.indexOf('jsonContent') >= 0;
+        var hasTestInfo = keys.indexOf('deadline') >= 0 || keys.indexOf('endTime') >= 0 || keys.indexOf('submitEndTime') >= 0;
+
+        if (hasTerm || hasScore || hasHomework || hasOutline || hasTestInfo) {
+          found.push({ path: path, keys: keys.slice(0, 25), hasTerm: hasTerm, hasScore: hasScore, hasHomework: hasHomework, hasOutline: hasOutline, preview: safeStr(obj, 200) });
+          return; // 找到了就不继续深入这个分支
+        }
+
+        // 继续递归子属性
+        for (var i = 0; i < keys.length; i++) {
+          if (keys[i] === 'window' || keys[i] === 'self' || keys[i] === 'top' || keys[i] === 'parent' || keys[i] === 'globalThis') continue;
+          try {
+            var val = obj[keys[i]];
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+              visit(val, path + '.' + keys[i], depth + 1);
+            }
+          } catch(e) {}
+        }
+      } catch(e) {}
+    }
+
+    // 扫描 window 上的一级属性
+    try {
+      var skipSet = new Set(['on','webkit','moz','ms','HTML','CSS','DOM','SVG','IDB','RTCPeer','RTCSession','MediaStream','Audio','Video','Canvas','WebGL','Worker','Service','Cache','Notification','Geolocation','Permission','Presentation','Push','USB','NFC','Bluetooth','HID','Serial','Font','Storage','Screen','BarProp','History','Navigator','Visual','Crypto','Math','JSON','console','performance','fetch','caches','indexedDB','localStorage','sessionStorage','location','document','window','self','top','parent','frames','chrome','browser','Atomics','Reflect','Proxy','Promise','Symbol','WeakMap','WeakSet','Map','Set','Array','Object','Function','Boolean','Number','String','Date','RegExp','Error','Intl','BigInt','ArrayBuffer','SharedArrayBuffer','DataView','decodeURI','encodeURI','eval','isNaN','isFinite','parseInt','parseFloat','escape','unescape','requestAnimationFrame','setTimeout','clearTimeout','setInterval','clearInterval','queueMicrotask','structuredClone','origin','scheduler','navigation','speechSynthesis','customElements','external','closed','opener','name','status','scroll','screen','page','length','frameElement']);
+      var wKeys = Object.keys(window).filter(function(k) {
+        if (skipSet.has(k)) return false;
+        if (/^[A-Z]/.test(k)) return false; // 大写开头多半是构造函数
+        return true;
+      });
+
+      console.log('[MOOC Reminder] Window keys (filtered):', wKeys.length, 'keys');
+
+      // 先检查已知模式
+      var knownPatterns = ['EDU', '__INITIAL_STATE__', '__NEXT_DATA__', '__NUXT__', 'pageData', 'courseData', 'mocData', 'termData', 'app', 'store', 'state', '__MOOC__', '_moc', '_edu'];
+      for (var pi = 0; pi < knownPatterns.length; pi++) {
+        var val = window[knownPatterns[pi]];
+        if (val && typeof val === 'object') {
+          console.log('[MOOC Reminder] Found known global:', knownPatterns[pi], 'type:', Array.isArray(val) ? 'array[' + val.length + ']' : typeof val, 'keys:', Object.keys(val).slice(0, 20));
+          visit(val, 'window.' + knownPatterns[pi], 0);
+        }
+      }
+
+      // 扫描所有一级属性
+      for (var wi = 0; wi < wKeys.length; wi++) {
+        try {
+          var k = wKeys[wi];
+          var v = window[k];
+          if (v && typeof v === 'object' && !Array.isArray(v)) {
+            visit(v, 'window.' + k, 0);
+          }
+        } catch(e) {}
+      }
+
+      if (found.length > 0) {
+        console.log('[MOOC Reminder] === COURSE DATA FOUND ===');
+        for (var fi = 0; fi < found.length; fi++) {
+          var f = found[fi];
+          console.log('[MOOC Reminder]   at', f.path, '\n    keys:', f.keys.join(', '), '\n    term:', f.hasTerm, 'score:', f.hasScore, 'hw:', f.hasHomework, 'outline:', f.hasOutline, '\n    preview:', f.preview);
+        }
+      } else {
+        console.log('[MOOC Reminder] No course data found on window after scan');
+      }
+    } catch(e) { console.debug('[MOOC Reminder] scanWindowForCourseData error:', e.message); }
   }
 
   function checkEmbeddedData() {
