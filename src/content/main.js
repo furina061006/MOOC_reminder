@@ -92,6 +92,9 @@
       }
     } catch {}
 
+    // 诊断：检查页面是否有内嵌 JSON 数据（SSR 初始状态）
+    checkEmbeddedData();
+
     // Detect current route
     currentRoute = getCurrentHashRoute();
 
@@ -1012,6 +1015,43 @@
     const tzMin = pad(Math.abs(tzOffset) % 60);
 
     return `${y}-${pad(mo + 1)}-${pad(d)}T${pad(h)}:${pad(m)}:00${tzSign}${tzHour}:${tzMin}`;
+  }
+
+  function checkEmbeddedData() {
+    try {
+      // 1) window.__INITIAL_STATE__ 等常见 SSR 注入
+      var stateKeys = ['__INITIAL_STATE__', '__NEXT_DATA__', '__NUXT__', '__DATA__', '__PRELOADED_STATE__', 'pageData', 'courseData', 'mocData'];
+      for (var sk = 0; sk < stateKeys.length; sk++) {
+        var val = window[stateKeys[sk]];
+        if (val && typeof val === 'object') {
+          console.log('[MOOC Reminder] Found embedded state:', stateKeys[sk], 'keys:', Object.keys(val).slice(0, 15));
+        }
+      }
+
+      // 2) <script> 标签含 JSON
+      var scripts = document.querySelectorAll('script[type="application/json"], script[type="text/json"], script[id*="data"], script[id*="json"], script[id*="state"], script[id*="preload"]');
+      for (var si = 0; si < scripts.length; si++) {
+        var content = (scripts[si].textContent || '').trim();
+        if (content.length > 100 && (content.charAt(0) === '{' || content.charAt(0) === '[')) {
+          try {
+            var parsed = JSON.parse(content);
+            console.log('[MOOC Reminder] Found embedded <script> JSON:', scripts[si].id || scripts[si].type || 'inline', 'keys:', Object.keys(parsed).slice(0, 15));
+          } catch(e) {}
+        }
+      }
+
+      // 3) 内联 <script> 中的 window.xxx = {...} 赋值
+      var allScripts = document.querySelectorAll('script:not([src])');
+      for (var ai = 0; ai < allScripts.length; ai++) {
+        var text = allScripts[ai].textContent || '';
+        // 匹配 window.xxx = { 或 var xxx = { 模式，其中包含 homework/quiz/test/chapter/term
+        if (text.length > 200 && text.length < 50000 && /(?:window|var|let|const)\s*[.\w]+\s*=\s*\{/.test(text)) {
+          if (/homework|quiz|test|exam|chapter|lesson|term|course|score|deadline/i.test(text)) {
+            console.log('[MOOC Reminder] Found potential data script: len=' + text.length + ' preview=' + text.substring(0, 200));
+          }
+        }
+      }
+    } catch(e) { console.debug('[MOOC Reminder] checkEmbeddedData error:', e.message); }
   }
 
   function sleep(ms) {
