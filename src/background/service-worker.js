@@ -21,7 +21,8 @@ const KEYS = {
   SCRAPE_STATUS: 'scrape_status',
   API_STATUS: 'api_status',
   USER_SETTINGS: 'user_settings',
-  POPUP_UI_STATE: 'popup_ui_state'
+  POPUP_UI_STATE: 'popup_ui_state',
+  LAST_DIGEST_DATE: 'last_digest_date'
 };
 
 // Inlined from src/shared/settings.js — keep in sync (shared copy is unit-tested).
@@ -100,12 +101,14 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
   await validateAndRepairStorage();
   await setupAlarms();
+  await checkMissedDigest();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[MOOC Reminder] Browser started, validating storage and setting up alarms');
   await validateAndRepairStorage();
   await setupAlarms();
+  await checkMissedDigest();
 });
 
 // ─── Storage Validation ─────────────────────────────────
@@ -793,6 +796,20 @@ function formatDigestMessage(items, now) {
   return shown.join('；') + more;
 }
 
+async function checkMissedDigest() {
+  var settings = normalizeSettings(await getUserSettings());
+  if (!settings.dailyDigestEnabled) return;
+  var today = new Date();
+  var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+  var raw = await chrome.storage.local.get(KEYS.LAST_DIGEST_DATE);
+  if (raw[KEYS.LAST_DIGEST_DATE] === todayStr) return;
+  var nowHour = today.getHours();
+  var digestHour = clampInt(settings.dailyDigestHour, 0, 23, 8);
+  if (nowHour < digestHour) return;
+  console.log('[MOOC Reminder] Missed daily digest at ' + digestHour + ':00, sending now');
+  await sendDailyDigestNotification();
+}
+
 async function sendDailyDigestNotification() {
   if (!chrome.notifications) return;
   const settings = normalizeSettings(await getUserSettings());
@@ -803,6 +820,7 @@ async function sendDailyDigestNotification() {
   const message = formatDigestMessage(items, now);
   if (!message) return;
   try {
+    await chrome.storage.local.set({ [KEYS.LAST_DIGEST_DATE]: new Date().getFullYear() + '-' + String(new Date().getMonth()+1).padStart(2,'0') + '-' + String(new Date().getDate()).padStart(2,'0') });
     await chrome.notifications.create('mooc-reminder:daily-digest', {
       type: 'basic',
       iconUrl: 'src/assets/icons/icon128.png',
