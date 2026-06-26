@@ -1178,7 +1178,7 @@ const CSRF_COOKIE_NAME = 'NTESSTUDYSI';
 const API_TERM_DTO_RPC = 'web/j/courseBean.getMocTermDto.rpc';
 const API_TERM_DTO_DWR = 'dwr/call/plaincall/CourseBean.getMocTermDto.dwr';
 
-const API_DEADLINE_FIELDS = ['deadline', 'endTime', 'submitEndTime', 'evaluationEndTime', 'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'];
+const API_DEADLINE_FIELDS = ['deadline', 'endTime', 'submitEndTime', 'evaluateEnd', 'evaluationEndTime', 'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'];
 const API_SCORE_FIELDS = ['userScore', 'mark', 'score', 'studentScore', 'finalMark'];
 const API_TOTAL_FIELDS = ['totalMark', 'totalScore', 'fullMark', 'allMark'];
 
@@ -1283,7 +1283,13 @@ function apiExtractHomework(input, course) {
       const uid = `${course.courseId}_tid${course.termId}_ch${chapterId || ''}_le${lessonId || ''}_hw${homeworkId}`;
       if (!seen.has(uid)) {
         seen.add(uid);
-        const deadline = deadlineMs != null ? apiMsToLocalIso(deadlineMs) : null;
+        // 互评中：用 evaluateEnd 代替原来的提交截止日期
+        var phaseDeadline = deadlineMs;
+        if (apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus,10) || 0) === 0) {
+          var pe = parseInt(node.evaluateEnd,10);
+          if (pe > 0) phaseDeadline = pe;
+        }
+        const deadline = phaseDeadline != null ? apiMsToLocalIso(phaseDeadline) : null;
         // 完成判定：有分数 OR 节点含 "已提交/已完成" 文本
         var submitted = parseInt(node.usedTryCount,10) > 0 && (parseInt(node.type,10) === 3);
         // 互评中不算完成（等待评分），已公布的才算
