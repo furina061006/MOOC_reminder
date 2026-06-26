@@ -1149,6 +1149,21 @@ const API_TOTAL_FIELDS = ['totalMark', 'totalScore', 'fullMark', 'allMark'];
 
 function apiPad(n) { return String(n).padStart(2, '0'); }
 
+function apiDetectPhase(node) {
+  // 测验(type:2)无互评，作业(type:3)才有
+  if (String(node.type||'') !== '3') return null;
+  if (!node.enableEvaluation || node.evaluateStart == null) return null;
+  var pub = parseInt(node.scorePubStatus,10) || 0;
+  if (pub === 2) return 'results';
+  if (pub === 1) return 'peerreview';
+  var now = Date.now();
+  var start = parseInt(node.evaluateStart,10);
+  var end = parseInt(node.evaluateScoreReleaseTime||node.evaluateEnd,10);
+  if (start && now < start) return 'submit';
+  if (end && now >= end) return 'results';
+  return 'peerreview';
+}
+
 function apiHasCompletedText(node, depth) {
   if (!node || typeof node !== 'object' || (depth||0) > 6) return false;
   var d = depth || 0;
@@ -1245,6 +1260,7 @@ function apiExtractHomework(input, course) {
           status: done ? 'completed' : 'unfinished',
           checkedOff: done, manuallyCheckedOff: false,
           autoDetectedCompleted: done, completionReason: done ? 'auto' : null,
+          hwPhase: apiDetectPhase(node),
           deadline, deadlineRaw: deadline ? '(API)' : null,
           score, totalScore, source: 'api', pageUrl: course.pageUrl || ''
         });
