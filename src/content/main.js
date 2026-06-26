@@ -49,6 +49,32 @@
   // ─── Initialization ───────────────────────────────────
 
   async function init() {
+    // ═══ 尽早注册消息监听器（在任何异步操作之前），确保 BATCH_API_FETCH 不会丢失 ═══
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      // Defensive: msg may be undefined or lack type
+      if (!msg || typeof msg !== 'object') return false;
+      if (msg.type === 'SCRAPE_NOW') {
+        waitAndScrape().then(data => {
+          try { sendResponse(data || { course: null, homeworkItems: [] }); } catch {}
+        }).catch(err => {
+          try { sendResponse({ course: null, homeworkItems: [], error: String(err?.message || err) }); } catch {}
+        });
+        return true; // async response
+      }
+      if (msg.type === 'BATCH_API_FETCH') {
+        console.log('[MOOC Reminder] BATCH_API_FETCH received, courses:', (msg.courses||[]).length);
+        batchApiFetch(msg.courses || []).then(results => {
+          console.log('[MOOC Reminder] BATCH_API_FETCH done, results:', results.length);
+          try { sendResponse(results || []); } catch {}
+        }).catch(err => {
+          console.warn('[MOOC Reminder] BATCH_API_FETCH error:', err.message);
+          try { sendResponse([]); } catch {}
+        });
+        return true;
+      }
+      return false;
+    });
+
     // Load selector configuration
     try {
       selectorConfig = await loadSelectorConfig();
@@ -78,8 +104,8 @@
     setupUrlObserver();
     setupDomObserver();
 
-    // Initial scrape if on relevant page
-    if (isHomeworkRelevantRoute(currentRoute)) {
+    // Initial scrape if on relevant page AND DOM scraping enabled
+    if (isHomeworkRelevantRoute(currentRoute) && !domScrapingDisabled) {
       waitAndScrape();
     }
 
@@ -91,32 +117,6 @@
         waitAndScrape();
       }
     }, 30000);
-
-    // Listen for background requests
-    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-      // Defensive: msg may be undefined or lack type
-      if (!msg || typeof msg !== 'object') return false;
-      if (msg.type === 'SCRAPE_NOW') {
-        waitAndScrape().then(data => {
-          try { sendResponse(data || { course: null, homeworkItems: [] }); } catch {}
-        }).catch(err => {
-          try { sendResponse({ course: null, homeworkItems: [], error: String(err?.message || err) }); } catch {}
-        });
-        return true; // async response
-      }
-      if (msg.type === 'BATCH_API_FETCH') {
-        console.log('[MOOC Reminder] BATCH_API_FETCH received, courses:', (msg.courses||[]).length);
-        batchApiFetch(msg.courses || []).then(results => {
-          console.log('[MOOC Reminder] BATCH_API_FETCH done, results:', results.length);
-          try { sendResponse(results || []); } catch {}
-        }).catch(err => {
-          console.warn('[MOOC Reminder] BATCH_API_FETCH error:', err.message);
-          try { sendResponse([]); } catch {}
-        });
-        return true;
-      }
-      return false;
-    });
 
     console.log('[MOOC Reminder] Content script initialized');
   }
@@ -1095,7 +1095,7 @@
         console.debug('[MOOC Reminder] API fetch error for', c.courseId, e.message);
       }
     }
-    // 逐个返回给 SW 以更新存储（不依赖 sendResponse 已完成则另行处理）
+    // 逐个发送 COURSE_API_DATA 给 SW 处理（await 确保每条都处理完再发下一条）
     for (var j = 0; j < results.length; j++) {
       try {
         await chrome.runtime.sendMessage({
@@ -1103,18 +1103,9 @@
           course: results[j].course,
           rawData: results[j].rawData
         });
-      } catch {}
+      } catch { console.debug('[MOOC Reminder] COURSE_API_DATA send failed for', results[j].course.courseId); }
     }
-    console.log('[MOOC Reminder] Batch API fetch done:', results.length, 'courses fetched, sending COURSE_API_DATA...');
-    for (var j = 0; j < results.length; j++) {
-      try {
-        await chrome.runtime.sendMessage({
-          type: 'COURSE_API_DATA',
-          course: results[j].course,
-          rawData: results[j].rawData
-        });
-      } catch { console.log('[MOOC Reminder] COURSE_API_DATA send failed for', results[j].course.courseId); }
-    }
+    console.log('[MOOC Reminder] Batch API fetch done:', results.length, 'courses fetched');
     return results;
   }
 

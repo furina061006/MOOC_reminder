@@ -64,10 +64,30 @@
     }
   }
 
-  // ─── BATCH_API_FETCH handler (runs on ALL icourse163.org pages) ───
+  // ─── BATCH_API_FETCH handler (runs on non-learn pages only; learn pages handled by main.js) ───
   chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
     if (!msg || typeof msg !== 'object') return false;
     if (msg.type === 'BATCH_API_FETCH') {
+      // 如果在 learn 页面，main.js 已经处理 BATCH_API_FETCH，避免重复
+      var isLearnPage = /\/(?:spoc\/)?learn\//i.test(location.pathname);
+      if (isLearnPage) {
+        // 仅补充当前页面课程到列表（如果缺失），但不重复发 API 请求
+        try {
+          var tid2 = new URL(location.href).searchParams.get('tid');
+          var m2 = location.pathname.match(/\/(?:spoc\/)?learn\/([^/?#]+)/i);
+          if (tid2 && m2) {
+            var courseList2 = Array.isArray(msg.courses) ? msg.courses : [];
+            var has2 = courseList2.some(function(c){ return c.courseId === m2[1]; });
+            if (!has2 && courseList2.length === 0) {
+              // storage 为空时补充当前课程，帮助 main.js 的 batchApiFetch 能取到数据
+              // 但 main.js 自己也做这件事，所以这里只是额外保障
+            }
+          }
+        } catch {}
+        return false; // 让 main.js 处理
+      }
+
+      // 非 learn 页面（如 MOOC 首页）：由本脚本处理 BATCH_API_FETCH
       var courseList = Array.isArray(msg.courses) ? msg.courses : [];
       try {
         var tid = new URL(location.href).searchParams.get('tid');
@@ -85,7 +105,7 @@
       if (courseList.length === 0) return false;
       (async function() {
         var csrf = '';
-        try { var c = document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);?/i); csrf = c ? c[1] : ''; } catch {}
+        try { var c2 = document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);?/i); csrf = c2 ? c2[1] : ''; } catch {}
         if (!csrf) { try { sendResponse([]); } catch {} return; }
         for (var i = 0; i < courseList.length; i++) {
           var c = courseList[i];

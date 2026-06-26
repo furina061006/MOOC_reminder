@@ -2,7 +2,7 @@
  * icourse163.org web JSON-RPC helpers — request builders + tolerant parsers.
  *
  * These are PURE functions (no network, no chrome.*) so they are unit-tested
- * and reused. The background service worker inlines equivalent copies — see
+ * and reused. The background service worker inlines an equivalent copy — see
  * [[runtime-vs-shared-duplication]]; edit BOTH when changing behavior.
  *
  * Endpoint pattern (confirmed from public MOOC tooling):
@@ -90,7 +90,7 @@ const DEADLINE_FIELDS = [
   'deadline', 'endTime', 'submitEndTime', 'evaluationEndTime',
   'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'
 ];
-const SCORE_FIELDS = ['mark', 'score', 'studentScore', 'finalMark'];
+const SCORE_FIELDS = ['mark', 'score', 'studentScore', 'finalMark', 'userScore'];
 const TOTAL_FIELDS = ['totalMark', 'totalScore', 'fullMark', 'allMark'];
 
 function firstNumber(obj, fields) {
@@ -124,13 +124,72 @@ export function msToLocalIso(ms) {
     `${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${tzH}:${tzM}`;
 }
 
-function classifyType(name) {
+// ─── Phase Detection ───────────────────────────────────
+
+/**
+ * Detect homework evaluation phase (submit / peerreview / results).
+ * 测验 (type:2) has no peer review; 作业 (type:3) does.
+ */
+export function detectPhase(node) {
+  if (String(node.type || '') !== '3') return null;
+  if (!node.enableEvaluation || node.evaluateStart == null) return null;
+  const pub = parseInt(node.scorePubStatus, 10) || 0;
+  if (pub === 2) return 'results';
+  if (pub === 1) return 'results';  // score published → 互评结束
+  const now = Date.now();
+  const start = parseInt(node.evaluateStart, 10);
+  const end = parseInt(node.evaluateScoreReleaseTime || node.evaluateEnd, 10);
+  if (start && now < start) return 'submit';
+  if (end && now >= end) return 'results';
+  return 'peerreview';
+}
+
+// ─── Completion Detection ──────────────────────────────
+
+/**
+ * Deep-check if a node or its nested children contain completion indicator text.
+ */
+export function hasCompletedText(node, depth) {
+  if (!node || typeof node !== 'object' || (depth || 0) > 6) return false;
+  const d = depth || 0;
+  const pat = /已完成|已成功提交|已提交|已批阅|已通过|已互评|查看成绩|查看分数/i;
+  for (const key of Object.keys(node)) {
+    const v = node[key];
+    if (typeof v === 'string' && pat.test(v)) return true;
+    if (Array.isArray(v)) {
+      for (const e of v) {
+        if (e && typeof e === 'object' && hasCompletedText(e, d + 1)) return true;
+      }
+    } else if (v && typeof v === 'object' && hasCompletedText(v, d + 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ─── Type Classification ───────────────────────────────
+
+/**
+ * Classify assessment type from API fields.
+ * API type field: 2=测验, 3=作业, 6=考试
+ * Name regex serves as fallback.
+ */
+export function classifyType(name, rawType) {
+  const rt = rawType !== undefined ? String(rawType) : '';
+  if (rt === '6' || rt === '2' || rt === '3') {
+    if (rt === '6') return 'exam';
+    if (rt === '2') return 'quiz';
+    if (rt === '3') return 'homework';
+  }
   const t = String(name || '');
-  if (/考试|exam/i.test(t)) return 'exam';
-  if (/测验|quiz|测试/i.test(t)) return 'quiz';
+  // "期末" prefixed test/exam are exams, not quizzes
+  if (rt === '6' || /期末|考试|exam/i.test(t)) return 'exam';
+  if (rt === '2' || /测验|quiz|测试/i.test(t)) return 'quiz';
   if (/讨论|discussion/i.test(t)) return 'discussion';
   return 'homework';
 }
+
+// ─── Main Extraction ───────────────────────────────────
 
 /**
  * Walk a getMocTermDto response and extract assessable items (quiz/homework/exam)
@@ -147,6 +206,13 @@ export function extractHomeworkFromTermDto(input, course) {
   const out = [];
   const seen = new Set();
   let visited = 0;
+
+  function looksLikeChapter(node) {
+    return Array.isArray(node.lessons) || /chapter/i.test(node.type || '');
+  }
+  function looksLikeLesson(node) {
+    return Array.isArray(node.units) || /lesson/i.test(node.type || '');
+  }
 
   function visit(node, chapterId, lessonId) {
     if (!node || typeof node !== 'object' || visited > 5000) return;
@@ -165,16 +231,31 @@ export function extractHomeworkFromTermDto(input, course) {
 
     if (typeof name === 'string' && name.trim() && hasSignal &&
         /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)) {
+
       const homeworkId = String(
         node.id || node.jobId || node.quizId || node.testId || node.homeworkId || ''
       ) || ('h' + (out.length + 1));
       const uid = `${course.courseId}_tid${course.termId}_ch${chapterId || ''}_le${lessonId || ''}_hw${homeworkId}`;
+
       if (!seen.has(uid)) {
         seen.add(uid);
-        const deadline = deadlineMs != null ? msToLocalIso(deadlineMs) : null;
-        // A recorded score means the item was submitted/graded → effectively done,
-        // mirroring the DOM scraper's hasScore rule.
-        const done = score != null && totalScore != null && score > 0;
+
+        // 互评中：用 evaluateEnd 代替原来的提交截止日期
+        const phase = detectPhase(node);
+        let phaseDeadline = deadlineMs;
+        if (phase === 'peerreview' && (parseInt(node.scorePubStatus, 10) || 0) === 0) {
+          const pe = parseInt(node.evaluateEnd, 10);
+          if (pe > 0) phaseDeadline = pe;
+        }
+        const deadline = phaseDeadline != null ? msToLocalIso(phaseDeadline) : null;
+
+        // 完成判定：有分数 OR 已提交（非互评中）OR 节点含完成文本
+        const submitted = parseInt(node.usedTryCount, 10) > 0 && (parseInt(node.type, 10) === 3);
+        const inPeerReview = phase === 'peerreview' && (parseInt(node.scorePubStatus, 10) || 0) === 0;
+        const done = (score != null && totalScore != null && score > 0)
+          || (submitted && !inPeerReview)
+          || hasCompletedText(node, 0);
+
         out.push({
           uid,
           courseId: course.courseId,
@@ -183,7 +264,7 @@ export function extractHomeworkFromTermDto(input, course) {
           lessonId: lessonId || '',
           homeworkId,
           title: name.trim(),
-          type: classifyType(name),
+          type: classifyType(name, node.type !== undefined ? node.type : null),
           courseName: course.courseName || '',
           schoolName: course.schoolName || '',
           status: done ? 'completed' : 'unfinished',
@@ -191,12 +272,14 @@ export function extractHomeworkFromTermDto(input, course) {
           manuallyCheckedOff: false,
           autoDetectedCompleted: done,
           completionReason: done ? 'auto' : null,
+          hwPhase: phase,
           deadline,
           deadlineRaw: deadline ? '(API)' : null,
-          score: score,
-          totalScore: totalScore,
+          score,
+          totalScore,
           source: 'api',
-          pageUrl: course.pageUrl || ''
+          pageUrl: course.pageUrl || '',
+          apiCompleted: done
         });
       }
     }
@@ -210,13 +293,23 @@ export function extractHomeworkFromTermDto(input, course) {
     }
   }
 
-  function looksLikeChapter(node) {
-    return Array.isArray(node.lessons) || /chapter/i.test(node.type || '');
-  }
-  function looksLikeLesson(node) {
-    return Array.isArray(node.units) || /lesson/i.test(node.type || '');
+  visit(data, '', '');
+
+  // 去重：名字几乎相同且共前缀的噪音项（如 "期末测试题" vs "期末测试"）
+  for (let i = out.length - 1; i >= 0; i--) {
+    const nameA = out[i].title || '';
+    for (let j = 0; j < i; j++) {
+      const nameB = out[j].title || '';
+      if (nameB.length > 0 && nameA.indexOf(nameB) === 0 && nameA.length - nameB.length <= 2) {
+        out.splice(i, 1);
+        break;
+      }
+      if (nameA.length > 0 && nameB.indexOf(nameA) === 0 && nameB.length - nameA.length <= 2) {
+        out.splice(j, 1);
+        j--;
+      }
+    }
   }
 
-  visit(data, '', '');
   return out;
 }

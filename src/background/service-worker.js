@@ -934,16 +934,27 @@ async function performPeriodicScrape() {
   console.log('[MOOC Reminder] Periodic scrape started');
 
   try {
-    // Find open icourse163 tabs
-    const tabs = await chrome.tabs.query({
+    // Find open icourse163 learn tabs (preferred for API proxying)
+    let tabs = await chrome.tabs.query({
       url: [
         'https://www.icourse163.org/learn/*',
         'https://www.icourse163.org/spoc/learn/*'
       ]
     });
 
+    // Fallback: any icourse163.org tab (course-discovery.js handles BATCH_API_FETCH everywhere)
     if (tabs.length === 0) {
-      console.log('[MOOC Reminder] No icourse163 tabs open, skipping periodic scrape');
+      console.log('[MOOC Reminder] No learn tabs open, trying any icourse163.org tab...');
+      tabs = await chrome.tabs.query({
+        url: ['https://www.icourse163.org/*']
+      });
+    }
+
+    if (tabs.length === 0) {
+      console.log('[MOOC Reminder] No icourse163 tabs open, trying background API refresh');
+      // Last resort: use the SW's direct API (chrome.cookies-based)
+      await apiRefreshAllKnownCourses();
+      await updateBadgeFromStorage();
       return;
     }
 
@@ -976,6 +987,15 @@ async function performPeriodicScrape() {
       }
     } else {
       console.log('[MOOC Reminder] DOM scraping disabled, using API-only mode');
+      // 等待 API 响应到达（周期性检查，较短超时）
+      var lastSyncBefore = await getLastSync();
+      var waitStart = Date.now();
+      var maxWait = 15000; // 15s max
+      while (Date.now() - waitStart < maxWait) {
+        await sleep(800);
+        var currentSync = await getLastSync();
+        if (currentSync && currentSync !== lastSyncBefore) break;
+      }
     }
 
     await updateBadgeFromStorage();
@@ -1010,6 +1030,11 @@ async function triggerManualScrape() {
     const courses = await getCourses();
     console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', courses.length, 'courses to', tabs.length, 'tabs');
     var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
+
+    var s = normalizeSettings(await getUserSettings());
+    var lastSyncBefore = await getLastSync();
+
+    // 发送 BATCH_API_FETCH 到所有标签页
     for (const tab of tabs) {
       try {
         chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
@@ -1019,8 +1044,8 @@ async function triggerManualScrape() {
     let totalItems = 0;
     let errorCount = 0;
 
-    var s = normalizeSettings(await getUserSettings());
     if (s.domScrapingEnabled !== false) {
+      // DOM 抓取模式：await SCRAPE_NOW 响应（同步等待，立即可得）
       for (const tab of tabs) {
         try {
           const response = await chrome.tabs.sendMessage(tab.id, {
@@ -1051,7 +1076,27 @@ async function triggerManualScrape() {
         }
       }
     }
-    } // end domScrapingEnabled guard
+    } else {
+      // API-only 模式：等待 COURSE_API_DATA 异步响应被处理
+      // BATCH_API_FETCH 是 fire-and-forget，content script 收到后会发 COURSE_API_DATA 回来
+      // SW 单线程会在 await sleep 期间处理到达的消息
+      console.log('[MOOC Reminder] DOM scraping disabled, waiting for API responses...');
+      var waitStart = Date.now();
+      var maxWait = 25000; // 25s max for API responses
+      while (Date.now() - waitStart < maxWait) {
+        await sleep(800);
+        var currentSync = await getLastSync();
+        if (currentSync && currentSync !== lastSyncBefore) {
+          console.log('[MOOC Reminder] API data arrived, lastSync updated');
+          // 再等一小会，确保所有 COURSE_API_DATA 都处理完
+          await sleep(1000);
+          break;
+        }
+      }
+      // 统计 API 模式下的条目数
+      var allItems = await getHomeworkItems();
+      totalItems = allItems.length;
+    }
 
     await updateBadgeFromStorage();
 
@@ -1273,6 +1318,7 @@ function apiExtractHomework(input, course) {
     const hasSignal = deadlineMs != null || (score != null && totalScore != null);
     if (typeof name === 'string' && name.trim() && hasSignal &&
         /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)) {
+
       const homeworkId = String(node.id || node.jobId || node.quizId || node.testId || node.homeworkId || '') || ('h' + (out.length + 1));
       const uid = `${course.courseId}_tid${course.termId}_ch${chapterId || ''}_le${lessonId || ''}_hw${homeworkId}`;
       if (!seen.has(uid)) {
