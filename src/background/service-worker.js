@@ -1144,7 +1144,7 @@ const API_TERM_DTO_RPC = 'web/j/courseBean.getMocTermDto.rpc';
 const API_TERM_DTO_DWR = 'dwr/call/plaincall/CourseBean.getMocTermDto.dwr';
 
 const API_DEADLINE_FIELDS = ['deadline', 'endTime', 'submitEndTime', 'evaluationEndTime', 'examEndTime', 'testEndTime', 'homeworkEndTime', 'jobDeadline', 'closeTime'];
-const API_SCORE_FIELDS = ['mark', 'score', 'studentScore', 'finalMark'];
+const API_SCORE_FIELDS = ['userScore', 'mark', 'score', 'studentScore', 'finalMark'];
 const API_TOTAL_FIELDS = ['totalMark', 'totalScore', 'fullMark', 'allMark'];
 
 function apiPad(n) { return String(n).padStart(2, '0'); }
@@ -1235,7 +1235,8 @@ function apiExtractHomework(input, course) {
         seen.add(uid);
         const deadline = deadlineMs != null ? apiMsToLocalIso(deadlineMs) : null;
         // 完成判定：有分数 OR 节点含 "已提交/已完成" 文本
-        var done = (score != null && totalScore != null && score > 0) || apiHasCompletedText(node, 0);
+        var submitted = parseInt(node.usedTryCount,10) > 0 && (parseInt(node.type,10) === 3);
+        var done = (score != null && totalScore != null && score > 0) || submitted || apiHasCompletedText(node, 0);
         out.push({
           uid, courseId: course.courseId, termId: course.termId,
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
