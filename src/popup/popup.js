@@ -570,10 +570,18 @@ function sortItemsByDeadline(items) {
 // course learn URL (API-discovered items may not carry a pageUrl).
 function resolveItemUrl(item) {
   if (!item) return null;
-  if (item.pageUrl) return item.pageUrl;
-  if (item.courseId && item.termId) {
-    return 'https://www.icourse163.org/learn/' + item.courseId + '?tid=' + item.termId + '#/learn/content';
+  var base = item.courseId && item.termId
+    ? 'https://www.icourse163.org/learn/' + item.courseId + '?tid=' + item.termId
+    : null;
+  // pageUrl 可能有错误的 hash（如 /learn/content），按类型修正
+  var route = item.type === 'exam' ? '/learn/examlist' : '/learn/testlist';
+  if (item.pageUrl) {
+    // 如果 pageUrl 的 hash 不匹配类型，修正它
+    var hashIdx = item.pageUrl.indexOf('#');
+    if (hashIdx >= 0) return item.pageUrl.slice(0, hashIdx) + '#' + route;
+    return item.pageUrl + '#' + route;
   }
+  if (base) return base + '#' + route;
   return null;
 }
 
