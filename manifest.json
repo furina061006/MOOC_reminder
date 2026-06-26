@@ -34,6 +34,14 @@
         "https://www.icourse163.org/learn/*",
         "https://www.icourse163.org/spoc/learn/*"
       ],
+      "js": ["src/content/xhr-hook.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.icourse163.org/learn/*",
+        "https://www.icourse163.org/spoc/learn/*"
+      ],
       "js": ["src/content/main.js"],
       "run_at": "document_idle"
     },
