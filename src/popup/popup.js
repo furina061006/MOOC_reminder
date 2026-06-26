@@ -153,6 +153,7 @@ async function init() {
     try {
       if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning');
       chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
+      await sleepPopup(1000);
       // 第二次：等 API 数据到达
       await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
       await sleepPopup(3000);
