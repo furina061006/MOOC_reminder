@@ -792,6 +792,37 @@
       }
     }
 
+    // ── SPOC 专用完成检测 ──
+    // .u-quizHwListItem 没有 .down 类 → 已完成（SPOC 只展开未完成条目）
+    var hwListItem = el.closest ? el.closest('.u-quizHwListItem') : null;
+    if (!hwListItem) hwListItem = el.classList && el.classList.contains('u-quizHwListItem') ? el : null;
+    if (hwListItem) {
+      var hwCls = '';
+      try { hwCls = hwListItem.className || ''; if (typeof hwCls !== 'string') hwCls = String(hwCls); } catch(e) {}
+      // 没有 .down 且 .j-detail 为空 → 已完成（SPOC 核心特征）
+      if (!/\bdown\b/.test(hwCls)) {
+        var detail = hwListItem.querySelector('.j-detail');
+        if (!detail || (detail.textContent || '').trim().length < 5) return true;
+      }
+    }
+
+    // .j-validScore 里有「得分」且不是 0.00 → 已完成
+    var validScore = el.querySelector ? el.querySelector('.j-validScore') : null;
+    if (!validScore && hwListItem) validScore = hwListItem.querySelector('.j-validScore');
+    if (validScore) {
+      var scoreText = (validScore.textContent || '').trim();
+      if (/得分/.test(scoreText) && !/0\.00/.test(scoreText)) return true;
+    }
+
+    // .j-submitCount 非零 → 至少提交过
+    var submitCount = el.querySelector ? el.querySelector('.j-submitCount') : null;
+    if (!submitCount && hwListItem) submitCount = hwListItem.querySelector('.j-submitCount');
+    if (submitCount) {
+      var scText = (submitCount.textContent || '').trim();
+      var scMatch = scText.match(/^(\d+)\//);
+      if (scMatch && parseInt(scMatch[1], 10) > 0) return true;
+    }
+
     // Check child elements for status indicators
     try {
       const children = el.querySelectorAll('*');
