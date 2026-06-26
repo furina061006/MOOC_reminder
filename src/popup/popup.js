@@ -170,9 +170,6 @@ async function init() {
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
     }
   }
-      if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
-    }
-  }
 }
 
 // ─── Storage Self-Repair ────────────────────────────────
