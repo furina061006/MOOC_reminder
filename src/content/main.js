@@ -793,17 +793,27 @@
     }
 
     // ── SPOC 专用完成检测 ──
-    // .u-quizHwListItem 没有 .down 类且 .j-detail 为空 → 已完成
-    var hwListItem = el.closest ? el.closest('.u-quizHwListItem') : null;
-    if (!hwListItem) hwListItem = el.classList && el.classList.contains('u-quizHwListItem') ? el : null;
-    if (hwListItem) {
-      var hwCls = '';
-      try { hwCls = hwListItem.className || ''; if (typeof hwCls !== 'string') hwCls = String(hwCls); } catch(e) {}
-      if (!/\bdown\b/.test(hwCls)) {
-        var detail = hwListItem.querySelector('.j-detail');
-        if (!detail || (detail.textContent || '').trim().length < 5) {
-          console.log('[MOOC Reminder] SPOC completed by: no .down + empty .j-detail');
-          return true;
+    // 必须确认页面 JS 已渲染（至少有一个 .down 或 .j-phase）后才启用
+    // 使用 el.ownerDocument 而非 document（iframe 兼容）
+    var doc = (el.ownerDocument || document);
+    var _spocPageReady = false;
+    try {
+      var anyDown = doc.querySelector('.u-quizHwListItem.down, .u-quizHwListItem .j-phase');
+      _spocPageReady = !!anyDown;
+    } catch(e) {}
+
+    if (_spocPageReady) {
+      var hwListItem = el.closest ? el.closest('.u-quizHwListItem') : null;
+      if (!hwListItem) hwListItem = el.classList && el.classList.contains('u-quizHwListItem') ? el : null;
+      if (hwListItem) {
+        var hwCls = '';
+        try { hwCls = hwListItem.className || ''; if (typeof hwCls !== 'string') hwCls = String(hwCls); } catch(e) {}
+        if (!/\bdown\b/.test(hwCls)) {
+          var detail = hwListItem.querySelector('.j-detail');
+          if (!detail || (detail.textContent || '').trim().length < 5) {
+            console.log('[MOOC Reminder] SPOC completed by: no .down + empty .j-detail');
+            return true;
+          }
         }
       }
     }
