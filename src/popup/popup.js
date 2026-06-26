@@ -813,6 +813,8 @@ async function handleCheckOff(uid, checked) {
   try { chrome.runtime.sendMessage({ type: 'REFRESH_BADGE' }); } catch {}
 }
 
+function sleepPopup(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
 async function handleRefresh() {
   console.log('[Popup] handleRefresh');
   try { if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning'); } catch {}
@@ -821,7 +823,8 @@ async function handleRefresh() {
     const response = await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
     console.log('[Popup] TRIGGER_SCRAPE response:', response);
 
-    // 无论刷新是否成功，重新加载数据并重新渲染（保持当前 filter 状态）
+    // 等待 content script 的 BATCH_API_FETCH 完成并写入 storage
+    await sleepPopup(2500);
     await loadData();
     render();
 
