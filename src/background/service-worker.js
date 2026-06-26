@@ -1243,6 +1243,24 @@ function apiExtractHomework(input, course) {
     }
   }
   visit(data, '', '');
+  // 去重：名字几乎相同且共前缀的噪音项（如 "期末测试题" vs "期末测试"）
+  for (var i = out.length - 1; i >= 0; i--) {
+    var nameA = out[i].title || '';
+    for (var j = 0; j < i; j++) {
+      var nameB = out[j].title || '';
+      if (nameB.length > 0 && nameA.indexOf(nameB) === 0 && nameA.length - nameB.length <= 2) {
+        // nameA 是 nameB 的扩大版（如 "期末测试题" vs "期末测试"），去掉 nameA
+        out.splice(i, 1);
+        break;
+      }
+      if (nameA.length > 0 && nameB.indexOf(nameA) === 0 && nameB.length - nameA.length <= 2) {
+        // nameB 是 nameA 的扩大版，去掉 nameB
+        out.splice(j, 1);
+        j--;
+      }
+    }
+  }
+
   return out;
 }
 
