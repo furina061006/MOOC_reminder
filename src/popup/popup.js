@@ -152,18 +152,20 @@ async function init() {
     console.log('[Popup] No items, double-refreshing...');
     try {
       if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning');
-      chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
-      await sleepPopup(1000);
-      // 第二次：轮询 storage 直到数据到达（最多 15 秒）
-      await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
-      for (var retry = 0; retry < 30; retry++) {
-        await sleepPopup(500);
-        await loadData();
-        if (state.allItems.length > 0) break;
+      for (var a2 = 0; a2 < 3; a2++) {
+        var prevSync = state.lastSync;
+        chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
+        await sleepPopup(1500);
+        await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
+        for (var r2 = 0; r2 < 30; r2++) {
+          await sleepPopup(500);
+          await loadData();
+          if (state.lastSync && state.lastSync !== prevSync) { a2 = 3; break; }
+        }
       }
       render();
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
-      if (state.allItems.length === 0) {
+      if (!state.lastSync && state.allItems.length === 0) {
         try { showToast('请打开 MOOC 课程页面后重试'); } catch {}
       }
     } catch(e) {
@@ -827,21 +829,23 @@ async function handleRefresh() {
   try { if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning'); } catch {}
 
   try {
-    // 第一次：预热
-    chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
-    await sleepPopup(1000);
-    // 第二次：轮询 storage 直到数据到达
-    await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
-    for (var retry = 0; retry < 30; retry++) {
-      await sleepPopup(500);
-      await loadData();
-      if (state.allItems.length > 0) break;
+    // 重试循环：最多尝试 3 次（解决 SW 冷启动时首次来不及的问题）
+    var success = false;
+    for (var attempt = 0; attempt < 3 && !success; attempt++) {
+      chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
+      await sleepPopup(1500);
+      var prevSync = state.lastSync;
+      await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
+      for (var retry = 0; retry < 30; retry++) {
+        await sleepPopup(500);
+        await loadData();
+        if (state.lastSync && state.lastSync !== prevSync) { success = true; break; }
+      }
     }
     render();
-    showToast(state.allItems.length > 0 ? '刷新成功' : '请打开 MOOC 课程页面后重试');
+    showToast(success ? '刷新成功' : '请打开 MOOC 课程页面后重试');
   } catch(e) {
     console.error('[Popup] handleRefresh failed:', e.message);
-    // 刷新失败也重新渲染（应用当前filter）
     try { await loadData(); render(); } catch {}
     showToast('刷新失败: ' + e.message);
   }
