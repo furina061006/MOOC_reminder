@@ -147,14 +147,18 @@ async function init() {
   window.__popup_ok = true;
   try { document.body.classList.add('loaded'); } catch {}
 
-  // 首次打开无数据，刷新两次：第一次不计结果，第二次拿结果
+  // 首次打开无数据，尝试刷新
   if (state.allItems.length === 0) {
-    console.log('[Popup] No items, double-refreshing...');
+    console.log('[Popup] No items, checking for MOOC tabs...');
     try {
+      var hasTabs = await hasMoocTabs();
+      if (!hasTabs) {
+        render();
+        return;
+      }
       if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning');
       chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
       await sleepPopup(1000);
-      // 第二次：轮询 storage 直到数据到达（最多 15 秒）
       await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
       for (var retry = 0; retry < 30; retry++) {
         await sleepPopup(500);
@@ -822,11 +826,22 @@ async function handleCheckOff(uid, checked) {
 
 function sleepPopup(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
+function hasMoocTabs() {
+  return chrome.runtime.sendMessage({ type: 'HAS_TABS' }).then(function(r) { return r && r.hasTabs; }).catch(function() { return false; });
+}
+
 async function handleRefresh() {
   console.log('[Popup] handleRefresh');
   try { if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning'); } catch {}
 
   try {
+    var hasTabs = await hasMoocTabs();
+    if (!hasTabs) {
+      await loadData(); render();
+      if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
+      if (state.allItems.length > 0) { showToast('已加载缓存数据'); } else { showToast('请打开 MOOC 课程页面后刷新'); }
+      return;
+    }
     // 第一次：预热
     chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
     await sleepPopup(1000);

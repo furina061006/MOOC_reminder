@@ -515,6 +515,14 @@ const MESSAGE_HANDLERS = {
     return { success: true };
   },
 
+  // Popup checks if any MOOC tab is open (before attempting refresh)
+  async HAS_TABS() {
+    const tabs = await chrome.tabs.query({
+      url: ['https://www.icourse163.org/learn/*', 'https://www.icourse163.org/spoc/learn/*']
+    });
+    return { success: true, hasTabs: tabs.length > 0 };
+  },
+
   // Refresh badge only
   async REFRESH_BADGE() {
     await updateBadgeFromStorage();
