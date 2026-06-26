@@ -147,14 +147,11 @@ async function init() {
   window.__popup_ok = true;
   try { document.body.classList.add('loaded'); } catch {}
 
-  // 首次打开无数据，刷新两次：第一次不计结果，第二次拿结果
+  // 首次打开无数据，自动刷新并轮询等数据到达
   if (state.allItems.length === 0) {
-    console.log('[Popup] No items, double-refreshing...');
+    console.log('[Popup] No items, auto-refreshing...');
     try {
       if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning');
-      chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
-      await sleepPopup(1000);
-      // 第二次：轮询 storage 直到数据到达（最多 15 秒）
       await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
       for (var retry = 0; retry < 30; retry++) {
         await sleepPopup(500);
@@ -167,6 +164,9 @@ async function init() {
         try { showToast('请打开 MOOC 课程页面后重试'); } catch {}
       }
     } catch(e) {
+      if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
+    }
+  }
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
     }
   }
