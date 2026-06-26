@@ -950,16 +950,12 @@ async function performPeriodicScrape() {
     // 把已知课程发一份给 content script，让它用页面上下文拉 API
     const courses = await getCourses();
     console.log('[MOOC Reminder] Periodic: Sending BATCH_API_FETCH, courses:', courses.length);
-    if (courses.length > 0) {
-      for (const tab of tabs) {
-        try {
-          chrome.tabs.sendMessage(tab.id, {
-            type: 'BATCH_API_FETCH',
-            courses: courses.map(c => ({ courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }))
-          }).catch(() => {});
+    var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
+    for (const tab of tabs) {
+      try {
+        chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
         } catch {}
       }
-    }
 
     var settings = normalizeSettings(await getUserSettings());
     var doDomScrape = settings.domScrapingEnabled !== false;
@@ -1013,15 +1009,11 @@ async function triggerManualScrape() {
     // 把已知课程发给 content script 做页面上下文 API 抓取
     const courses = await getCourses();
     console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', courses.length, 'courses to', tabs.length, 'tabs');
-    if (courses.length > 0) {
-      for (const tab of tabs) {
-        try {
-          chrome.tabs.sendMessage(tab.id, {
-            type: 'BATCH_API_FETCH',
-            courses: courses.map(c => ({ courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }))
-          }).catch(() => {});
-        } catch {}
-      }
+    var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
+    for (const tab of tabs) {
+      try {
+        chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
+      } catch {}
     }
 
     let totalItems = 0;
