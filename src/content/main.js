@@ -1049,17 +1049,15 @@
       try {
         var url = 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + encodeURIComponent(csrf);
         var body = JSON.stringify({ termId: parseInt(c.termId, 10) });
-        var resp = await fetch(url, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json;charset=UTF-8',
-            'X-Requested-With': 'XMLHttpRequest'
-          },
-          body: body
+        // 必须用 XHR 而非 fetch——fetch 在此站点认证行为与 XHR 不同
+        var text = await new Promise(function(resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', url, true);
+          xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+          xhr.onload = function() { resolve(xhr.responseText); };
+          xhr.onerror = function() { reject(new Error('XHR failed')); };
+          xhr.send(body);
         });
-        if (!resp.ok) { console.debug('[MOOC Reminder] API fetch failed for', c.courseId, resp.status); continue; }
-        var text = await resp.text();
         if (text.length < 50) { console.debug('[MOOC Reminder] API empty for', c.courseId); continue; }
         results.push({
           course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' },
