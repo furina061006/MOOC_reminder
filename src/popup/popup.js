@@ -838,6 +838,11 @@ async function handleRefresh() {
 
   try {
     var hasTabs = await hasMoocTabs();
+    // SW 冷启动时 HAS_TABS 可能超时，重试一次
+    if (!hasTabs) {
+      await sleepPopup(1000);
+      hasTabs = await hasMoocTabs();
+    }
     if (!hasTabs) {
       await loadData(); render();
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
