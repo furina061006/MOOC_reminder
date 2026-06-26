@@ -595,6 +595,13 @@ async function reconcileHomeworkData(course, newItems) {
       newItem.firstSeen = existing.firstSeen;
       newItem.lastUpdated = new Date().toISOString();
 
+      // API 自动检测优先：若已存条目已完成，新数据不可回退为未完成
+      if (existing.checkedOff && !newItem.checkedOff && !newItem.manuallyCheckedOff) {
+        newItem.checkedOff = true;
+        newItem.autoDetectedCompleted = true;
+        if (!newItem.completionReason) newItem.completionReason = 'auto';
+      }
+
       // 保留作业互评阶段：如果新爬取未检测到阶段，沿用已有值
       if (!newItem.hwPhase && existing.hwPhase) {
         newItem.hwPhase = existing.hwPhase;
@@ -630,6 +637,11 @@ async function reconcileHomeworkData(course, newItems) {
         existingItems[dupIdx].lastUpdated = new Date().toISOString();
         if (oldUid && oldUid !== newItem.uid) {
           existingItems[dupIdx].previousUid = oldUid;
+        }
+        // API 自动检测优先：若已存条目已完成，新数据不可回退
+        if (!existingItems[dupIdx].checkedOff && wasCheckedOff) {
+          existingItems[dupIdx].checkedOff = true;
+          existingItems[dupIdx].completionReason = existingItems[dupIdx].completionReason || 'auto';
         }
         if (wasManual) {
           existingItems[dupIdx].checkedOff = true;
