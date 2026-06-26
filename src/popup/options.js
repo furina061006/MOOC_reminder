@@ -22,7 +22,7 @@ const DEFAULTS = {
   dailyDigestEnabled: false,
   dailyDigestHour: 8,
   mutedCourseIds: [],
-  autoDismissErrors: false,
+  autoDismissErrors: true,
   showSnoozeButton: true,
   showCourseMute: true,
   domScrapingEnabled: false

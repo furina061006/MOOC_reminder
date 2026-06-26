@@ -22,7 +22,7 @@ export const DEFAULT_SETTINGS = {
   dailyDigestEnabled: false,   // one summary notification per day
   dailyDigestHour: 8,          // local hour for daily digest
   mutedCourseIds: [],          // courses muted for notifications/digests
-  autoDismissErrors: false,    // auto-clear sync errors from the UI
+  autoDismissErrors: true,    // auto-clear sync errors from the UI
   showSnoozeButton: true,       // show snooze button in popup
   showCourseMute: true,         // show course mute button
   domScrapingEnabled: false         // allow DOM scraping alongside API
