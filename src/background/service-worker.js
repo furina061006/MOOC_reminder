@@ -1170,10 +1170,19 @@ function apiMsToLocalIso(ms) {
     `${apiPad(Math.floor(Math.abs(tz) / 60))}:${apiPad(Math.abs(tz) % 60)}`;
 }
 
-function apiClassifyType(name) {
-  const t = String(name || '');
-  if (/考试|exam/i.test(t)) return 'exam';
-  if (/测验|quiz|测试/i.test(t)) return 'quiz';
+function apiClassifyType(name, rawType) {
+  // API 的 type 字段是权威值：2=测验, 3=作业, 6=考试
+  // 名字正则作为 fallback
+  var rt = rawType !== undefined ? String(rawType) : '';
+  if (rt === '6' || rt === '2' || rt === '3') {
+    if (rt === '6') return 'exam';
+    if (rt === '2') return 'quiz';
+    if (rt === '3') return 'homework';
+  }
+  var t = String(name || '');
+  // "期末" 前缀的测试/考试都是 exam，不是 quiz
+  if (rt === '6' || /期末|考试|exam/i.test(t)) return 'exam';
+  if (rt === '2' || /测验|quiz|测试/i.test(t)) return 'quiz';
   if (/讨论|discussion/i.test(t)) return 'discussion';
   return 'homework';
 }
@@ -1216,7 +1225,7 @@ function apiExtractHomework(input, course) {
         out.push({
           uid, courseId: course.courseId, termId: course.termId,
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
-          title: name.trim(), type: apiClassifyType(name),
+          title: name.trim(), type: apiClassifyType(name, node.type !== undefined ? node.type : null),
           courseName: course.courseName || '', schoolName: course.schoolName || '',
           status: done ? 'completed' : 'unfinished',
           checkedOff: done, manuallyCheckedOff: false,

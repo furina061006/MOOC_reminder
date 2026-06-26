@@ -583,7 +583,7 @@
 
     // 按钮无指示，查元素全文（考试优先于测验，防止考试项被“测验”标签文字误伤）
     if (type === 'homework') {
-      if (/\u8003\u8bd5|exam/i.test(text)) type = 'exam';
+      if (/\u671f\u672b|\u8003\u8bd5|exam/i.test(text)) type = 'exam';
       else if (/\u6d4b\u9a8c|quiz/i.test(text)) type = 'quiz';
       else if (/\u8ba8\u8bba|discussion/i.test(text)) type = 'discussion';
     }
