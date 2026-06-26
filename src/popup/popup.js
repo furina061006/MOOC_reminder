@@ -157,17 +157,18 @@ async function init() {
         return;
       }
       if (dom.refreshBtn) dom.refreshBtn.classList.add('spinning');
+      var prevSync = state.lastSync;
       chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
       await sleepPopup(1000);
       await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
       for (var retry = 0; retry < 30; retry++) {
         await sleepPopup(500);
         await loadData();
-        if (state.allItems.length > 0) break;
+        if (state.lastSync && state.lastSync !== prevSync) break;
       }
       render();
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
-      if (state.allItems.length === 0) {
+      if (!state.lastSync || state.lastSync === prevSync) {
         try { showToast('请打开 MOOC 课程页面后重试'); } catch {}
       }
     } catch(e) {
@@ -845,15 +846,16 @@ async function handleRefresh() {
     // 第一次：预热
     chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' }).catch(function(){});
     await sleepPopup(1000);
-    // 第二次：轮询 storage 直到数据到达
+    // 第二次：轮询 storage 直到数据刷新（检查 lastSync 是否变化）
+    var prevSync = state.lastSync;
     await chrome.runtime.sendMessage({ type: 'TRIGGER_SCRAPE' });
     for (var retry = 0; retry < 30; retry++) {
       await sleepPopup(500);
       await loadData();
-      if (state.allItems.length > 0) break;
+      if (state.lastSync && state.lastSync !== prevSync) break;
     }
     render();
-    showToast(state.allItems.length > 0 ? '刷新成功' : '请打开 MOOC 课程页面后重试');
+    showToast(state.lastSync && state.lastSync !== prevSync ? '刷新成功' : '请打开 MOOC 课程页面后重试');
   } catch(e) {
     console.error('[Popup] handleRefresh failed:', e.message);
     // 刷新失败也重新渲染（应用当前filter）
