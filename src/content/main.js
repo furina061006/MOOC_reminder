@@ -1209,10 +1209,89 @@
           rawData: results[j].rawData
         });
         console.log('[MOOC Reminder] COURSE_API_DATA response for', results[j].course.courseId, ':', JSON.stringify(swResp));
+        // SPOC: API 空 → 静默 iframe 抓取
+        if (swResp && swResp.itemCount === 0 && pageMeta && pageMeta.isSpoc && results[j].course.courseId === pageMeta.courseId) {
+          await silentSpocIframeScrape(pageMeta, results[j].course);
+        }
       } catch { console.debug('[MOOC Reminder] COURSE_API_DATA send failed for', results[j].course.courseId); }
     }
     console.log('[MOOC Reminder] Batch API fetch done:', results.length, 'courses fetched');
     return results;
+  }
+
+  async function silentSpocIframeScrape(pageMeta, course) {
+    var url = window.location.origin + '/spoc/learn/' + pageMeta.courseId + '?tid=' + pageMeta.termId + '#/learn/testlist';
+    console.log('[MOOC Reminder] SPOC silent iframe loading:', url);
+    try {
+      var items = await new Promise(function(resolve) {
+        var iframe = document.createElement('iframe');
+        iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;border:none;';
+        iframe.src = url;
+        var done = false;
+        var timeout = setTimeout(function() { if (!done) { done = true; try { document.body.removeChild(iframe); } catch {} resolve([]); } }, 20000);
+        iframe.onload = function() {
+          if (done) return;
+          var tries = 0;
+          var poll = setInterval(function() {
+            tries++;
+            try {
+              var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+              if (!doc || !doc.body) { if (tries > 40) { clearInterval(poll); if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve([]); } } return; }
+              var found = extractItemsFromDoc(doc, pageMeta);
+              if (found.length > 0 || tries > 30) {
+                clearInterval(poll);
+                if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve(found); }
+              }
+            } catch(e) { if (tries > 40) { clearInterval(poll); if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve([]); } } }
+          }, 800);
+        };
+        iframe.onerror = function() { if (!done) { done = true; clearTimeout(timeout); try { document.body.removeChild(iframe); } catch {} resolve([]); } };
+        document.body.appendChild(iframe);
+      });
+      if (items.length > 0) {
+        console.log('[MOOC Reminder] SPOC iframe got', items.length, 'items');
+        await chrome.runtime.sendMessage({ type: 'HOMEWORK_DATA', course: { courseId: course.courseId, termId: course.termId, courseName: course.courseName || '', courseType: 'spoc', courseUrl: url }, homeworkItems: items });
+      }
+    } catch(e) { console.debug('[MOOC Reminder] SPOC iframe error:', e.message); }
+  }
+
+  function extractItemsFromDoc(doc, urlMeta) {
+    var items = [], seen = new Set();
+    function buildItem(el, pos) {
+      var t = (el.textContent || '').trim();
+      if (t.length < 10 || /加载中|loading/i.test(t)) return null;
+      var btn = el.querySelector('.j-quizBtn'); var btnT = btn ? (btn.textContent || '') : '';
+      var type = 'homework';
+      if (btnT.indexOf('测验') >= 0) type = 'quiz'; else if (btnT.indexOf('考试') >= 0) type = 'exam';
+      if (type === 'homework') { if (/期末|考试|exam/i.test(t)) type = 'exam'; else if (/测验|quiz/i.test(t)) type = 'quiz'; }
+      var sm = t.match(/(\d{1,3}(?:\.\d+)?)\s*[\/分]\s*(\d{1,3}(?:\.\d+)?)(?![\/\-年.\d])/);
+      var sc = sm ? parseFloat(sm[1]) : null, ts = sm ? parseFloat(sm[2]) : null;
+      if (sc && ts && sc <= 31 && ts <= 31) sc = ts = null;
+      var dl = t.match(/(\d{4}[年\-\/]\d{1,2}[月\-\/]\d{1,2}日?\s*\d{1,2}:\d{2})/);
+      if (!dl && !sc) return null;
+      var titleEl = el.querySelector('.j-name, [class*="name"], h3, h4, .item-title, [class*="title"]');
+      var title = (titleEl ? titleEl.textContent : '').trim() || t.substring(0, 50).trim();
+      title = title.replace(/\s+/g, ' ').replace(/(截止时间?|提交截止).*$/i, '').trim();
+      if (!title || title.length < 2 || /一键互评|不再提醒/i.test(title)) return null;
+      var cls = ''; try { cls = el.className || ''; if (typeof cls !== 'string') cls = String(cls); } catch(e) {}
+      var done = /已完成|已提交|已批阅|已通过|得分|查看成绩|查看分数|done|finished|completed/i.test(t + ' ' + cls);
+      var hid = 'hw_' + (function(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(16).padStart(8,'0');})(type+'|'+title+'|'+(dl?dl[1]:''));
+      return { uid: urlMeta.courseId+'_tid'+urlMeta.termId+'_ch_le_'+hid, courseId: urlMeta.courseId, termId: urlMeta.termId, chapterId:'', lessonId:'', homeworkId: hid, title: title, type: type, courseName: (doc.title||'').replace(/[_-]\s*中国大学MOOC.*$/i,'').trim(), schoolName:'', status: done?'completed':'unfinished', checkedOff: done, manuallyCheckedOff: false, autoDetectedCompleted: done, completionReason: done?'auto':null, deadline: dl?parseChineseDateInline(dl[1]):null, deadlineRaw: dl?dl[1]:null, firstSeen: new Date().toISOString(), lastUpdated: new Date().toISOString(), pageUrl: doc.location?doc.location.href:'', score: sc, totalScore: ts, source:'iframe' };
+    }
+    // strategies
+    var els = doc.querySelectorAll('.u-quizHwListItem');
+    for (var i=0;i<els.length;i++) { var it = buildItem(els[i],i); if(it){items.push(it);seen.add(els[i]);} }
+    if (!items.length) {
+      var times = doc.querySelectorAll('.j-submitTime');
+      for (var j2=0;j2<times.length;j2++) { var p = times[j2].closest('div[class]'); if(p&&!seen.has(p)){seen.add(p);var it2=buildItem(p,j2);if(it2)items.push(it2);} }
+    }
+    if (!items.length) {
+      ['[class*="quizHwItem"]','.j-quiz-item','.m-quiz-item','.j-test-item','tr[class*="row"]'].forEach(function(s){
+        try { var e3=doc.querySelectorAll(s); for(var k=0;k<e3.length;k++){if(!seen.has(e3[k])){seen.add(e3[k]);var it3=buildItem(e3[k],k);if(it3)items.push(it3);}} if(items.length)return; } catch(e){}
+      });
+    }
+    console.log('[MOOC Reminder] SPOC iframe extractItems: found', items.length, 'from doc');
+    return items;
   }
 
   // ─── Boot ─────────────────────────────────────────────
