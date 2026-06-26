@@ -92,12 +92,6 @@
       }
     } catch {}
 
-    // 诊断：检查页面是否有内嵌 JSON 数据（SSR 初始状态）
-    checkEmbeddedData();
-
-    // 诊断：扫描 window 全局对象寻找课程数据（domooc 思路）
-    setTimeout(function() { scanWindowForCourseData(); }, 3000);
-
     // Detect current route
     currentRoute = getCurrentHashRoute();
 
@@ -1098,196 +1092,6 @@
     return `${y}-${pad(mo + 1)}-${pad(d)}T${pad(h)}:${pad(m)}:00${tzSign}${tzHour}:${tzMin}`;
   }
 
-  function scanWindowForCourseData() {
-    console.log('[MOOC Reminder] Scanning window for course data...');
-    var seen = new WeakSet();
-    var found = [];
-
-    function safeStr(v, maxLen) {
-      try { var s = typeof v === 'string' ? v : JSON.stringify(v); return s.substring(0, maxLen || 120); } catch(e) { return '[unstringable]'; }
-    }
-
-    function visit(obj, path, depth) {
-      if (depth > 4 || !obj || typeof obj !== 'object' || seen.has(obj)) return;
-      seen.add(obj);
-      try {
-        var keys = Object.keys(obj);
-        // 检查是否有课程数据特征
-        var hasTerm = keys.indexOf('termId') >= 0 || keys.indexOf('mocTermDto') >= 0 || keys.indexOf('chapters') >= 0;
-        var hasScore = keys.indexOf('userScore') >= 0 || keys.indexOf('scorePubStatus') >= 0 || keys.indexOf('evaluateStart') >= 0;
-        var hasHomework = keys.indexOf('homeworkId') >= 0 || keys.indexOf('quizId') >= 0 || keys.indexOf('examId') >= 0 || keys.indexOf('jobId') >= 0;
-        var hasOutline = keys.indexOf('outline') >= 0 || keys.indexOf('outlineStructure') >= 0 || keys.indexOf('jsonContent') >= 0;
-        var hasTestInfo = keys.indexOf('deadline') >= 0 || keys.indexOf('endTime') >= 0 || keys.indexOf('submitEndTime') >= 0;
-
-        if (hasTerm || hasScore || hasHomework || hasOutline || hasTestInfo) {
-          found.push({ path: path, keys: keys.slice(0, 25), hasTerm: hasTerm, hasScore: hasScore, hasHomework: hasHomework, hasOutline: hasOutline, preview: safeStr(obj, 200) });
-          return; // 找到了就不继续深入这个分支
-        }
-
-        // 继续递归子属性
-        for (var i = 0; i < keys.length; i++) {
-          if (keys[i] === 'window' || keys[i] === 'self' || keys[i] === 'top' || keys[i] === 'parent' || keys[i] === 'globalThis') continue;
-          try {
-            var val = obj[keys[i]];
-            if (val && typeof val === 'object' && !Array.isArray(val)) {
-              visit(val, path + '.' + keys[i], depth + 1);
-            }
-          } catch(e) {}
-        }
-      } catch(e) {}
-    }
-
-    // 扫描 window 上的一级属性
-    try {
-      var skipSet = new Set(['on','webkit','moz','ms','HTML','CSS','DOM','SVG','IDB','RTCPeer','RTCSession','MediaStream','Audio','Video','Canvas','WebGL','Worker','Service','Cache','Notification','Geolocation','Permission','Presentation','Push','USB','NFC','Bluetooth','HID','Serial','Font','Storage','Screen','BarProp','History','Navigator','Visual','Crypto','Math','JSON','console','performance','fetch','caches','indexedDB','localStorage','sessionStorage','location','document','window','self','top','parent','frames','chrome','browser','Atomics','Reflect','Proxy','Promise','Symbol','WeakMap','WeakSet','Map','Set','Array','Object','Function','Boolean','Number','String','Date','RegExp','Error','Intl','BigInt','ArrayBuffer','SharedArrayBuffer','DataView','decodeURI','encodeURI','eval','isNaN','isFinite','parseInt','parseFloat','escape','unescape','requestAnimationFrame','setTimeout','clearTimeout','setInterval','clearInterval','queueMicrotask','structuredClone','origin','scheduler','navigation','speechSynthesis','customElements','external','closed','opener','name','status','scroll','screen','page','length','frameElement']);
-      var wKeys = Object.keys(window).filter(function(k) {
-        if (skipSet.has(k)) return false;
-        if (/^[A-Z]/.test(k)) return false; // 大写开头多半是构造函数
-        return true;
-      });
-
-      console.log('[MOOC Reminder] Window keys (filtered):', wKeys.length, 'keys');
-
-      // 先检查已知模式
-      var knownPatterns = ['EDU', '__INITIAL_STATE__', '__NEXT_DATA__', '__NUXT__', 'pageData', 'courseData', 'mocData', 'termData', 'app', 'store', 'state', '__MOOC__', '_moc', '_edu'];
-      for (var pi = 0; pi < knownPatterns.length; pi++) {
-        var val = window[knownPatterns[pi]];
-        if (val && typeof val === 'object') {
-          console.log('[MOOC Reminder] Found known global:', knownPatterns[pi], 'type:', Array.isArray(val) ? 'array[' + val.length + ']' : typeof val, 'keys:', Object.keys(val).slice(0, 20));
-          visit(val, 'window.' + knownPatterns[pi], 0);
-        }
-      }
-
-      // 扫描所有一级属性
-      for (var wi = 0; wi < wKeys.length; wi++) {
-        try {
-          var k = wKeys[wi];
-          var v = window[k];
-          if (v && typeof v === 'object' && !Array.isArray(v)) {
-            visit(v, 'window.' + k, 0);
-          }
-        } catch(e) {}
-      }
-
-      if (found.length > 0) {
-        console.log('[MOOC Reminder] === COURSE DATA FOUND ===');
-        for (var fi = 0; fi < found.length; fi++) {
-          var f = found[fi];
-          console.log('[MOOC Reminder]   at', f.path, '\n    keys:', f.keys.join(', '), '\n    term:', f.hasTerm, 'score:', f.hasScore, 'hw:', f.hasHomework, 'outline:', f.hasOutline, '\n    preview:', f.preview);
-        }
-      } else {
-        console.log('[MOOC Reminder] No course data found on window after scan');
-      }
-      // 也试试 React Fiber 树
-      scanReactFiberTree();
-    } catch(e) { console.debug('[MOOC Reminder] scanWindowForCourseData error:', e.message); }
-  }
-
-  function scanReactFiberTree() {
-    try {
-      var root = document.getElementById('root') || document.getElementById('app') || document.body;
-      var fiberKey = Object.keys(root).find(function(k) { return k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'); });
-      if (!fiberKey) {
-        // React 18+ uses a different pattern
-        var allKeys = Object.keys(root);
-        console.log('[MOOC Reminder] React fiber: root element keys:', allKeys.filter(function(k) { return k.startsWith('__'); }));
-        // Try _reactRootContainer
-        var rootContainer = root._reactRootContainer || root.__reactContainer$;
-        if (rootContainer) {
-          console.log('[MOOC Reminder] React: found _reactRootContainer');
-        }
-      }
-      if (fiberKey) {
-        console.log('[MOOC Reminder] React fiber found:', fiberKey);
-        var fiber = root[fiberKey];
-        var depth = 0;
-        var stateNodes = [];
-        function walkFiber(node, d) {
-          if (!node || d > 30 || stateNodes.length > 50) return;
-          try {
-            if (node.memoizedState && typeof node.memoizedState === 'object') {
-              // Check if this state looks like course data
-              var ms = node.memoizedState;
-              if (ms.termId || ms.chapters || ms.courseData || ms.homeworkList || ms.testList || ms.examList) {
-                stateNodes.push({ depth: d, keys: Object.keys(ms).slice(0, 15), preview: JSON.stringify(ms).substring(0, 300) });
-              }
-              // Also check for arrays
-              if (Array.isArray(ms) && ms.length > 0) {
-                var first = ms[0];
-                if (first && typeof first === 'object') {
-                  var fk = Object.keys(first);
-                  if (fk.indexOf('deadline') >= 0 || fk.indexOf('homeworkId') >= 0 || fk.indexOf('quizId') >= 0 || fk.indexOf('examId') >= 0) {
-                    stateNodes.push({ depth: d, arrayLen: ms.length, keys: fk.slice(0, 15), preview: JSON.stringify(first).substring(0, 300) });
-                  }
-                }
-              }
-              // Recurse into memoizedState chain (useState/useReducer hooks)
-              if (ms.next) walkFiber(ms.next, d);
-            }
-            // Check stateNode for class components
-            if (node.stateNode && node.stateNode.state && typeof node.stateNode.state === 'object') {
-              var cs = node.stateNode.state;
-              var ck = Object.keys(cs);
-              if (ck.indexOf('homeworkList') >= 0 || ck.indexOf('testList') >= 0 || ck.indexOf('data') >= 0) {
-                stateNodes.push({ depth: d, classState: true, keys: ck.slice(0, 15), preview: JSON.stringify(cs).substring(0, 300) });
-              }
-            }
-          } catch(e) {}
-          walkFiber(node.child, d + 1);
-          walkFiber(node.sibling, d);
-          if (node.child) walkFiber(node.child, d + 1);
-          else if (node.sibling) walkFiber(node.sibling, d);
-          else if (node.return) walkFiber(node.return.sibling, d);
-        }
-        walkFiber(fiber, 0);
-        if (stateNodes.length > 0) {
-          console.log('[MOOC Reminder] === REACT STATE DATA FOUND ===');
-          stateNodes.forEach(function(sn) {
-            console.log('[MOOC Reminder]   depth=' + sn.depth, 'keys:', sn.keys, 'arrayLen:', sn.arrayLen || '', 'preview:', sn.preview);
-          });
-        } else {
-          console.log('[MOOC Reminder] React fiber scanned, no course data found in component state');
-        }
-      }
-    } catch(e) { console.debug('[MOOC Reminder] scanReactFiberTree error:', e.message); }
-  }
-
-  function checkEmbeddedData() {
-    try {
-      // 1) window.__INITIAL_STATE__ 等常见 SSR 注入
-      var stateKeys = ['__INITIAL_STATE__', '__NEXT_DATA__', '__NUXT__', '__DATA__', '__PRELOADED_STATE__', 'pageData', 'courseData', 'mocData'];
-      for (var sk = 0; sk < stateKeys.length; sk++) {
-        var val = window[stateKeys[sk]];
-        if (val && typeof val === 'object') {
-          console.log('[MOOC Reminder] Found embedded state:', stateKeys[sk], 'keys:', Object.keys(val).slice(0, 15));
-        }
-      }
-
-      // 2) <script> 标签含 JSON
-      var scripts = document.querySelectorAll('script[type="application/json"], script[type="text/json"], script[id*="data"], script[id*="json"], script[id*="state"], script[id*="preload"]');
-      for (var si = 0; si < scripts.length; si++) {
-        var content = (scripts[si].textContent || '').trim();
-        if (content.length > 100 && (content.charAt(0) === '{' || content.charAt(0) === '[')) {
-          try {
-            var parsed = JSON.parse(content);
-            console.log('[MOOC Reminder] Found embedded <script> JSON:', scripts[si].id || scripts[si].type || 'inline', 'keys:', Object.keys(parsed).slice(0, 15));
-          } catch(e) {}
-        }
-      }
-
-      // 3) 内联 <script> 中的 window.xxx = {...} 赋值
-      var allScripts = document.querySelectorAll('script:not([src])');
-      for (var ai = 0; ai < allScripts.length; ai++) {
-        var text = allScripts[ai].textContent || '';
-        // 匹配 window.xxx = { 或 var xxx = { 模式，其中包含 homework/quiz/test/chapter/term
-        if (text.length > 200 && text.length < 50000 && /(?:window|var|let|const)\s*[.\w]+\s*=\s*\{/.test(text)) {
-          if (/homework|quiz|test|exam|chapter|lesson|term|course|score|deadline/i.test(text)) {
-            console.log('[MOOC Reminder] Found potential data script: len=' + text.length + ' preview=' + text.substring(0, 200));
-          }
-        }
-      }
-    } catch(e) { console.debug('[MOOC Reminder] checkEmbeddedData error:', e.message); }
-  }
 
   function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -1386,36 +1190,30 @@
               'https://www.icourse163.org/dwr/call/plaincall/CourseBean.checkTermLearn.dwr',
               'text/plain;charset=UTF-8',
               ['callCount=1', 'scriptSessionId=', 'httpSessionId=', 'c0-scriptName=CourseBean', 'c0-methodName=checkTermLearn', 'c0-id=0', 'c0-param0=number:' + tid2, 'batchId=0'].join('\n'));
-            console.log('[MOOC Reminder] SPOC: checkTermLearn.dwr called');
-          } catch(ePre) { console.debug('[MOOC Reminder] SPOC: checkTermLearn failed:', ePre.message); }
+          } catch(ePre) { /* checkTermLearn is optional */ }
         }
 
-        // 0) getLastLearnedMocTermDto JSON — SPOC 页面实际用的格式（code:0 已验证）
-        //    页面会调两次，第二次可能返回完整数据
-        //    页面会调两次，第二次可能返回完整数据
+        // 0) getLastLearnedMocTermDto JSON（SPOC 页面实际用的格式）
         for (var retry = 0; retry < 2; retry++) {
-          if (text && text.length > 2000) break; // 已拿到完整数据
+          if (text && text.length > 2000) break;
           try {
             text = await xhrFetch(
               'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + csrfKey2,
               'application/json;charset=UTF-8',
               JSON.stringify({ termId: parseInt(c.termId, 10) }));
-            if (courseIsSpoc) console.log('[MOOC Reminder] SPOC LastLearned retry', retry, 'len=' + text.length);
-            if (text.length < 2000) text = null; // 数据太小说明 chapters 是空的
+            if (text.length < 2000) text = null;
           } catch(eRetry) { text = null; }
-          if (!text && retry === 0) await sleep(500); // 两次调用间短暂延迟
+          if (!text && retry === 0) await sleep(500);
         }
-        if (text) console.log('[MOOC Reminder] Got full data from LastLearned, len=' + text.length);
 
         // 1) getMocTermDto.rpc + gatewayType=3（MOOC 首选）
-        try {
+        if (!text) { try {
           text = await xhrFetch(
             'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfKey2,
             'application/x-www-form-urlencoded;charset=UTF-8',
             'termId=' + tid2 + '&gatewayType=3');
-          if (courseIsSpoc) console.log('[MOOC Reminder] EP1 getMocTermDto+gw3: len=' + text.length, 'preview:', text.substring(0, 120));
           if (text.length < 100 || /"code":-/.test(text)) text = null;
-        } catch(e1) { text = null; }
+        } catch(e1) { text = null; }}
 
         // 2) getMocTermDto.rpc 不带 gatewayType
         if (!text) { try {
@@ -1423,27 +1221,24 @@
             'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfKey2,
             'application/x-www-form-urlencoded;charset=UTF-8',
             'termId=' + tid2);
-          if (courseIsSpoc) console.log('[MOOC Reminder] EP2 getMocTermDto: len=' + text.length, 'preview:', text.substring(0, 120));
           if (text.length < 100 || /"code":-/.test(text)) text = null;
         } catch(e2) { text = null; }}
 
-        // 3) DWR endpoint（SW 后台 fallback，无需 csrfKey）
+        // 3) DWR endpoint
         if (!text) { try {
           text = await xhrFetch(
             'https://www.icourse163.org/dwr/call/plaincall/CourseBean.getMocTermDto.dwr',
             'text/plain;charset=UTF-8',
             ['callCount=1', 'scriptSessionId=', 'httpSessionId=', 'c0-scriptName=CourseBean', 'c0-methodName=getMocTermDto', 'c0-id=0', 'c0-param0=number:' + tid2, 'c0-param1=boolean:true', 'batchId=0'].join('\n'));
-          console.log('[MOOC Reminder] EP3 DWR: len=' + text.length, 'preview:', text.substring(0, 120));
           if (text.length < 100 || /exception|forbidden|非法跨域/i.test(text)) text = null;
         } catch(e3) { text = null; }}
 
-        // 4) getMocTermDto.rpc + courseId（SPOC 可能需要双参数）
+        // 4) getMocTermDto.rpc + courseId（SPOC）
         if (!text && courseIsSpoc) { try {
           text = await xhrFetch(
             'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfKey2,
             'application/x-www-form-urlencoded;charset=UTF-8',
             'termId=' + tid2 + '&courseId=' + encodeURIComponent(c.courseId || ''));
-          console.log('[MOOC Reminder] EP4 +courseId: len=' + text.length, 'preview:', text.substring(0, 120));
           if (text.length < 100 || /"code":-/.test(text)) text = null;
         } catch(e4) { text = null; }}
 
@@ -1453,7 +1248,6 @@
             'https://www.icourse163.org/web/j/courseBean.getMocTermDto.rpc?csrfKey=' + csrfKey2,
             'application/json;charset=UTF-8',
             JSON.stringify({ termId: parseInt(c.termId, 10) }));
-          console.log('[MOOC Reminder] EP5 getMocTermDto JSON: len=' + text.length, 'preview:', text.substring(0, 120));
           if (text.length < 100 || /"code":-/.test(text)) text = null;
         } catch(e5) { text = null; }}
 
@@ -1463,7 +1257,6 @@
             'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc?csrfKey=' + csrfKey2,
             'application/json;charset=UTF-8',
             JSON.stringify({ termId: parseInt(c.termId, 10) }));
-          console.log('[MOOC Reminder] EP6 LastLearned fallback: len=' + text.length, 'preview:', text.substring(0, 120));
         } catch(e6) { text = null; }}
 
         if (!text || text.length < 50) { console.debug('[MOOC Reminder] API empty/failed for', c.courseId, '(type:', c.courseType || 'unknown', ') textLen:', text ? text.length : 0); continue; }
