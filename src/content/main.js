@@ -1183,14 +1183,15 @@
         console.debug('[MOOC Reminder] API fetch error for', c.courseId, e.message);
       }
     }
-    // 逐个发送 COURSE_API_DATA 给 SW 处理（await 确保每条都处理完再发下一条）
+    // 逐个发送 COURSE_API_DATA 给 SW 处理，捕获 SW 返回的结果
     for (var j = 0; j < results.length; j++) {
       try {
-        await chrome.runtime.sendMessage({
+        var swResp = await chrome.runtime.sendMessage({
           type: 'COURSE_API_DATA',
           course: results[j].course,
           rawData: results[j].rawData
         });
+        console.log('[MOOC Reminder] COURSE_API_DATA response for', results[j].course.courseId, ':', JSON.stringify(swResp));
       } catch { console.debug('[MOOC Reminder] COURSE_API_DATA send failed for', results[j].course.courseId); }
     }
     console.log('[MOOC Reminder] Batch API fetch done:', results.length, 'courses fetched');

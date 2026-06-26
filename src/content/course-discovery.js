@@ -182,7 +182,10 @@
             }
 
             if (text && text.length > 50) {
-              chrome.runtime.sendMessage({ type: 'COURSE_API_DATA', course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' }, rawData: text }).catch(function(){});
+              try {
+                var swResp2 = await chrome.runtime.sendMessage({ type: 'COURSE_API_DATA', course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' }, rawData: text });
+                console.log('[MOOC Reminder] course-discovery COURSE_API_DATA response for', c.courseId, ':', JSON.stringify(swResp2));
+              } catch(e2) {}
             } else {
               console.log('[MOOC Reminder] course-discovery: API empty/failed for', c.courseId, 'type:', c.courseType || '?', 'textLen:', text ? text.length : 0);
             }
