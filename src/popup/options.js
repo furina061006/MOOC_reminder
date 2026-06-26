@@ -24,7 +24,6 @@ const DEFAULTS = {
   mutedCourseIds: [],
   autoDismissErrors: false,
   showSnoozeButton: true,
-  showExternalLink: true,
   showCourseMute: true,
   domScrapingEnabled: true
 };
@@ -82,7 +81,6 @@ function populate(settings) {
   safeSetValue('quiet-end', s.quietEnd);
   safeSetChecked('auto-dismiss-errors', s.autoDismissErrors === true);
   safeSetChecked('show-snooze-btn', s.showSnoozeButton !== false);
-  safeSetChecked('show-external-link', s.showExternalLink !== false);
   safeSetChecked('show-course-mute', s.showCourseMute !== false);
   safeSetChecked('dom-scrape', s.domScrapingEnabled !== false);
   safeSetChecked('digest-enabled', s.dailyDigestEnabled === true);
@@ -125,7 +123,6 @@ function collect() {
     mutedCourseIds: currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : [],
     autoDismissErrors: safeGetChecked('auto-dismiss-errors'),
     showSnoozeButton: safeGetChecked('show-snooze-btn'),
-    showExternalLink: safeGetChecked('show-external-link'),
     showCourseMute: safeGetChecked('show-course-mute'),
     domScrapingEnabled: safeGetChecked('dom-scrape')
   };

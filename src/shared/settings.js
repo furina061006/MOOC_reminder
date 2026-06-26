@@ -24,7 +24,6 @@ export const DEFAULT_SETTINGS = {
   mutedCourseIds: [],          // courses muted for notifications/digests
   autoDismissErrors: false,    // auto-clear sync errors from the UI
   showSnoozeButton: true,       // show snooze button in popup
-  showExternalLink: true,       // show external link button in popup
   showCourseMute: true,         // show course mute button
   domScrapingEnabled: true         // allow DOM scraping alongside API
 };
@@ -63,7 +62,6 @@ export function normalizeSettings(stored) {
     mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : [],
     autoDismissErrors: s.autoDismissErrors === true,
     showSnoozeButton: s.showSnoozeButton !== false,
-    showExternalLink: s.showExternalLink !== false,
     showCourseMute: s.showCourseMute !== false,
     domScrapingEnabled: s.domScrapingEnabled !== false
   };

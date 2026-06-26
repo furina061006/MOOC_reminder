@@ -40,7 +40,6 @@ const DEFAULT_SETTINGS = {
   mutedCourseIds: [],
   autoDismissErrors: false,
   showSnoozeButton: true,
-  showExternalLink: true,
   showCourseMute: true,
   domScrapingEnabled: true
 };
@@ -75,7 +74,6 @@ function normalizeSettings(stored) {
     mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : [],
     autoDismissErrors: s.autoDismissErrors === true,
     showSnoozeButton: s.showSnoozeButton !== false,
-    showExternalLink: s.showExternalLink !== false,
     showCourseMute: s.showCourseMute !== false,
     domScrapingEnabled: s.domScrapingEnabled !== false
   };
