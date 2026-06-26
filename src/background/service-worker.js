@@ -656,14 +656,33 @@ async function reconcileHomeworkData(course, newItems) {
         updated++;
       } else {
         // --- Genuinely new item ---
-        if (autoDetect && newItem.autoDetectedCompleted) {
-          newItem.checkedOff = true;
-          newItem.completionReason = 'auto';
+        // 兜底去重：用课程+标题匹配已有条目，如已有完成版则保留完成状态
+        var merged = false;
+        for (var mi = 0; mi < existingItems.length; mi++) {
+          var e = existingItems[mi];
+          if (e.courseId !== newItem.courseId || !e.title || !newItem.title) continue;
+          var ta = String(e.title).replace(/\s+/g,'');
+          var tb = String(newItem.title).replace(/\s+/g,'');
+          if (ta === tb || (ta.length > 3 && tb.length > 3 && (ta.indexOf(tb)===0 || tb.indexOf(ta)===0))) {
+            // 同名条目，保留已完成状态
+            if (e.checkedOff && !newItem.checkedOff) newItem.checkedOff = true;
+            if (e.firstSeen) newItem.firstSeen = e.firstSeen;
+            existingItems[mi] = Object.assign({}, e, newItem);
+            updated++;
+            merged = true;
+            break;
+          }
         }
-        newItem.firstSeen = newItem.firstSeen || new Date().toISOString();
-        newItem.lastUpdated = newItem.firstSeen;
-        existingItems.push(newItem);
-        added++;
+        if (!merged) {
+          if (autoDetect && newItem.autoDetectedCompleted) {
+            newItem.checkedOff = true;
+            newItem.completionReason = 'auto';
+          }
+          newItem.firstSeen = newItem.firstSeen || new Date().toISOString();
+          newItem.lastUpdated = newItem.firstSeen;
+          existingItems.push(newItem);
+          added++;
+        }
       }
     }
   }
