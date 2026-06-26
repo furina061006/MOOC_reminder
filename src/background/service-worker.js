@@ -517,9 +517,7 @@ const MESSAGE_HANDLERS = {
 
   // Popup checks if any MOOC tab is open (before attempting refresh)
   async HAS_TABS() {
-    const tabs = await chrome.tabs.query({
-      url: ['https://www.icourse163.org/learn/*', 'https://www.icourse163.org/spoc/learn/*']
-    });
+    const tabs = await chrome.tabs.query({ url: ['https://www.icourse163.org/*'] });
     return { success: true, hasTabs: tabs.length > 0 };
   },
 
@@ -943,12 +941,7 @@ async function performPeriodicScrape() {
 
   try {
     // Find open icourse163 tabs
-    const tabs = await chrome.tabs.query({
-      url: [
-        'https://www.icourse163.org/learn/*',
-        'https://www.icourse163.org/spoc/learn/*'
-      ]
-    });
+    const tabs = await chrome.tabs.query({ url: ['https://www.icourse163.org/*'] });
 
     if (tabs.length === 0) {
       console.log('[MOOC Reminder] No icourse163 tabs open, skipping periodic scrape');
@@ -1001,12 +994,7 @@ async function triggerManualScrape() {
   console.log('[MOOC Reminder] Manual scrape triggered');
 
   try {
-    const tabs = await chrome.tabs.query({
-      url: [
-        'https://www.icourse163.org/learn/*',
-        'https://www.icourse163.org/spoc/learn/*'
-      ]
-    });
+    const tabs = await chrome.tabs.query({ url: ['https://www.icourse163.org/*'] });
 
     if (tabs.length === 0) {
       // 没有打开的页面——不可能。让用户打开任一课程页面即可
