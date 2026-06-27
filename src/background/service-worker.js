@@ -1125,14 +1125,19 @@ function apiPad(n) { return String(n).padStart(2, '0'); }
 
 function apiDetectPhase(node) {
   // 测验(type:2)无互评，作业(type:3)才有
-  if (String(node.type||'') !== '3') return null;
-  if (!node.enableEvaluation || node.evaluateStart == null) return null;
-  var pub = parseInt(node.scorePubStatus,10) || 0;
+  // 部分 SPOC 课程的这些字段在 node.test 中
+  var nt = node.test || {};
+  var t = String(node.type || nt.type || '');
+  if (t !== '3') return null;
+  var e = node.enableEvaluation != null ? node.enableEvaluation : nt.enableEvaluation;
+  var es = node.evaluateStart != null ? node.evaluateStart : nt.evaluateStart;
+  if (!e || es == null) return null;
+  var pub = parseInt(node.scorePubStatus != null ? node.scorePubStatus : nt.scorePubStatus, 10) || 0;
   if (pub === 2) return 'results';
   if (pub === 1) return 'results';  // 互评窗口关闭 → 过期当完成
   var now = Date.now();
-  var start = parseInt(node.evaluateStart,10);
-  var end = parseInt(node.evaluateScoreReleaseTime||node.evaluateEnd,10);
+  var start = parseInt(es, 10);
+  var end = parseInt((node.evaluateScoreReleaseTime || nt.evaluateScoreReleaseTime) || (node.evaluateEnd || nt.evaluateEnd), 10);
   if (start && now < start) return 'submit';
   if (end && now >= end) return 'results';
   return 'peerreview';
@@ -1228,23 +1233,24 @@ function apiExtractHomework(input, course) {
       if (!seen.has(uid)) {
         seen.add(uid);
         // 互评中：用 evaluateEnd 代替原来的提交截止日期
+        var nt2 = node.test || {};
         var phaseDeadline = deadlineMs;
-        if (apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus,10) || 0) === 0) {
-          var pe = parseInt(node.evaluateEnd,10);
+        if (apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus,10) || 0) === 0) {
+          var pe = parseInt(node.evaluateEnd || nt2.evaluateEnd,10);
           if (pe > 0) phaseDeadline = pe;
         }
         const deadline = phaseDeadline != null ? apiMsToLocalIso(phaseDeadline) : null;
         // 完成判定：有分数 OR 已提交（互评中除外）OR 节点含完成文本
-        var submitted = parseInt(node.usedTryCount,10) > 0 && (parseInt(node.type,10) === 3);
+        var submitted = parseInt(node.usedTryCount || nt2.usedTryCount,10) > 0 && (parseInt(node.type || nt2.type,10) === 3);
         // 互评中不算完成（等待评分），互评期结束后回到已提交则算完成
-        var inPeerReview = apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus,10) || 0) === 0;
+        var inPeerReview = apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus,10) || 0) === 0;
         var done = (score != null && totalScore != null && score > 0)
                 || (submitted && !inPeerReview)
                 || apiHasCompletedText(node, 0);
         out.push({
           uid, courseId: course.courseId, termId: course.termId,
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
-          title: name.trim(), type: apiClassifyType(name, node.type !== undefined ? node.type : null),
+          title: name.trim(), type: apiClassifyType(name, (node.type || nt2.type) !== undefined ? (node.type || nt2.type) : null),
           courseName: course.courseName || '', schoolName: course.schoolName || '',
           status: done ? 'completed' : 'unfinished',
           checkedOff: done, manuallyCheckedOff: false,
