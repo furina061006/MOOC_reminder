@@ -133,7 +133,7 @@ export function msToLocalIso(ms) {
 export function detectPhase(node) {
   const t = node.test || {};
   if (String(node.type || t.type || '') !== '3') return null;
-  if (!(node.enableEvaluation || t.enableEvaluation) || (node.evaluateStart == null && t.evaluateStart == null)) return null;
+  if (!(node.enableEvaluation || t.enableEvaluation) && (node.evaluateStart == null && t.evaluateStart == null)) return null;
   const pub = parseInt(node.scorePubStatus || t.scorePubStatus, 10) || 0;
   if (pub === 2) return 'results';
   if (pub === 1) return 'results';  // score published → 互评结束

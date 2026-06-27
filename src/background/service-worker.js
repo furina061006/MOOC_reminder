@@ -1128,7 +1128,7 @@ function apiDetectPhase(node) {
   // 部分 SPOC 课程这些字段在 node.test 中
   var t = node.test || {};
   if (String(node.type || t.type||'') !== '3') return null;
-  if (!(node.enableEvaluation || t.enableEvaluation) || (node.evaluateStart == null && t.evaluateStart == null)) return null;
+  if (!(node.enableEvaluation || t.enableEvaluation) && (node.evaluateStart == null && t.evaluateStart == null)) return null;
   var pub = parseInt(node.scorePubStatus || t.scorePubStatus,10) || 0;
   if (pub === 2) return 'results';
   if (pub === 1) return 'results';  // 互评窗口关闭 → 过期当完成
