@@ -1241,10 +1241,14 @@ function apiExtractHomework(input, course) {
         }
         const deadline = phaseDeadline != null ? apiMsToLocalIso(phaseDeadline) : null;
         // 完成判定：有分数 OR 已提交（互评中除外）OR 节点含完成文本
+        // 注意：done 里的 score/totalScore 只读顶层（不从 node.test 读），
+        // node.test 里的 userScore 是历史成绩，用于 hasSignal 判断但不用于完成判定
         var submitted = parseInt(node.usedTryCount || nt2.usedTryCount,10) > 0 && (parseInt(node.type || nt2.type,10) === 3);
         // 互评中不算完成（等待评分），互评期结束后回到已提交则算完成
         var inPeerReview = apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus,10) || 0) === 0;
-        var done = (score != null && totalScore != null && score > 0)
+        var doneScore = apiFirstNumber(node, API_SCORE_FIELDS);
+        var doneTotal = apiFirstNumber(node, API_TOTAL_FIELDS);
+        var done = (doneScore != null && doneTotal != null && doneScore > 0)
                 || (submitted && !inPeerReview)
                 || apiHasCompletedText(node, 0);
         out.push({
