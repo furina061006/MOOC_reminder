@@ -309,7 +309,7 @@
 
         // 诊断：itemCount=0 时先看数据结构（首次或 SPOC 课程）
         if (c.courseType === 'spoc') {
-          try { var _d = JSON.parse(text); var r = _d && _d.result; var m = r && r.mocTermDto; var chs = m && m.chapters; console.log('[MOOC Reminder] SPOC struct for', c.courseId, 'chapters:', chs ? chs.length : 0, 'len:', text.length); if (chs) { var hwAll = 0, qAll = 0, exAll = 0, lesAll = 0; for (var ci = 0; ci < chs.length; ci++) { var ch = chs[ci]; hwAll += (ch.homeworks && ch.homeworks.length) || 0; qAll += (ch.quizs && ch.quizs.length) || 0; exAll += (ch.exam ? 1 : 0); lesAll += (ch.lessons && ch.lessons.length) || 0; } console.log('[MOOC Reminder] SPOC totals:', 'homeworks=' + hwAll, 'quizs=' + qAll, 'exams=' + exAll, 'lessons=' + lesAll); } } catch(e) {}
+          try { var _d = JSON.parse(text); var r = _d && _d.result; var m = r && r.mocTermDto; var chs = m && m.chapters; console.log('[MOOC Reminder] SPOC:', c.courseId, 'ch=' + (chs ? chs.length : 0), 'len=' + text.length); if (chs) { var hw=0, qz=0, ex=0, le=0; for (var ci=0;ci<chs.length;ci++){var ch=chs[ci];hw+=(ch.homeworks&&ch.homeworks.length)||0;qz+=(ch.quizs&&ch.quizs.length)||0;ex+=(ch.exam?1:0);le+=(ch.lessons&&ch.lessons.length)||0;} console.log('[MOOC Reminder] SPOC totals: hw='+hw+' qz='+qz+' ex='+ex+' le='+le); for (var ci=0;ci<chs.length;ci++){if (chs[ci].quizs && chs[ci].quizs.length>0) { var q0=chs[ci].quizs[0]; console.log('[MOOC Reminder] quiz0 keys:', Object.keys(q0)); if (q0.test) console.log('[MOOC Reminder] quiz0.test keys:', Object.keys(q0.test)); console.log('[MOOC Reminder] quiz0 name:', q0.name); break; } } } } catch(e) {}
         }
 
         results.push({
