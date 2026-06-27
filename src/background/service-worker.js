@@ -1212,12 +1212,14 @@ function apiExtractHomework(input, course) {
     visited++;
     if (Array.isArray(node)) { for (const c of node) visit(c, chapterId, lessonId); return; }
     const name = node.name || node.title || node.unitName || '';
-    const deadlineMs = apiFirstNumber(node, API_DEADLINE_FIELDS);
-    const score = apiFirstNumber(node, API_SCORE_FIELDS);
-    const totalScore = apiFirstNumber(node, API_TOTAL_FIELDS);
+    // deadline/score 可能在 node.test 子对象中（SPOC 课程常见）
+    const deadlineMs = apiFirstNumber(node, API_DEADLINE_FIELDS) || (node.test ? apiFirstNumber(node.test, API_DEADLINE_FIELDS) : null);
+    const score = apiFirstNumber(node, API_SCORE_FIELDS) || (node.test ? apiFirstNumber(node.test, API_SCORE_FIELDS) : null);
+    const totalScore = apiFirstNumber(node, API_TOTAL_FIELDS) || (node.test ? apiFirstNumber(node.test, API_TOTAL_FIELDS) : null);
     const hasSignal = deadlineMs != null || (score != null && totalScore != null);
+    var ct = String(node.contentType || '');
     if (typeof name === 'string' && name.trim() && hasSignal &&
-        /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)) {
+        (/测验|作业|考试|测试|quiz|exam|homework|test/i.test(name) || ct === '2' || ct === '3' || ct === '6')) {
 
       const homeworkId = String(node.id || node.jobId || node.quizId || node.testId || node.homeworkId || '') || ('h' + (out.length + 1));
       const uid = `${course.courseId}_tid${course.termId}_ch${chapterId || ''}_le${lessonId || ''}_hw${homeworkId}`;

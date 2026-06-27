@@ -224,13 +224,15 @@ export function extractHomeworkFromTermDto(input, course) {
     }
 
     const name = node.name || node.title || node.unitName || '';
-    const deadlineMs = firstNumber(node, DEADLINE_FIELDS);
-    const score = firstNumber(node, SCORE_FIELDS);
-    const totalScore = firstNumber(node, TOTAL_FIELDS);
+    // deadline/score 可能在 node.test 子对象中（SPOC 课程常见）
+    const deadlineMs = firstNumber(node, DEADLINE_FIELDS) || (node.test ? firstNumber(node.test, DEADLINE_FIELDS) : null);
+    const score = firstNumber(node, SCORE_FIELDS) || (node.test ? firstNumber(node.test, SCORE_FIELDS) : null);
+    const totalScore = firstNumber(node, TOTAL_FIELDS) || (node.test ? firstNumber(node.test, TOTAL_FIELDS) : null);
     const hasSignal = deadlineMs != null || (score != null && totalScore != null);
+    var ct = String(node.contentType || '');
 
     if (typeof name === 'string' && name.trim() && hasSignal &&
-        /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)) {
+        (/测验|作业|考试|测试|quiz|exam|homework|test/i.test(name) || ct === '2' || ct === '3' || ct === '6')) {
 
       const homeworkId = String(
         node.id || node.jobId || node.quizId || node.testId || node.homeworkId || ''
