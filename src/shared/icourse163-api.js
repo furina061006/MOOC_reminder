@@ -131,15 +131,14 @@ export function msToLocalIso(ms) {
  * 测验 (type:2) has no peer review; 作业 (type:3) does.
  */
 export function detectPhase(node) {
-  const t = node.test || {};
-  if (String(node.type || t.type || '') !== '3') return null;
-  if (!(node.enableEvaluation || t.enableEvaluation) && (node.evaluateStart == null && t.evaluateStart == null)) return null;
-  const pub = parseInt(node.scorePubStatus || t.scorePubStatus, 10) || 0;
+  if (String(node.type || '') !== '3') return null;
+  if (!node.enableEvaluation || node.evaluateStart == null) return null;
+  const pub = parseInt(node.scorePubStatus, 10) || 0;
   if (pub === 2) return 'results';
   if (pub === 1) return 'results';  // score published → 互评结束
   const now = Date.now();
-  const start = parseInt(node.evaluateStart || t.evaluateStart, 10);
-  const end = parseInt(node.evaluateScoreReleaseTime || t.evaluateScoreReleaseTime || node.evaluateEnd || t.evaluateEnd, 10);
+  const start = parseInt(node.evaluateStart, 10);
+  const end = parseInt(node.evaluateScoreReleaseTime || node.evaluateEnd, 10);
   if (start && now < start) return 'submit';
   if (end && now >= end) return 'results';
   return 'peerreview';
@@ -245,17 +244,16 @@ export function extractHomeworkFromTermDto(input, course) {
 
         // 互评中：用 evaluateEnd 代替原来的提交截止日期
         const phase = detectPhase(node);
-        const t2 = node.test || {};
         let phaseDeadline = deadlineMs;
-        if (phase === 'peerreview' && (parseInt(node.scorePubStatus || t2.scorePubStatus, 10) || 0) === 0) {
-          const pe = parseInt(node.evaluateEnd || t2.evaluateEnd, 10);
+        if (phase === 'peerreview' && (parseInt(node.scorePubStatus, 10) || 0) === 0) {
+          const pe = parseInt(node.evaluateEnd, 10);
           if (pe > 0) phaseDeadline = pe;
         }
         const deadline = phaseDeadline != null ? msToLocalIso(phaseDeadline) : null;
 
         // 完成判定：有分数 OR 已提交（非互评中）OR 节点含完成文本
-        const submitted = parseInt(node.usedTryCount || t2.usedTryCount, 10) > 0 && (parseInt(node.type || t2.type, 10) === 3);
-        const inPeerReview = phase === 'peerreview' && (parseInt(node.scorePubStatus || t2.scorePubStatus, 10) || 0) === 0;
+        const submitted = parseInt(node.usedTryCount, 10) > 0 && (parseInt(node.type, 10) === 3);
+        const inPeerReview = phase === 'peerreview' && (parseInt(node.scorePubStatus, 10) || 0) === 0;
         const done = (score != null && totalScore != null && score > 0)
           || (submitted && !inPeerReview)
           || hasCompletedText(node, 0);
