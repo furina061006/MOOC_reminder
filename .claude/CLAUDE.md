@@ -233,33 +233,59 @@ var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
 
 ## 自动检测判定逻辑
 
+### 判断流程
+
+```
+递归遍历所有节点（chapters → lessons/homeworks/quizs/exam → test）
+  ├─ hasSignal?（有 deadline 或 score）
+  │    └─ n
+  │    └─ y → contentType 是 2/3/6？或名字含关键词（仅 contentType 空缺时）
+  │         └─ n → 跳过
+  │         └─ y → 提取为作业项
+  │              └─ done？
+  │                   ├─ userScore > 0 → 完成（① 有成绩）
+  │                   ├─ usedTryCount > 0 && (type:3 || type:6)
+  │                   │    └─ inPeerReview? → y → 等待互评（手动确认）
+  │                   │    └─ no → 完成（② 已提交）
+  │                   └─ 含已完成/已批阅文本 → 完成（③ 文本标记）
+```
+
 ### 完成判定表
 
 | 类型 | 条件 | 判定 |
 |---|---|---|
-| quiz (type:2) | `usedTryCount > 0` | 完成 |
-| exam (type:6) | `usedTryCount > 0` | 完成 |
+| quiz (type:2) | `userScore > 0` | 完成 |
+| exam (type:6) | `userScore > 0` | 完成（标签：手动确认） |
+| exam (type:6) | `usedTryCount > 0` 且有成绩 | 完成 |
 | homework 无互评 | `usedTryCount > 0` | 完成 |
 | homework 互评中 (窗口内) | `scorePubStatus:0` + `now < evaluateEnd` | **未完成** |
 | homework 互评中 (窗口过期) | `scorePubStatus:0` + `now >= evaluateEnd` | 完成 |
 | homework 窗口关闭 | `scorePubStatus:1` | 完成 |
 | homework 成绩已公布 | `scorePubStatus:2` | 完成 |
 
-### 互评阶段 (hwPhase)
+### 互评阶段 (apiDetectPhase)
 
 ```javascript
 function apiDetectPhase(node) {
-  if (node.type !== '3') return null;
-  if (!node.enableEvaluation || node.evaluateStart == null) return null;
-  const pub = parseInt(node.scorePubStatus, 10) || 0;
-  if (pub === 2) return 'results';   // 成绩已公布
+  var nt = node.test || {};
+  var t = String(node.type || nt.type || '');
+  if (t !== '3') return null;                           // 仅作业有互评
+  var e = node.enableEvaluation != null ? node.enableEvaluation : nt.enableEvaluation;
+  var es = node.evaluateStart != null ? node.evaluateStart : nt.evaluateStart;
+  if (!e || es == null) return null;
+  var pub = parseInt(node.scorePubStatus != null ? node.scorePubStatus : nt.scorePubStatus, 10) || 0;
+  if (pub === 2) return 'results';
   if (pub === 1) return 'results';   // 窗口关闭 → 过期当完成
-  const now = Date.now();
-  if (now < evaluateStart) return 'submit';
-  if (now >= evaluateEnd) return 'results';
+  var now = Date.now();
+  var start = parseInt(es, 10);
+  var end = parseInt((node.evaluateScoreReleaseTime || nt.evaluateScoreReleaseTime) || (node.evaluateEnd || nt.evaluateEnd), 10);
+  if (start && now < start) return 'submit';
+  if (end && now >= end) return 'results';
   return 'peerreview';               // 互评进行中
 }
 ```
+
+`node.test` 后备：部分 SPOC 课程的互评字段（`scorePubStatus`/`evaluateStart`/`evaluateEnd`）不在顶层而在 `test` 子对象中。
 
 ### 互评检测的局限性
 
@@ -276,7 +302,34 @@ function apiDetectPhase(node) {
 | 条件 | 标签 |
 |---|---|
 | 互评窗口内 (scorePubStatus:0 + 窗口内) | `手动确认`(琥珀色) + `互评中`(黄色) |
+| 考试 (所有) | `手动确认`(琥珀色) |
 | 其他所有自动判定 | `自动检测`(绿色) |
+
+### contentType 优先级
+
+API 提供 `contentType` 字段作为类型标识，优先级高于名字正则：
+
+| contentType | 含义 |
+|---|---|
+| 2 | quiz（测验） |
+| 3 | homework（作业） |
+| 6 | exam（考试） |
+
+名字正则（`/测验|作业|考试|测试|quiz|exam|homework|test/i`）**仅当 contentType 空缺时**启用，防止"期末考试"因名字含"测试"被误提取。
+
+### node.test 后备规则
+
+所有信号和完成检测字段同时检查顶层和 `node.test` 子对象，`node.xxx || node.test?.xxx`——顶层优先：
+
+| 用途 | 读 node.test？ | 原因 |
+|------|:---:|------|
+| hasSignal（提取门槛） | ✅ | deadline/score 可能在 test |
+| apiDetectPhase（互评） | ✅ | scorePubStatus 等在 test |
+| submitted（已提交） | ✅ | usedTryCount/type 在 test |
+| classifyType（分类） | ✅ | contentType 优先，test.type 后备 |
+| 名字正则提取 | ❌ 仅 contentType 空缺时 | 避免误匹配 |
+
+详细实现见 `.claude/logs/2026-06-28-completion-logic.md`。
 
 ---
 

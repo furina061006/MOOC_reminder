@@ -18,7 +18,7 @@
 | 🔴🟠🔵 **紧急程度** | 红色=已过期 橙 色=48h内截止 蓝色=正常 |
 | 📋 **课程分组** | 按课程分组展示，一目了然 |
 | ✅ **自动检测** | 所有类型（测验/作业/考试）均自动检测完成状态 |
-| 🏷️ **状态标签** | `自动检测` `互评中` `手动确认` |
+| 🏷️ **状态标签** | `自动检测` `互评中` `手动确认` (含考试) |
 | 🏫 **SPOC 支持** | 完整支持 SPOC 课程（大学物理等） |
 | 🔄 **后台 API 抓取** | 打开任意 MOOC 页面即可刷新全部已知课程的作业数据 |
 | 🌙 **深色模式** | 自动适配系统主题 |
@@ -94,7 +94,8 @@ popup 左上角可筛选：
 - ❌ **仅支持 中国大学MOOC** — 不支持学堂在线、超星等其他平台
 - ❌ **不跨设备同步** — 数据存在浏览器本地 `chrome.storage.local`
 - ❌ **API 端点改版可能失效** — 如果 中国大学MOOC 更新 API 端点或参数，抓取可能暂时失效
-- ❌ **互评完成无法自动检测** — 平台 API 不暴露用户是否实际完成互评的字段，互评中的作业标记为「手动确认」    
+- ❌ **互评完成无法自动检测** — 平台 API 不暴露用户是否实际完成互评的字段，互评中的作业标记为「手动确认」
+- ❌ **考试完成无法可靠自动检测** — 考试自动标记为「手动确认」（成绩/提交状态仍正常检测），用户需手动勾选确认    
 ## 隐私说明
 
 - 所有数据仅存储在**浏览器本地**
@@ -121,6 +122,17 @@ popup 左上角可筛选：
 | refactor/design-system-icons | puresky271 | 内联 SVG 图标系统，CSS 设计令牌重构 |
 
 ## 更新日志
+
+### 2026-06-28
+
+- **contentType 优先于名字正则**：提取匹配条件改为以 API `contentType`（2=quiz, 3=homework, 6=exam）为主，名字正则仅当 `contentType` 空缺时启用，防止"期末考试"因名字含"测试"被误提取
+- **node.test 统一后备**：所有信号/完成判定字段同时查顶层和 `node.test` 子对象（部分 SPOC 课程字段在 test 内），顶层优先，原值不受影响
+- **完成判定定型**：`score > 0`（有成绩） || `submitted && !inPeerReview`（已提交且互评未卡住）|| `hasCompletedText`（文本标记）；`submitted` 同时认 type:3 和 type:6
+- **考试标签改为手动确认**：考试在 popup 中显示琥珀色「手动确认」标签，完成逻辑不变
+- **SPOC bridge 支持 termDto**：部分 SPOC 课程（如军事理论）使用 `window.termDto.id` 而非 `moocTermDto.id`
+- **SPOC 跨课程污染修复**：`data-mooc-real-termid` 仅在本课程页面时才用于替换 termId
+- **后台刷新用 activeTermId**：`apiRefreshCourse` 使用 `course.activeTermId || course.termId`
+- **Course_UPDATE 携带 courseName**：SPOC 课程名称持久化，修复「未知课程」问题
 
 ### 2026-06-27
 
@@ -173,7 +185,7 @@ popup 左上角可筛选：
     → 同源 XHR 调 getLastLearnedMocTermDto.rpc
     → 拿到完整课程 DTO（全部章节+作业+考试+分数+截止日期+互评状态）
     → getOpenHomeworkInfo.rpc 获取 submitStatus 等补充字段
-  → SPOC: 读 window.moocTermDto.id 获取真实 termId（URL tid 是假壳）
+  → SPOC: 读 window.moocTermDto.id / window.termDto.id 获取真实 termId（URL tid 是假壳）
   → 数据发送到 SW → reconcile → storage
   → Badge 更新 + 截止提醒检查
 → 点击图标 → Popup 展示
