@@ -1165,11 +1165,25 @@
 
     var csrf = '';
     try {
-      var m = document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);?/i);
-      csrf = m ? m[1] : '';
-    } catch {}
+      // NTESSTUDYSI 可能是 HttpOnly cookie，document.cookie 读不到
+      // 用 chrome.cookies.get() 可读 HttpOnly cookie（需要 cookies 权限 + host 权限）
+      var cookieObj = await chrome.cookies.get({ name: 'NTESSTUDYSI', url: 'https://www.icourse163.org/' });
+      if (cookieObj && cookieObj.value) {
+        csrf = cookieObj.value;
+      } else {
+        // fallback: 尝试 document.cookie
+        var m = document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);?/i);
+        csrf = m ? m[1] : '';
+      }
+    } catch(e) {
+      // fallback
+      try {
+        var m2 = document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);?/i);
+        csrf = m2 ? m2[1] : '';
+      } catch(e2) {}
+    }
     if (!csrf) {
-      console.log('[MOOC Reminder] No NTESSTUDYSI cookie found, cannot do API fetches');
+      console.log('[MOOC Reminder] No NTESSTUDYSI cookie found (tried chrome.cookies + document.cookie), cannot do API fetches');
       return [];
     }
 
@@ -1292,6 +1306,8 @@
         } catch(e6) { text = null; }}
 
         if (!text || text.length < 50) { console.debug('[MOOC Reminder] API empty/failed for', c.courseId, '(type:', c.courseType || 'unknown', ') textLen:', text ? text.length : 0); continue; }
+
+
         results.push({
           course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' },
           rawData: text
