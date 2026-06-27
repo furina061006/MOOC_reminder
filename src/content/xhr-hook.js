@@ -2,11 +2,8 @@
  * XHR/Fetch Hook — MOOC Reminder (document_start)
  *
  * Injects page-context hooks BEFORE the page's JavaScript runs.
- * Intercepts getLastLearnedMocTermDto responses to capture the full
- * course data while it's still fresh (before it gets truncated to
- * lastLearnUnitId-based filtering).
- *
- * Data is saved to window.__moocFullTermData for main.js to read.
+ * Captures the REAL termId from window.moocTermDto and the
+ * full API response, making them available to main.js via DOM bridge.
  */
 
 (function() {
@@ -15,7 +12,22 @@
   var SCRIPT = '(' + function() {
     'use strict';
 
-    // Target endpoints we want to capture
+    // ─── Read real termId from moocTermDto (server-rendered inline script) ───
+    function captureRealTermId() {
+      try {
+        var realId = window.moocTermDto && window.moocTermDto.id;
+        if (realId) {
+          document.documentElement.setAttribute('data-mooc-real-termid', String(realId));
+          console.log('[MOOC] Real termId:', realId);
+        }
+      } catch(e) {}
+    }
+
+    // Try immediately and also after DOMContentLoaded
+    captureRealTermId();
+    document.addEventListener('DOMContentLoaded', captureRealTermId);
+
+    // ─── Target endpoints ───
     var TARGET_PATTERNS = [
       'getLastLearnedMocTermDto.rpc',
       'getMocTermDto.rpc',
@@ -30,15 +42,9 @@
       return false;
     }
 
-    // Storage for captured responses
-    window.__moocFullTermData = window.__moocFullTermData || {};
-    window.__moocHookLog = window.__moocHookLog || [];
-
     // ─── Hook XMLHttpRequest ───
     var origOpen = XMLHttpRequest.prototype.open;
     var origSend = XMLHttpRequest.prototype.send;
-    var origSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
-    var origOverrideMimeType = XMLHttpRequest.prototype.overrideMimeType;
 
     XMLHttpRequest.prototype.open = function(method, url) {
       this.__mooc_url = url;
@@ -54,11 +60,33 @@
           try {
             var resp = self.responseText;
             if (resp && resp.length > 1000) {
-              // 提取 termId 作为 key
-              var termMatch = url.match(/[?&]tid=(\d+)/) || (body && typeof body === 'string' ? body.match(/termId[=:]\s*"?(\d+)/) : null);
-              var tid = termMatch ? termMatch[1] : 'unknown';
-              window.__moocFullTermData[tid] = { url: url, body: body ? String(body).substring(0, 200) : '', response: resp, time: Date.now() };
-              window.__moocHookLog.push({ url: url, len: resp.length, tid: tid, time: Date.now() });
+              // Store full response on DOM for main.js to read
+              var container = document.getElementById('mooc-hook-data');
+              if (!container) {
+                container = document.createElement('div');
+                container.id = 'mooc-hook-data';
+                container.style.display = 'none';
+                document.body.appendChild(container);
+              }
+              // Store as JSON-encoded data-* on container
+              var entry = { url: url, resp: resp, time: Date.now() };
+
+              // Try multiple termId sources: URL param, request body, moocTermDto
+              var realTid = document.documentElement.getAttribute('data-mooc-real-termid');
+              var tidMatch = url.match(/[?&]tid=(\d+)/);
+              if (!tidMatch && body && typeof body === 'string') tidMatch = body.match(/termId[=:]\s*"?(\d+)/);
+              var tid = tidMatch ? tidMatch[1] : (realTid || 'unknown');
+
+              entry.tid = tid;
+
+              // Store in array on container
+              var existing = container.getAttribute('data-items');
+              var items = existing ? JSON.parse(existing) : [];
+              // Cap at 10 items
+              if (items.length < 10) {
+                items.push(entry);
+                container.setAttribute('data-items', JSON.stringify(items));
+              }
             }
           } catch(e) {}
         });
@@ -75,10 +103,23 @@
           var clone = response.clone();
           clone.text().then(function(text) {
             if (text && text.length > 1000) {
-              var termMatch = url.match(/[?&]tid=(\d+)/);
-              var tid = termMatch ? termMatch[1] : 'unknown';
-              window.__moocFullTermData[tid] = { url: url, body: init && init.body ? String(init.body).substring(0, 200) : '', response: text, time: Date.now() };
-              window.__moocHookLog.push({ url: url, len: text.length, tid: tid, time: Date.now() });
+              var container = document.getElementById('mooc-hook-data');
+              if (!container) {
+                container = document.createElement('div');
+                container.id = 'mooc-hook-data';
+                container.style.display = 'none';
+                document.body.appendChild(container);
+              }
+              var realTid = document.documentElement.getAttribute('data-mooc-real-termid');
+              var tidMatch = url.match(/[?&]tid=(\d+)/);
+              var tid = tidMatch ? tidMatch[1] : (realTid || 'unknown');
+              var entry = { url: url, resp: text, time: Date.now(), tid: tid };
+              var existing = container.getAttribute('data-items');
+              var items = existing ? JSON.parse(existing) : [];
+              if (items.length < 10) {
+                items.push(entry);
+                container.setAttribute('data-items', JSON.stringify(items));
+              }
             }
           }).catch(function(){});
           return response;

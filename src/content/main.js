@@ -125,35 +125,38 @@
   }
 
   async function checkPageHookData() {
-    // 等待页面 XHR 完成（最晚 10 秒）
+    // 从 DOM bridge 读取 xhr-hook 拦截到的页面 API 响应
+    // content script 不能直接读 page window 变量，通过 DOM 属性传值
     for (var retry = 0; retry < 20; retry++) {
       await sleep(500);
       try {
-        var hookData = window.__moocFullTermData;
-        var hookLog = window.__moocHookLog;
-        if (hookLog && hookLog.length > 0) {
-          console.log('[MOOC Reminder] Page hook captured', hookLog.length, 'API response(s):', hookLog.map(function(l) { return l.tid + ' len=' + l.len; }));
-        }
-        if (hookData && Object.keys(hookData).length > 0) {
-          var keys = Object.keys(hookData);
-          for (var i = 0; i < keys.length; i++) {
-            var entry = hookData[keys[i]];
-            if (entry && entry.response && entry.response.length > 1000) {
-              console.log('[MOOC Reminder] Processing page-hook data for tid:', keys[i], 'len:', entry.response.length);
-              try {
-                var pageMeta = parseCourseUrl(window.location.href);
-                var swResp = await chrome.runtime.sendMessage({
-                  type: 'COURSE_API_DATA',
-                  course: { courseId: pageMeta.courseId, termId: keys[i], courseName: '', schoolName: '' },
-                  rawData: entry.response
-                });
-                console.log('[MOOC Reminder] Page-hook COURSE_API_DATA response:', JSON.stringify(swResp));
-                // 标记已处理
-                entry._processed = true;
-              } catch(e) { console.debug('[MOOC Reminder] Page-hook send failed:', e.message); }
+        var container = document.getElementById('mooc-hook-data');
+        if (container) {
+          var raw = container.getAttribute('data-items');
+          if (raw) {
+            var items = JSON.parse(raw);
+            console.log('[MOOC Reminder] Page hook captured', items.length, 'API response(s)');
+            var pageMeta = parseCourseUrl(window.location.href);
+            var processed = false;
+            for (var i = 0; i < items.length; i++) {
+              var entry = items[i];
+              if (entry && entry.resp && entry.resp.length > 5000) {
+                console.log('[MOOC Reminder] Processing page-hook data, len:', entry.resp.length);
+                try {
+                  var swResp = await chrome.runtime.sendMessage({
+                    type: 'COURSE_API_DATA',
+                    course: { courseId: pageMeta.courseId, termId: entry.tid || pageMeta.termId, courseName: '', schoolName: '' },
+                    rawData: entry.resp
+                  });
+                  console.log('[MOOC Reminder] Page-hook COURSE_API_DATA response:', JSON.stringify(swResp));
+                  processed = true;
+                } catch(e) { console.debug('[MOOC Reminder] Page-hook send failed:', e.message); }
+              }
             }
+            // 完成后删除 DOM bridge 避免重复处理
+            container.remove();
+            if (processed) break;
           }
-          break; // 处理完就退出
         }
       } catch(e) { console.debug('[MOOC Reminder] checkPageHookData error:', e.message); }
     }
@@ -1163,6 +1166,19 @@
       var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
       if (courseIsSpoc) {
         console.log('[MOOC Reminder] SPOC API fetch for:', c.courseId, 'termId:', c.termId, 'courseName:', c.courseName);
+      }
+
+      // ═══ SPOC: 用真实 termId 替换 URL 里的假 termId ═══
+      // 页面 server-rendered window.moocTermDto.id 才是真正的 termId
+      // xhr-hook.js 把它存在 <html data-mooc-real-termid="..."> 上
+      if (courseIsSpoc) {
+        try {
+          var realTermId = document.documentElement.getAttribute('data-mooc-real-termid');
+          if (realTermId && realTermId !== c.termId) {
+            console.log('[MOOC Reminder] SPOC: using real termId', realTermId, 'instead of URL termId', c.termId);
+            c.termId = realTermId;
+          }
+        } catch(e) {}
       }
 
       try {
