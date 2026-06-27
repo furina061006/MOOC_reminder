@@ -236,7 +236,7 @@ export function extractHomeworkFromTermDto(input, course) {
     var ct = String(node.contentType || '');
     var ctIsAssessed = ct === '2' || ct === '3' || ct === '6';
     if (typeof name === 'string' && name.trim() && hasSignal &&
-        (ctIsAssessed || /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name))) {
+        (ctIsAssessed || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)))) {
 
       const homeworkId = String(
         node.id || node.jobId || node.quizId || node.testId || node.homeworkId || ''
@@ -257,12 +257,9 @@ export function extractHomeworkFromTermDto(input, course) {
         const deadline = phaseDeadline != null ? msToLocalIso(phaseDeadline) : null;
 
         // 完成判定：有分数 OR 已提交（非互评中）OR 节点含完成文本
-        // done 中的 score/totalScore 只读顶层（不从 node.test 读历史成绩）
         const submitted = parseInt(node.usedTryCount || nt2.usedTryCount, 10) > 0 && (parseInt(node.type || nt2.type, 10) === 3);
         const inPeerReview = phase === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus, 10) || 0) === 0;
-        const doneScore = firstNumber(node, SCORE_FIELDS);
-        const doneTotal = firstNumber(node, TOTAL_FIELDS);
-        const done = (doneScore != null && doneTotal != null && doneScore > 0)
+        const done = (score != null && totalScore != null && score > 0)
           || (submitted && !inPeerReview)
           || hasCompletedText(node, 0);
 

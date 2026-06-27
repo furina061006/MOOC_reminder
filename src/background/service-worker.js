@@ -1226,7 +1226,7 @@ function apiExtractHomework(input, course) {
     var ct = String(node.contentType || '');
     var ctIsAssessed = ct === '2' || ct === '3' || ct === '6';
     if (typeof name === 'string' && name.trim() && hasSignal &&
-        (ctIsAssessed || /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name))) {
+        (ctIsAssessed || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)))) {
 
       const homeworkId = String(node.id || node.jobId || node.quizId || node.testId || node.homeworkId || '') || ('h' + (out.length + 1));
       const uid = `${course.courseId}_tid${course.termId}_ch${chapterId || ''}_le${lessonId || ''}_hw${homeworkId}`;
@@ -1241,14 +1241,10 @@ function apiExtractHomework(input, course) {
         }
         const deadline = phaseDeadline != null ? apiMsToLocalIso(phaseDeadline) : null;
         // 完成判定：有分数 OR 已提交（互评中除外）OR 节点含完成文本
-        // 注意：done 里的 score/totalScore 只读顶层（不从 node.test 读），
-        // node.test 里的 userScore 是历史成绩，用于 hasSignal 判断但不用于完成判定
         var submitted = parseInt(node.usedTryCount || nt2.usedTryCount,10) > 0 && (parseInt(node.type || nt2.type,10) === 3);
         // 互评中不算完成（等待评分），互评期结束后回到已提交则算完成
         var inPeerReview = apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus,10) || 0) === 0;
-        var doneScore = apiFirstNumber(node, API_SCORE_FIELDS);
-        var doneTotal = apiFirstNumber(node, API_TOTAL_FIELDS);
-        var done = (doneScore != null && doneTotal != null && doneScore > 0)
+        var done = (score != null && totalScore != null && score > 0)
                 || (submitted && !inPeerReview)
                 || apiHasCompletedText(node, 0);
         out.push({
