@@ -74,13 +74,18 @@
         // 持久化到 storage，后续后台刷新直接可用
         var spocMeta = parseCourseUrl(window.location.href);
         if (spocMeta && spocMeta.isSpoc && spocMeta.courseId) {
+          // 从页面读取课程名称
+          var spocPageName = '';
+          try { var h2 = document.querySelector('h1, .course-name, [class*="courseTitle"], .m-coursename'); if (h2) spocPageName = h2.textContent.trim(); } catch {}
+          if (!spocPageName) { try { spocPageName = document.title.replace(/[_-]\s*中国大学MOOC.*$/i, '').trim(); } catch {} }
           chrome.runtime.sendMessage({
             type: 'COURSE_UPDATE',
             courseId: spocMeta.courseId,
             activeTermId: realTid,
+            courseName: spocPageName,
             courseType: 'spoc'
           }).catch(function(){});
-          console.log('[MOOC Reminder] SPOC real termId persisted for', spocMeta.courseId);
+          console.log('[MOOC Reminder] SPOC real termId persisted for', spocMeta.courseId, 'name:', spocPageName);
         }
       }
     } catch(e) { console.debug('[MOOC Reminder] tid injection error:', e.message); }
@@ -115,15 +120,25 @@
                 var urlTid = pageMeta.termId;
                 var entryTid = entry.tid;
                 var realTid = document.documentElement.getAttribute('data-mooc-real-termid');
+
+                // SPOC 专属：xhr-hook 从请求体捕获的是假 termId（与 urlTid 相同），
+                // 但真实 termId 已知。跳过钩子数据，让 batchApiFetch 用正确 termId 处理。
+                if (realTid && realTid !== urlTid && entryTid === urlTid) {
+                  console.log('[MOOC Reminder] SPOC: 跳过钩子数据假 tid=' + entryTid + '，等待 batchApiFetch 用真实 tid=' + realTid + ' 处理');
+                  continue;
+                }
+
                 if (entryTid !== urlTid && entryTid !== realTid && entryTid !== 'unknown') {
                   console.log('[MOOC Reminder] Skipping hook entry tid=' + entryTid + ' (page tid=' + urlTid + '), will be handled by batchApiFetch');
                   continue;
                 }
                 console.log('[MOOC Reminder] Processing page-hook data, len:', entry.resp.length, 'tid:', entryTid);
                 try {
+                  // SPOC: 优先用 realTid，避免假 termId 构造出错误的 UID
+                  var sendTid = (realTid && realTid !== urlTid) ? realTid : (entryTid || pageMeta.termId);
                   var swResp = await chrome.runtime.sendMessage({
                     type: 'COURSE_API_DATA',
-                    course: { courseId: pageMeta.courseId, termId: entryTid || pageMeta.termId, courseName: '', schoolName: '' },
+                    course: { courseId: pageMeta.courseId, termId: sendTid, courseName: '', schoolName: '' },
                     rawData: entry.resp
                   });
                   console.log('[MOOC Reminder] Page-hook COURSE_API_DATA response:', JSON.stringify(swResp));
@@ -208,8 +223,10 @@
         try {
           var realTermId = document.documentElement.getAttribute('data-mooc-real-termid');
           if (realTermId && realTermId !== c.termId) {
-            console.log('[MOOC Reminder] SPOC: using real termId', realTermId, 'instead of URL termId', c.termId);
+            console.log('[MOOC Reminder] SPOC: using real termId', realTermId, 'instead of URL termId', c.termId, 'for', c.courseId);
             c.termId = realTermId;
+          } else if (!realTermId) {
+            console.debug('[MOOC Reminder] SPOC: no realTermId from DOM for', c.courseId, ', relying on SW-provided termId', c.termId);
           }
         } catch(e) {}
       }

@@ -309,9 +309,10 @@ const MESSAGE_HANDLERS = {
     await upsertCourse({
       courseId: msg.courseId,
       activeTermId: msg.activeTermId,
+      courseName: msg.courseName || '',
       courseType: msg.courseType || 'spoc'
     });
-    console.log('[MOOC Reminder] COURSE_UPDATE:', msg.courseId, 'activeTermId=', msg.activeTermId);
+    console.log('[MOOC Reminder] COURSE_UPDATE:', msg.courseId, 'activeTermId=', msg.activeTermId, 'name=', msg.courseName);
     return { success: true };
   },
 
@@ -657,9 +658,17 @@ async function reconcileHomeworkData(course, newItems) {
     }
   }
 
-  // Update course metadata
+  // Update course metadata — 不覆写已有的课程名称（checkPageHookData 发来的可能为空）
   if (course && course.courseId) {
-    await upsertCourse(course);
+    var courseMeta = {};
+    for (var key in course) {
+      if (course.hasOwnProperty(key) && key !== 'courseName' && key !== 'schoolName') {
+        courseMeta[key] = course[key];
+      }
+    }
+    if (course.courseName) courseMeta.courseName = course.courseName;
+    if (course.schoolName) courseMeta.schoolName = course.schoolName;
+    await upsertCourse(courseMeta);
   }
 
   // Save
@@ -927,7 +936,7 @@ async function performPeriodicScrape() {
     // 把已知课程发一份给 content script，让它用页面上下文拉 API
     const courses = await getCourses();
     console.log('[MOOC Reminder] Periodic: Sending BATCH_API_FETCH, courses:', courses.length);
-    var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
+    var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '', courseType: c.courseType || '' }; });
     for (const tab of tabs) {
       try {
         chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
@@ -975,7 +984,7 @@ async function triggerManualScrape() {
     // 把已知课程发给 content script 做页面上下文 API 抓取
     const courses = await getCourses();
     console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', courses.length, 'courses to', tabs.length, 'tabs');
-    var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
+    var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '', courseType: c.courseType || '' }; });
 
     var lastSyncBefore = await getLastSync();
 
@@ -1434,19 +1443,21 @@ async function apiFetchTermDtoSpoc(csrfKey, termId) {
 }
 
 async function apiRefreshCourse(course, csrfKey) {
-  if (!course || !course.termId) return { changed: 0, itemCount: 0, endpoint: null };
+  // SPOC: 用 activeTermId（真实 termId）替换 URL 假 termId
+  const apiTermId = course.activeTermId || course.termId;
+  if (!course || !apiTermId) return { changed: 0, itemCount: 0, endpoint: null };
   const courseIsSpoc = course.courseType === 'spoc';
 
   // 先尝试 Moc 端点
   let fetched;
   try {
-    fetched = await apiFetchTermDto(csrfKey, course.termId);
+    fetched = await apiFetchTermDto(csrfKey, apiTermId);
   } catch (e) {
     // Moc 端点全部失败，SPOC 课程尝试 Spoc 端点
     if (courseIsSpoc) {
       console.log('[MOOC Reminder] SPOC: Moc endpoints failed for', course.courseId, ', trying SPOC endpoints...');
       try {
-        fetched = await apiFetchTermDtoSpoc(csrfKey, course.termId);
+        fetched = await apiFetchTermDtoSpoc(csrfKey, apiTermId);
         console.log('[MOOC Reminder] SPOC: SPOC endpoint succeeded for', course.courseId);
       } catch (e2) {
         console.warn('[MOOC Reminder] SPOC: All endpoints failed for', course.courseId, e2.message);
@@ -1462,7 +1473,7 @@ async function apiRefreshCourse(course, csrfKey) {
     // Moc 端点成功但提取到 0 条，尝试 Spoc 端点
     console.log('[MOOC Reminder] SPOC: Moc endpoint returned 0 items for', course.courseId, ', trying SPOC endpoint...');
     try {
-      const spocFetched = await apiFetchTermDtoSpoc(csrfKey, course.termId);
+      const spocFetched = await apiFetchTermDtoSpoc(csrfKey, apiTermId);
       const spocItems = apiExtractHomework(spocFetched.text, course);
       if (spocItems.length > 0) {
         console.log('[MOOC Reminder] SPOC: SPOC endpoint returned', spocItems.length, 'items for', course.courseId);

@@ -194,10 +194,15 @@
             } catch(e) { text = null; }}
 
             if (text && text.length > 50) {
+              // SPOC: 尝试从 DOM 读取真实 termId，避免用假 termId 构造错误 UID
+              var effectiveTermId = c.termId;
+              try { var realTid = document.documentElement.getAttribute('data-mooc-real-termid'); if (realTid) effectiveTermId = realTid; } catch(e) {}
               try {
-                var swResp2 = await chrome.runtime.sendMessage({ type: 'COURSE_API_DATA', course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' }, rawData: text });
-                console.log('[MOOC Reminder] course-discovery COURSE_API_DATA response for', c.courseId, ':', JSON.stringify(swResp2));
+                var swResp2 = await chrome.runtime.sendMessage({ type: 'COURSE_API_DATA', course: { courseId: c.courseId, termId: effectiveTermId, courseName: c.courseName || '', schoolName: c.schoolName || '' }, rawData: text });
+                console.log('[MOOC Reminder] course-discovery COURSE_API_DATA response for', c.courseId, ': termId=', effectiveTermId, JSON.stringify(swResp2));
               } catch(e2) {}
+            } else if (text && text.length <= 50 && c.courseType === 'spoc') {
+              console.log('[MOOC Reminder] course-discovery: SPOC', c.courseId, 'returned empty data (dummy termId?), will be handled by background API');
             } else {
               console.log('[MOOC Reminder] course-discovery: API empty/failed for', c.courseId, 'type:', c.courseType || '?', 'textLen:', text ? text.length : 0);
             }
