@@ -176,7 +176,6 @@ async function init() {
         }
         lastRefreshSuccess = now;
       }
-      }
     } catch(e) {
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
     }
