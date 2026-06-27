@@ -301,6 +301,20 @@ export function extractHomeworkFromTermDto(input, course) {
 
   visit(data, '', '');
 
+  if (out.length === 0) {
+    const topKeys = data ? Object.keys(data) : [];
+    console.log('[MOOC Reminder] apiExtractHomework: top-level keys:', topKeys);
+    const resultObj = data && data.result;
+    if (resultObj && typeof resultObj === 'object') {
+      console.log('[MOOC Reminder] apiExtractHomework: result keys:', Object.keys(resultObj));
+      for (const rk in resultObj) {
+        if (resultObj.hasOwnProperty(rk) && typeof resultObj[rk] === 'object' && resultObj[rk] !== null) {
+          console.log('[MOOC Reminder] result.' + rk + ' keys:', Object.keys(resultObj[rk]).slice(0, 15));
+        }
+      }
+    }
+  }
+
   // 去重：名字几乎相同且共前缀的噪音项（如 "期末测试题" vs "期末测试"）
   for (let i = out.length - 1; i >= 0; i--) {
     const nameA = out[i].title || '';

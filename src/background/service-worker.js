@@ -1277,12 +1277,20 @@ function apiExtractHomework(input, course) {
     var resultObj = data && data.result;
     if (resultObj && typeof resultObj === 'object') {
       console.log('[MOOC Reminder] apiExtractHomework: result keys:', Object.keys(resultObj));
-      var mtd = resultObj.mocTermDto || resultObj.spocTermDto || resultObj.termDto;
-      if (mtd && typeof mtd === 'object') {
-        console.log('[MOOC Reminder] apiExtractHomework: termDto keys:', Object.keys(mtd).slice(0, 20));
-        // 查找可能的章节/课程结构
-        var structKeys = Object.keys(mtd).filter(function(k){ return /chapter|lesson|unit|content|outline|course/i.test(k); });
-        console.log('[MOOC Reminder] apiExtractHomework: structure-related keys:', structKeys);
+      // 遍历 result 所有直接子级，找出哪个有 chapters/lessons/units/homework 相关结构
+      for (var rk in resultObj) {
+        if (resultObj.hasOwnProperty(rk) && typeof resultObj[rk] === 'object' && resultObj[rk] !== null) {
+          var subKeys = Object.keys(resultObj[rk]).slice(0, 15);
+          console.log('[MOOC Reminder] result.' + rk + ' keys:', subKeys);
+        }
+      }
+    } else if (data && typeof data === 'object') {
+      // result 不在顶层，遍历 data 所有直接子级
+      for (var dk in data) {
+        if (data.hasOwnProperty(dk) && typeof data[dk] === 'object' && data[dk] !== null) {
+          var subKeys = Object.keys(data[dk]).slice(0, 15);
+          console.log('[MOOC Reminder] data.' + dk + ' keys:', subKeys);
+        }
       }
     }
   }
