@@ -257,7 +257,8 @@ export function extractHomeworkFromTermDto(input, course) {
         const deadline = phaseDeadline != null ? msToLocalIso(phaseDeadline) : null;
 
         // 完成判定：有分数 OR 已提交（非互评中）OR 节点含完成文本
-        const submitted = parseInt(node.usedTryCount || nt2.usedTryCount, 10) > 0 && (parseInt(node.type || nt2.type, 10) === 3);
+        const nType = parseInt(node.type || nt2.type || node.contentType, 10);
+        const submitted = parseInt(node.usedTryCount || nt2.usedTryCount, 10) > 0 && (nType === 3 || nType === 6);
         const inPeerReview = phase === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus, 10) || 0) === 0;
         const done = (score != null && totalScore != null && score > 0)
           || (submitted && !inPeerReview)
