@@ -15,7 +15,7 @@
     // ─── Read real termId from moocTermDto (server-rendered inline script) ───
     function captureRealTermId() {
       try {
-        var realId = window.moocTermDto && window.moocTermDto.id;
+        var realId = (window.moocTermDto && window.moocTermDto.id) || (window.termDto && window.termDto.id);
         if (realId) {
           document.documentElement.setAttribute('data-mooc-real-termid', String(realId));
           console.log('[MOOC] Real termId:', realId);

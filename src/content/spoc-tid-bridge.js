@@ -10,15 +10,20 @@
       tid = String(window.moocTermDto.id);
     }
 
-    // 第二优先级：解析内联 <script> 中的 moocTermDto 对象
-    // 部分 SPOC 课程可能不直接暴露 window.moocTermDto
+    // 第二优先级：termDto（部分 SPOC 课程用此变量而非 moocTermDto）
+    if (!tid && window.termDto && window.termDto.id) {
+      tid = String(window.termDto.id);
+    }
+
+    // 第三优先级：解析内联 <script> 中的 moocTermDto / termDto 对象
+    // 部分 SPOC 课程可能不直接暴露 window 变量
     if (!tid) {
       var scripts = document.querySelectorAll('script:not([src])');
       for (var i = 0; i < scripts.length; i++) {
         var text = scripts[i].textContent || '';
         // 匹配: moocTermDto = { ... id: 1234567890 ... }
-        var m = text.match(/moocTermDto\s*(?:=\s*new\s+\w+\s*[({]\s*|=\s*[{]\s*id\s*:\s*)(\d+)/);
-        if (!m) m = text.match(/"moocTermDto"\s*:\s*\{[^}]*?"id"\s*:\s*(\d+)/);
+        var m = text.match(/(?:moocTerm|term)Dto\s*(?:=\s*new\s+\w+\s*[({]\s*|=\s*[{]\s*id\s*:\s*)(\d+)/);
+        if (!m) m = text.match(/"(?:moocTerm|term)Dto"\s*:\s*\{[^}]*?"id"\s*:\s*(\d+)/);
         if (m) { tid = m[1]; break; }
       }
     }
