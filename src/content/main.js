@@ -157,11 +157,21 @@
             for (var i = 0; i < items.length; i++) {
               var entry = items[i];
               if (entry && entry.resp && entry.resp.length > 5000) {
-                console.log('[MOOC Reminder] Processing page-hook data, len:', entry.resp.length);
+                // 仅处理 tid 与当前页面 URL termId 匹配的数据
+                // 避免把其他课程（如 SPOC）的响应错误归属到当前页面 courseId
+                var urlTid = pageMeta.termId;
+                var entryTid = entry.tid;
+                // 也检查 real termId（SPOC: window.moocTermDto.id 可能和 URL tid 不同）
+                var realTid = document.documentElement.getAttribute('data-mooc-real-termid');
+                if (entryTid !== urlTid && entryTid !== realTid && entryTid !== 'unknown') {
+                  console.log('[MOOC Reminder] Skipping hook entry tid=' + entryTid + ' (page tid=' + urlTid + '), will be handled by batchApiFetch');
+                  continue;
+                }
+                console.log('[MOOC Reminder] Processing page-hook data, len:', entry.resp.length, 'tid:', entryTid);
                 try {
                   var swResp = await chrome.runtime.sendMessage({
                     type: 'COURSE_API_DATA',
-                    course: { courseId: pageMeta.courseId, termId: entry.tid || pageMeta.termId, courseName: '', schoolName: '' },
+                    course: { courseId: pageMeta.courseId, termId: entryTid || pageMeta.termId, courseName: '', schoolName: '' },
                     rawData: entry.resp
                   });
                   console.log('[MOOC Reminder] Page-hook COURSE_API_DATA response:', JSON.stringify(swResp));
