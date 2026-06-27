@@ -197,6 +197,17 @@ var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
 
 错误写法会导致普通课程的 API 请求用 SPOC 真实 termId，拿到 SPOC 数据但归属到普通课程名下，造成作业重复。
 
+### SPOC 变量名差异
+
+不同 SPOC 课程将真实 termId 暴露在不同 window 变量上：
+
+| 变量名 | 示例课程 |
+|---|---|
+| `window.moocTermDto.id` | 大学物理 NEU-1474956162 |
+| `window.termDto.id` | 军事理论 NEU-1002713003 |
+
+`spoc-tid-bridge.js` 和 `xhr-hook.js` 的 `captureRealTermId()` 均按优先级检查两者。
+
 ### 涉及文件
 
 - `src/content/spoc-tid-bridge.js` — WAR 脚本，页面上下文读 window.moocTermDto.id
