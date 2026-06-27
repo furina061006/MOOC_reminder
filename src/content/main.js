@@ -309,7 +309,7 @@
 
         // 诊断：itemCount=0 时先看数据结构（首次或 SPOC 课程）
         if (c.courseType === 'spoc') {
-          try { var _d = JSON.parse(text); var r = _d && _d.result; var m = r && r.mocTermDto; var ch = m && m.chapters; console.log('[MOOC Reminder] SPOC struct for', c.courseId, 'topKeys:', Object.keys(_d), 'resultKeys:', r ? Object.keys(r) : '?', 'mocKeys:', m ? Object.keys(m).slice(0,20) : '?', 'chapters:', ch ? ch.length : 0, 'len:', text.length); if (ch && ch[0]) { var ch0 = ch[0]; console.log('[MOOC Reminder] ch0 keys:', Object.keys(ch0)); if (ch0.homeworks) console.log('[MOOC Reminder] ch0.homeworks count:', ch0.homeworks.length, 'sample:', JSON.stringify(ch0.homeworks[0]).slice(0,300)); if (ch0.quizs) console.log('[MOOC Reminder] ch0.quizs count:', ch0.quizs.length); if (ch0.lessons) console.log('[MOOC Reminder] ch0.lessons count:', ch0.lessons.length, 'lesson0 keys:', Object.keys(ch0.lessons[0])); } } catch(e) {}
+          try { var _d = JSON.parse(text); var r = _d && _d.result; var m = r && r.mocTermDto; var chs = m && m.chapters; console.log('[MOOC Reminder] SPOC struct for', c.courseId, 'chapters:', chs ? chs.length : 0, 'len:', text.length); if (chs) { var hwAll = 0, qAll = 0, exAll = 0, lesAll = 0; for (var ci = 0; ci < chs.length; ci++) { var ch = chs[ci]; hwAll += (ch.homeworks && ch.homeworks.length) || 0; qAll += (ch.quizs && ch.quizs.length) || 0; exAll += (ch.exam ? 1 : 0); lesAll += (ch.lessons && ch.lessons.length) || 0; } console.log('[MOOC Reminder] SPOC totals:', 'homeworks=' + hwAll, 'quizs=' + qAll, 'exams=' + exAll, 'lessons=' + lesAll); } } catch(e) {}
         }
 
         results.push({
