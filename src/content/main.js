@@ -309,7 +309,7 @@
 
         // 诊断：itemCount=0 时先看数据结构（首次或 SPOC 课程）
         if (c.courseType === 'spoc') {
-          try { var _d = JSON.parse(text); console.log('[MOOC Reminder] SPOC data struct for', c.courseId, 'topKeys:', Object.keys(_d), 'len:', text.length); } catch(e) {}
+          try { var _d = JSON.parse(text); console.log('[MOOC Reminder] SPOC data struct for', c.courseId, 'topKeys:', Object.keys(_d), 'len:', text.length); if (_d && _d.result && typeof _d.result === 'object') console.log('[MOOC Reminder] SPOC result keys:', Object.keys(_d.result)); } catch(e) {}
         }
 
         results.push({
