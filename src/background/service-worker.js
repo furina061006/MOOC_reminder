@@ -302,9 +302,20 @@ const MESSAGE_HANDLERS = {
     return { success: false, error: 'Item not found' };
   },
 
+  // Content script (main.js) persists SPOC real termId so background refreshes
+  // work without re-opening the SPOC course page.
+  async COURSE_UPDATE(msg) {
+    if (!msg.courseId || !msg.activeTermId) return { success: false, error: 'Invalid payload' };
+    await upsertCourse({
+      courseId: msg.courseId,
+      activeTermId: msg.activeTermId,
+      courseType: msg.courseType || 'spoc'
+    });
+    console.log('[MOOC Reminder] COURSE_UPDATE:', msg.courseId, 'activeTermId=', msg.activeTermId);
+    return { success: true };
+  },
+
   // Content script (course-discovery) reports harvested course links.
-  // This is how the extension learns about EVERY enrolled course — not just
-  // pages the user manually opened — enabling background API homework refresh.
   async COURSE_LINKS(msg) {
     if (!Array.isArray(msg.courses)) return { success: false, error: 'Invalid payload' };
     const existing = await getCourses();

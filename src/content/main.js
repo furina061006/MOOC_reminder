@@ -69,7 +69,20 @@
         s.onerror = function() { s.remove(); resolve(null); };
         (document.head || document.documentElement).appendChild(s);
       });
-      if (realTid) console.log('[MOOC Reminder] SPOC real termId:', realTid);
+      if (realTid) {
+        console.log('[MOOC Reminder] SPOC real termId:', realTid);
+        // 持久化到 storage，后续后台刷新直接可用
+        var spocMeta = parseCourseUrl(window.location.href);
+        if (spocMeta && spocMeta.isSpoc && spocMeta.courseId) {
+          chrome.runtime.sendMessage({
+            type: 'COURSE_UPDATE',
+            courseId: spocMeta.courseId,
+            activeTermId: realTid,
+            courseType: 'spoc'
+          }).catch(function(){});
+          console.log('[MOOC Reminder] SPOC real termId persisted for', spocMeta.courseId);
+        }
+      }
     } catch(e) { console.debug('[MOOC Reminder] tid injection error:', e.message); }
 
     // ═══ 检查 xhr-hook.js 拦截到的页面 API 响应 ═══
