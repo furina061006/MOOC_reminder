@@ -250,7 +250,6 @@
             if (text.length < 2000) text = null;
           } catch(eRetry) { text = null; }
           if (!text && retry === 0) await sleep(500);
-        console.log('[MOOC Reminder] EP0(getLastLearned) for', c.courseId, 'termId=', c.termId, 'len=', text ? text.length : 0, text && text.length > 500 ? '✅' : '❌');
         }
 
         // 1) getMocTermDto.rpc + gatewayType=3（MOOC fallback）
@@ -261,7 +260,6 @@
             'termId=' + tid2 + '&gatewayType=3');
           if (text.length < 100 || /"code":-/.test(text)) text = null;
         } catch(e1) { text = null; }}
-        console.log('[MOOC Reminder] EP1(getMocTerm+gw3) for', c.courseId, 'len=', text ? text.length : 0, text && text.length > 500 ? '✅' : '❌');
 
         // 2) getMocTermDto.rpc 不带 gatewayType
         if (!text) { try {
@@ -271,7 +269,6 @@
             'termId=' + tid2);
           if (text.length < 100 || /"code":-/.test(text)) text = null;
         } catch(e2) { text = null; }}
-        console.log('[MOOC Reminder] EP2(getMocTerm) for', c.courseId, 'len=', text ? text.length : 0, text && text.length > 500 ? '✅' : '❌');
 
         // 3) DWR endpoint
         if (!text) { try {
@@ -281,7 +278,6 @@
             ['callCount=1', 'scriptSessionId=', 'httpSessionId=', 'c0-scriptName=CourseBean', 'c0-methodName=getMocTermDto', 'c0-id=0', 'c0-param0=number:' + tid2, 'c0-param1=boolean:true', 'batchId=0'].join('\n'));
           if (text.length < 100 || /exception|forbidden|非法跨域/i.test(text)) text = null;
         } catch(e3) { text = null; }}
-        console.log('[MOOC Reminder] EP3(DWR) for', c.courseId, 'len=', text ? text.length : 0, text && text.length > 500 ? '✅' : '❌');
 
         // 4) getMocTermDto.rpc + courseId（SPOC fallback）
         if (!text && courseIsSpoc) { try {
@@ -291,7 +287,6 @@
             'termId=' + tid2 + '&courseId=' + encodeURIComponent(c.courseId || ''));
           if (text.length < 100 || /"code":-/.test(text)) text = null;
         } catch(e4) { text = null; }}
-        console.log('[MOOC Reminder] EP4(+courseId) for', c.courseId, 'len=', text ? text.length : 0, text && text.length > 500 ? '✅' : '❌');
 
         // 5) getMocTermDto.rpc + JSON body
         if (!text) { try {
@@ -301,7 +296,6 @@
             JSON.stringify({ termId: parseInt(c.termId, 10) }));
           if (text.length < 100 || /"code":-/.test(text)) text = null;
         } catch(e5) { text = null; }}
-        console.log('[MOOC Reminder] EP5(JSON) for', c.courseId, 'len=', text ? text.length : 0, text && text.length > 500 ? '✅' : '❌');
 
         // 6) 兜底: getLastLearnedMocTermDto.rpc (JSON)
         if (!text) { try {
@@ -310,9 +304,13 @@
             'application/json;charset=UTF-8',
             JSON.stringify({ termId: parseInt(c.termId, 10) }));
         } catch(e6) { text = null; }}
-        console.log('[MOOC Reminder] EP6(final) for', c.courseId, 'len=', text ? text.length : 0, text && text.length > 500 ? '✅' : '❌');
 
         if (!text || text.length < 50) { console.debug('[MOOC Reminder] API empty/failed for', c.courseId, '(type:', c.courseType || 'unknown', ') textLen:', text ? text.length : 0); continue; }
+
+        // 诊断：itemCount=0 时先看数据结构（首次或 SPOC 课程）
+        if (c.courseType === 'spoc') {
+          try { var _d = JSON.parse(text); console.log('[MOOC Reminder] SPOC data struct for', c.courseId, 'topKeys:', Object.keys(_d), 'len:', text.length); } catch(e) {}
+        }
 
         results.push({
           course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' },
