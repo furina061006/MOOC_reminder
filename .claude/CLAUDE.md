@@ -208,6 +208,21 @@ var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
 
 `spoc-tid-bridge.js` 和 `xhr-hook.js` 的 `captureRealTermId()` 均按优先级检查两者。
 
+### SPOC 排查思路（新课程抓不到时）
+
+当某个 SPOC 课程在 bridge 中没有输出 `real termId` 时：
+
+1. **在 SPOC 学习页面 Console 检查**：
+   ```js
+   window.moocTermDto           // 是否存在？
+   window.termDto               // 是否存在？
+   Object.keys(window).filter(k => /mooc|term|TermDto/i.test(k))  // 找其他候选
+   ```
+
+2. **找含 termId 的页面变量**：遍历上一步输出的列表，看哪个对象有 `.id` 属性且值是数字
+3. **确认真实 termId**：打开 Network 标签过滤 `rpc`，刷新页面看页面自身 API 请求中的 `termId` 参数值
+4. **更新 bridge**：在 `spoc-tid-bridge.js` 和 `xhr-hook.js` 中加入新变量名
+
 ### 涉及文件
 
 - `src/content/spoc-tid-bridge.js` — WAR 脚本，页面上下文读 window.moocTermDto.id
