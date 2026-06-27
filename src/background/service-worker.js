@@ -1237,7 +1237,7 @@ function apiDetectPhase(node) {
   if (!node.enableEvaluation || node.evaluateStart == null) return null;
   var pub = parseInt(node.scorePubStatus,10) || 0;
   if (pub === 2) return 'results';
-  if (pub === 1) return 'peerreview';
+  if (pub === 1) return 'results';  // 互评窗口关闭 → 过期当完成
   var now = Date.now();
   var start = parseInt(node.evaluateStart,10);
   var end = parseInt(node.evaluateScoreReleaseTime||node.evaluateEnd,10);
