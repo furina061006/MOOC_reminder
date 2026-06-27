@@ -216,19 +216,23 @@
       var c = courses[i];
       if (!c || !c.termId) continue;
 
-      var courseIsSpoc = (c.courseType === 'spoc') || (isSpocPage && c.courseId === pageMeta.courseId);
+      // 标记当前页面是否是 SPOC 学习页面且匹配本课程
+      var isCurrentSpocPage = isSpocPage && c.courseId === pageMeta.courseId;
+      var courseIsSpoc = (c.courseType === 'spoc') || isCurrentSpocPage;
 
-      // ═══ SPOC: 用真实 termId 替换 URL 里的假 termId ═══
-      if (courseIsSpoc) {
+      // ═══ SPOC: 仅当在本课程页面上时，才用 DOM 属性替换 termId ═══
+      // 在其他页面上用 DOM 属性会拿到别的课程的真实 termId，造成数据串
+      if (isCurrentSpocPage) {
         try {
           var realTermId = document.documentElement.getAttribute('data-mooc-real-termid');
           if (realTermId && realTermId !== c.termId) {
             console.log('[MOOC Reminder] SPOC: using real termId', realTermId, 'instead of URL termId', c.termId, 'for', c.courseId);
             c.termId = realTermId;
-          } else if (!realTermId) {
-            console.debug('[MOOC Reminder] SPOC: no realTermId from DOM for', c.courseId, ', relying on SW-provided termId', c.termId);
           }
         } catch(e) {}
+      } else if (courseIsSpoc) {
+        // 在非本页面处理 SPOC 课程——termId 来自 SW 的 activeTermId
+        console.debug('[MOOC Reminder] SPOC: cross-page handling', c.courseId, 'termId=' + c.termId);
       }
 
       try {
