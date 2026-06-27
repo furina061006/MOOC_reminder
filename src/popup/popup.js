@@ -668,8 +668,8 @@ function createHomeworkItem(item) {
   var autoEl = document.createElement('span');
   autoEl.className = 'item-type';
   autoEl.style.fontSize = '10px';
-  if (item.type === 'homework' && item.hwPhase === 'peerreview') {
-    // 互评中：API 无法检测互评是否完成 → 标记为手动确认
+  if ((item.type === 'homework' && item.hwPhase === 'peerreview') || item.type === 'exam') {
+    // 互评中 / 考试：API 无法可靠检测 → 标记为手动确认
     autoEl.textContent = '手动确认';
     autoEl.style.background = '#ffeaa7';
     autoEl.style.color = '#6c5200';

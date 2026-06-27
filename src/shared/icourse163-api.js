@@ -259,7 +259,7 @@ export function extractHomeworkFromTermDto(input, course) {
         // 完成判定：有分数 OR 已提交（非互评中）OR 节点含完成文本
         const submitted = parseInt(node.usedTryCount || nt2.usedTryCount, 10) > 0;
         const inPeerReview = phase === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus, 10) || 0) === 0;
-        const done = (score != null && totalScore != null && score > 0 && submitted)
+        const done = (score != null && totalScore != null && score > 0)
           || (submitted && !inPeerReview)
           || hasCompletedText(node, 0);
 

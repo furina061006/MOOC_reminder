@@ -1244,7 +1244,7 @@ function apiExtractHomework(input, course) {
         var submitted = parseInt(node.usedTryCount || nt2.usedTryCount,10) > 0;
         // 互评中不算完成（等待评分），互评期结束后回到已提交则算完成
         var inPeerReview = apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus,10) || 0) === 0;
-        var done = (score != null && totalScore != null && score > 0 && submitted)
+        var done = (score != null && totalScore != null && score > 0)
                 || (submitted && !inPeerReview)
                 || apiHasCompletedText(node, 0);
         out.push({
