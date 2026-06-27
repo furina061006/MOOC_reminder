@@ -1217,9 +1217,11 @@ function apiExtractHomework(input, course) {
     const score = apiFirstNumber(node, API_SCORE_FIELDS) || (node.test ? apiFirstNumber(node.test, API_SCORE_FIELDS) : null);
     const totalScore = apiFirstNumber(node, API_TOTAL_FIELDS) || (node.test ? apiFirstNumber(node.test, API_TOTAL_FIELDS) : null);
     const hasSignal = deadlineMs != null || (score != null && totalScore != null);
+    // contentType 是权威字段：2=测验, 3=作业, 6=考试；名字正则作为后备
     var ct = String(node.contentType || '');
+    var ctIsAssessed = ct === '2' || ct === '3' || ct === '6';
     if (typeof name === 'string' && name.trim() && hasSignal &&
-        (/测验|作业|考试|测试|quiz|exam|homework|test/i.test(name) || ct === '2' || ct === '3' || ct === '6')) {
+        (ctIsAssessed || /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name))) {
 
       const homeworkId = String(node.id || node.jobId || node.quizId || node.testId || node.homeworkId || '') || ('h' + (out.length + 1));
       const uid = `${course.courseId}_tid${course.termId}_ch${chapterId || ''}_le${lessonId || ''}_hw${homeworkId}`;

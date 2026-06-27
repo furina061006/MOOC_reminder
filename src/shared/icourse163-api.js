@@ -230,9 +230,9 @@ export function extractHomeworkFromTermDto(input, course) {
     const totalScore = firstNumber(node, TOTAL_FIELDS) || (node.test ? firstNumber(node.test, TOTAL_FIELDS) : null);
     const hasSignal = deadlineMs != null || (score != null && totalScore != null);
     var ct = String(node.contentType || '');
-
+    var ctIsAssessed = ct === '2' || ct === '3' || ct === '6';
     if (typeof name === 'string' && name.trim() && hasSignal &&
-        (/测验|作业|考试|测试|quiz|exam|homework|test/i.test(name) || ct === '2' || ct === '3' || ct === '6')) {
+        (ctIsAssessed || /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name))) {
 
       const homeworkId = String(
         node.id || node.jobId || node.quizId || node.testId || node.homeworkId || ''
