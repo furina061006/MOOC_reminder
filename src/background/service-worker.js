@@ -1342,7 +1342,11 @@ function apiExtractHomework(input, course) {
         var submitted = parseInt(node.usedTryCount,10) > 0 && (parseInt(node.type,10) === 3);
         // 互评中不算完成（等待评分），已公布的才算
         var inPeerReview = apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus,10) || 0) === 0;
-        var done = (score != null && totalScore != null && score > 0) || (submitted && !inPeerReview) || apiHasCompletedText(node, 0);
+        var scoreNotPublished = (parseInt(node.scorePubStatus,10) || 0) === 0 && (score == null || score === 0);
+        // 已提交 + 成绩未公布：不算完成（可能交了但没互评，或互评中成绩未出）
+        var done = (score != null && totalScore != null && score > 0)
+                || (submitted && !inPeerReview && !scoreNotPublished)
+                || apiHasCompletedText(node, 0);
         out.push({
           uid, courseId: course.courseId, termId: course.termId,
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
