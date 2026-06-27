@@ -708,13 +708,20 @@ function createHomeworkItem(item) {
 
   meta.appendChild(typeBadge);
 
-  // 自动检测标签（API 已覆盖所有类型）
+  // 自动检测 / 手动确认标签
   var autoEl = document.createElement('span');
   autoEl.className = 'item-type';
-  autoEl.textContent = '自动检测';
   autoEl.style.fontSize = '10px';
-  autoEl.style.background = '#d4edda';
-  autoEl.style.color = '#155724';
+  if (item.type === 'homework' && item.hwPhase === 'peerreview') {
+    // 互评中：API 无法检测互评是否完成 → 标记为手动确认
+    autoEl.textContent = '手动确认';
+    autoEl.style.background = '#ffeaa7';
+    autoEl.style.color = '#6c5200';
+  } else {
+    autoEl.textContent = '自动检测';
+    autoEl.style.background = '#d4edda';
+    autoEl.style.color = '#155724';
+  }
   meta.appendChild(autoEl);
   // 作业互评阶段：额外显示[互评中]标签
   if (item.type === 'homework' && item.hwPhase === 'peerreview') {
