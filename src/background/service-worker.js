@@ -1250,7 +1250,7 @@ function apiExtractHomework(input, course) {
         out.push({
           uid, courseId: course.courseId, termId: course.termId,
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
-          title: name.trim(), type: apiClassifyType(name, (node.type || nt2.type) !== undefined ? (node.type || nt2.type) : null),
+          title: name.trim(), type: apiClassifyType(name, node.contentType || nt2.type || null),
           courseName: course.courseName || '', schoolName: course.schoolName || '',
           status: done ? 'completed' : 'unfinished',
           checkedOff: done, manuallyCheckedOff: false,

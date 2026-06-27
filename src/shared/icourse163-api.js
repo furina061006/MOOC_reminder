@@ -271,7 +271,7 @@ export function extractHomeworkFromTermDto(input, course) {
           lessonId: lessonId || '',
           homeworkId,
           title: name.trim(),
-          type: classifyType(name, node.type !== undefined ? node.type : null),
+          type: classifyType(name, node.contentType || (nt2 && nt2.type) || null),
           courseName: course.courseName || '',
           schoolName: course.schoolName || '',
           status: done ? 'completed' : 'unfinished',
