@@ -118,16 +118,21 @@
       }
     }, 30000);
 
-    // ═══ 读取 SPOC 真实 termId（server-rendered window.moocTermDto.id）═══
-    // content script 无法直接读 page window，注入脚本通过 DOM 传值
+    // ═══ 读取 SPOC 真实 termId（page window.moocTermDto.id）═══
+    // 用 web_accessible_resource 绕过 CSP（chrome-extension:// origin 在白名单内）
     try {
-      var tidScript = document.createElement('script');
-      tidScript.textContent = 'document.documentElement.setAttribute("data-mooc-real-termid", (window.moocTermDto && window.moocTermDto.id) || "")';
-      (document.head || document.documentElement).appendChild(tidScript);
-      tidScript.remove();
-      var realTid = document.documentElement.getAttribute('data-mooc-real-termid');
+      var realTid = await new Promise(function(resolve) {
+        var s = document.createElement('script');
+        s.src = chrome.runtime.getURL('src/content/spoc-tid-bridge.js');
+        s.onload = function() {
+          s.remove();
+          resolve(document.documentElement.getAttribute('data-mooc-real-termid'));
+        };
+        s.onerror = function() { s.remove(); resolve(null); };
+        (document.head || document.documentElement).appendChild(s);
+      });
       if (realTid) console.log('[MOOC Reminder] SPOC real termId:', realTid);
-    } catch(e) { console.debug('[MOOC Reminder] tid script error:', e.message); }
+    } catch(e) { console.debug('[MOOC Reminder] tid injection error:', e.message); }
 
     // ═══ 检查 xhr-hook.js 拦截到的页面 API 响应 ═══
     checkPageHookData();
