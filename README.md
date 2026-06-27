@@ -18,7 +18,8 @@
 | 🔴🟠🔵 **紧急程度** | 红色=已过期 橙 色=48h内截止 蓝色=正常 |
 | 📋 **课程分组** | 按课程分组展示，一目了然 |
 | ✅ **自动检测** | 所有类型（测验/作业/考试）均自动检测完成状态 |
-| 🏷️ **状态标签** | `自动检测` `互评中` |
+| 🏷️ **状态标签** | `自动检测` `互评中` `手动确认` |
+| 🏫 **SPOC 支持** | 完整支持 SPOC 课程（大学物理等） |
 | 🔄 **后台 API 抓取** | 打开任意 MOOC 页面即可刷新全部已知课程的作业数据 |
 | 🌙 **深色模式** | 自动适配系统主题 |
 | ⚙️ **设置面板** | 检查间隔、提醒阈值、自动检测、免打扰时段、每日汇总、DOM 抓取开关、错误报告 |
@@ -94,10 +95,7 @@ popup 左上角可筛选：
 - ❌ **仅支持 中国大学MOOC** — 不支持学堂在线、超星等其他平台
 - ❌ **不跨设备同步** — 数据存在浏览器本地 `chrome.storage.local`
 - ❌ **网页改版可能失效** — 如果 中国大学MOOC 更新页面 DOM 结构或 API 端点，爬虫可能暂时失效
-
-> 目前存在问题:
-> 1 . 截止提醒在实验阶段, 目前还没法证明其功能是否正常
-> 2 . 暂时无法确定 ~[打开任意~ ~MOOC~ ~课程标签页即可触发全课程刷新]~ 的 功能是否正常, 但肯定的, 打开某课程的任意页面, 必能抓取相应课程的所有的在`测验与作业`和`考试`的作业    
+- ❌ **互评完成无法自动检测** — 平台 API 不暴露用户是否实际完成互评的字段，互评中的作业标记为「手动确认」    
 ## 隐私说明
 
 - 所有数据仅存储在**浏览器本地**
@@ -124,6 +122,16 @@ popup 左上角可筛选：
 | refactor/design-system-icons | puresky271 | 内联 SVG 图标系统，CSS 设计令牌重构 |
 
 ## 更新日志
+
+### 2026-06-27
+
+- **互评完成字段完整分析**：dump `getLastLearnedMocTermDto.rpc` (NODE 17 + TEST 19 字段) 和 `getOpenHomeworkInfo.rpc` (19 字段)，确认 `submitStatus` 仅追作业提交不追互评完成，平台 API 不存在互评完成独立字段
+- **互评判定逻辑定案**：`scorePubStatus:0`+窗口内→未完成+手动确认；`scorePubStatus:1`→窗口关闭→按完成（与平台行为一致）；验证 `scorePubStatus:1` ≠ 用户完成互评（SPOC 未互评但 scorePubStatus=1 的实锤）
+- **互评标签变更**：互评中作业从 `自动检测` 改为琥珀色 `手动确认` + `互评中`
+- **HttpOnly CSRF 适配**：`NTESSTUDYSI` cookie 变为 HttpOnly，改用 `chrome.cookies.get()` 读取
+- **SPOC 作业重复 Bug 修复**：`isSpocPage` 导致所有课程 termId 被替换成 SPOC 真实 termId，修复 courseIsSpoc 判定为仅匹配当前 SPOC 课程
+- **checkPageHookData 修复**：hook 数据仅处理 tid 匹配当前页面的响应，避免跨课程归属
+- **popup 打开自动刷新 toast**：首次初始化自动刷新后也弹「刷新成功·建议再按一次」
 
 ### 2026-06-26
 
@@ -161,14 +169,16 @@ popup 左上角可筛选：
 ```
 用户打开中国大学MOOC课程页面
   → Content Script 注入
-    → 读取 document.cookie → NTESSTUDYSI
+    → chrome.cookies.get() 读取 NTESSTUDYSI (HttpOnly cookie)
     → 同源 XHR 调 getLastLearnedMocTermDto.rpc
-    → 拿到完整课程 DTO（全部章节+作业+考试+分数）
-  → 同时 DOM 扫描当前页面（可关闭）
+    → 拿到完整课程 DTO（全部章节+作业+考试+分数+截止日期+互评状态）
+    → getOpenHomeworkInfo.rpc 获取 submitStatus 等补充字段
+  → SPOC: 读 window.moocTermDto.id 获取真实 termId（URL tid 是假壳）
   → 数据发送到 SW → reconcile → storage
   → Badge 更新 + 截止提醒检查
 → 点击图标 → Popup 展示
 ```
+
 
 > 📖 详细架构 → [architecture.md](.claude/logs/architecture.md)
 
@@ -204,13 +214,15 @@ MOOC_reminder/
 SW alarm / 手动刷新
   ↓ 发送 BATCH_API_FETCH {courses: [...]}
 Content Script（icourse163.org 同源）
-  ↓ document.cookie → NTESSTUDYSI
+  ↓ chrome.cookies.get({name:'NTESSTUDYSI'}) → HttpOnly CSRF
   ↓ XHR → getLastLearnedMocTermDto.rpc?csrfKey=xxx
   ↓ 浏览器自动附带 icourse163.org cookies
-  ↓ 返回 200KB+ 完整课程 DTO
+  ↓ 返回 200KB+ 完整课程 DTO（作业+考试+分数+互评阶段）
+  ↓ 辅助: getOpenHomeworkInfo.rpc → submitStatus 等补充字段
+  ↓ SPOC: window.moocTermDto.id → 真实 termId（替换 URL 假 tid）
   ↓ COURSE_API_DATA → SW
 SW
-  ↓ apiExtractHomework() 解析
-  ↓ reconcileHomeworkData() 合并
+  ↓ apiExtractHomework() 解析 → 基于 scorePubStatus + usedTryCount + userScore
+  ↓ reconcileHomeworkData() 合并（UID 匹配 dedup）
   ↓ updateBadgeFromStorage()
 ```

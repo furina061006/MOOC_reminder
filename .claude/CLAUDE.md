@@ -68,14 +68,16 @@ zip -r mooc-reminder.zip . -x ".*" "node_modules/*" "tests/*" "logs/*"
 ## Key Design Decisions
 
 1. **No backend**: Pure browser extension, all data in chrome.storage.local
-2. **DOM scraping**: Primary data source is page scraping, not API interception
-3. **Manual overrides auto**: User manual check-off always wins over auto-detection
-4. **Selector config**: All selectors in `selectors.json` for easy calibration
+2. **API-first detection**: Primary completion detection via API fields (userScore, usedTryCount, scorePubStatus)
+3. **DOM scraping**: Optional fallback, disabled by default (`domScrapingEnabled: false`)
+4. **Manual overrides auto**: User manual check-off always wins over auto-detection
 5. **SPA-aware**: Uses URL hash monitoring + DOM MutationObserver for dynamic pages
+6. **SPOC support**: Reads `window.moocTermDto.id` for real termId (URL tid is a fake shell)
 
 ## Known Limitations
 
 - Can only scrape when user has icourse163.org tabs open
 - Selectors may break if icourse163.org changes their frontend
 - No cross-device sync (chrome.storage.local is device-local)
-- Chinese date parsing may fail on unusual formats
+- Peer review completion cannot be auto-detected (platform API doesn't expose this field)
+- `NTESSTUDYSI` CSRF cookie is HttpOnly; use `chrome.cookies.get()` not `document.cookie`
