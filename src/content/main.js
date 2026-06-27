@@ -1203,7 +1203,7 @@
       var c = courses[i];
       if (!c || !c.termId) continue;
 
-      var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
+      var courseIsSpoc = (c.courseType === 'spoc') || (isSpocPage && c.courseId === pageMeta.courseId);
       if (courseIsSpoc) {
         console.log('[MOOC Reminder] SPOC API fetch for:', c.courseId, 'termId:', c.termId, 'courseName:', c.courseName);
       }
