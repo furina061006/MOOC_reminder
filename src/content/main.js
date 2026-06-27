@@ -309,7 +309,7 @@
 
         // 诊断：itemCount=0 时先看数据结构（首次或 SPOC 课程）
         if (c.courseType === 'spoc') {
-          try { var _d = JSON.parse(text); var r = _d && _d.result; var m = r && r.mocTermDto; console.log('[MOOC Reminder] SPOC struct for', c.courseId, 'topKeys:', Object.keys(_d), 'resultKeys:', r ? Object.keys(r) : '?', 'mocKeys:', m ? Object.keys(m).slice(0,20) : '?', 'chapters:', m && m.chapters ? m.chapters.length : 0, 'len:', text.length); } catch(e) {}
+          try { var _d = JSON.parse(text); var r = _d && _d.result; var m = r && r.mocTermDto; var ch = m && m.chapters; console.log('[MOOC Reminder] SPOC struct for', c.courseId, 'topKeys:', Object.keys(_d), 'resultKeys:', r ? Object.keys(r) : '?', 'mocKeys:', m ? Object.keys(m).slice(0,20) : '?', 'chapters:', ch ? ch.length : 0, 'len:', text.length); if (ch && ch[0]) { var ch0 = ch[0]; console.log('[MOOC Reminder] ch0 keys:', Object.keys(ch0)); if (ch0.homeworks) console.log('[MOOC Reminder] ch0.homeworks count:', ch0.homeworks.length, 'sample:', JSON.stringify(ch0.homeworks[0]).slice(0,300)); if (ch0.quizs) console.log('[MOOC Reminder] ch0.quizs count:', ch0.quizs.length); if (ch0.lessons) console.log('[MOOC Reminder] ch0.lessons count:', ch0.lessons.length, 'lesson0 keys:', Object.keys(ch0.lessons[0])); } } catch(e) {}
         }
 
         results.push({
