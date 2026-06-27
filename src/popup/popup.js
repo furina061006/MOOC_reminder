@@ -167,6 +167,15 @@ async function init() {
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
       if (!state.lastSync && state.allItems.length === 0) {
         try { showToast('请打开 MOOC 课程页面后重试'); } catch {}
+      } else {
+        var now = Date.now();
+        if (now - lastRefreshSuccess > 120000) {
+          try { showToast('刷新成功 · 建议再按一次确保完整'); } catch {}
+        } else {
+          try { showToast('刷新成功'); } catch {}
+        }
+        lastRefreshSuccess = now;
+      }
       }
     } catch(e) {
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
