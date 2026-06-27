@@ -17,7 +17,6 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "src/content/selectors.json",
         "src/content/spoc-tid-bridge.js"
       ],
       "matches": [

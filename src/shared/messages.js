@@ -5,9 +5,6 @@
 
 // Message types — use these constants everywhere to avoid typos
 export const MSG_TYPES = {
-  // Content script → Background: scraped homework data
-  HOMEWORK_DATA: 'HOMEWORK_DATA',
-
   // Popup → Background: mark an item as completed/uncompleted
   MARK_COMPLETED: 'MARK_COMPLETED',
 
@@ -19,9 +16,6 @@ export const MSG_TYPES = {
 
   // Popup → Background: remove all completed items from storage
   CLEAR_COMPLETED: 'CLEAR_COMPLETED',
-
-  // Background → Content script: request immediate DOM scrape
-  SCRAPE_NOW: 'SCRAPE_NOW',
 
   // Background → Popup: badge needs refresh
   REFRESH_BADGE: 'REFRESH_BADGE',

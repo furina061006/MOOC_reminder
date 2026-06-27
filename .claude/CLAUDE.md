@@ -18,7 +18,7 @@ Chrome/Edge Manifest V3 浏览器扩展，自动追踪中国大学MOOC (icourse1
 ```
 src/
 ├── background/     Service Worker — alarms、消息路由、数据 reconcile、badge
-├── content/        内容脚本 — API 代理抓取、DOM 爬取（可选）、SPOC 支持
+├── content/        内容脚本 — API 代理抓取、SPOC 支持
 ├── popup/          弹出窗口 — 作业列表、筛选、手动操作
 └── shared/         共享模块 — 数据模型、API 解析、存储、设置
 ```
@@ -42,8 +42,6 @@ src/
 
 - `BATCH_API_FETCH {courses}` — SW → CS，触发批量 API 抓取
 - `COURSE_API_DATA {course, rawData}` — CS → SW，API 原始响应
-- `HOMEWORK_DATA {course, homeworkItems}` — CS → SW，DOM 抓取结果
-- `SCRAPE_NOW` — SW → CS，触发即时 DOM 抓取
 - `TRIGGER_SCRAPE` — Popup → SW，手动刷新
 
 ---
@@ -286,7 +284,6 @@ function apiDetectPhase(node) {
 
 1. **无后端**: 纯浏览器扩展，所有数据在 chrome.storage.local
 2. **API 优先**: 主要完成检测基于 API 字段 (userScore, usedTryCount, scorePubStatus)
-3. **DOM 爬取**: 可选 fallback，默认关闭 (`domScrapingEnabled: false`)
 4. **手动覆盖自动**: 用户手动勾选永远优先于自动检测
 5. **SPA 感知**: URL hash 监控 + DOM MutationObserver
 6. **SPOC 支持**: WAR 脚本注入 + DOM bridge 读真实 termId
@@ -324,4 +321,3 @@ zip -r mooc-reminder.zip . -x ".*" "node_modules/*" "tests/*" "logs/*"
 - `.claude/logs/architecture.md` — 完整架构文档
 - `.claude/logs/2026-06-27-development.md` — 最近开发日志（API 字段分析、互评判定、SPOC 支持）
 - `.claude/logs/2026-06-26-development.md` — 背景 API 代理、完成检测重写
-- `src/content/selectors.json` — DOM 选择器配置

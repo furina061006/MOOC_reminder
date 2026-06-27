@@ -42,7 +42,6 @@ const DEFAULT_SETTINGS = {
   autoDismissErrors: true,
   showSnoozeButton: true,
   showCourseMute: true,
-  domScrapingEnabled: false
 };
 
 function clampInt(value, min, max, fallback) {
@@ -76,7 +75,6 @@ function normalizeSettings(stored) {
     autoDismissErrors: s.autoDismissErrors === true,
     showSnoozeButton: s.showSnoozeButton !== false,
     showCourseMute: s.showCourseMute !== false,
-    domScrapingEnabled: s.domScrapingEnabled !== false
   };
 }
 
@@ -258,21 +256,6 @@ function isSnoozed(item, now) {
 }
 
 const MESSAGE_HANDLERS = {
-  // Content script sends scraped data
-  async HOMEWORK_DATA(msg) {
-    if (!msg.course || !Array.isArray(msg.homeworkItems)) {
-      return { success: false, error: 'Invalid payload' };
-    }
-
-    const result = await reconcileHomeworkData(msg.course, msg.homeworkItems);
-    if (msg.scrapeStatus) {
-      await setScrapeStatus(msg.scrapeStatus);
-    }
-    await updateBadgeFromStorage();
-    console.log(`[MOOC Reminder] Reconciled: +${result.added} added, ~${result.updated} updated`);
-    return { success: true, added: result.added, updated: result.updated };
-  },
-
   // Content script proxies API results (page-context same-origin fetch)
   async COURSE_API_DATA(msg) {
     if (!msg.course || !msg.rawData) return { success: false, error: 'Invalid payload' };
@@ -357,7 +340,6 @@ const MESSAGE_HANDLERS = {
     const lastSync = await getLastSync();
     const settings = normalizeSettings(await getUserSettings());
     const syncErrors = await getSyncErrors();
-    const scrapeStatus = await getScrapeStatus();
     const apiStatus = await getApiStatus();
 
     return {
@@ -367,7 +349,6 @@ const MESSAGE_HANDLERS = {
       lastSync,
       settings,
       syncErrors,
-      scrapeStatus,
       apiStatus
     };
   },
@@ -483,17 +464,6 @@ const MESSAGE_HANDLERS = {
     return { success: true };
   },
 
-  async SCRAPE_STATUS(msg) {
-    if (!msg.scrapeStatus || typeof msg.scrapeStatus !== 'object') {
-      return { success: false, error: 'Invalid payload' };
-    }
-    await setScrapeStatus(msg.scrapeStatus);
-    if (msg.scrapeStatus.status === 'error') {
-      await addSyncError('Scrape status: ' + (msg.scrapeStatus.message || 'unknown error'));
-    }
-    return { success: true };
-  },
-
   // Options page reads current settings
   async GET_SETTINGS() {
     return { success: true, settings: normalizeSettings(await getUserSettings()) };
@@ -511,7 +481,7 @@ const MESSAGE_HANDLERS = {
     await chrome.storage.local.set({ [KEYS.USER_SETTINGS]: saved });
     await setupAlarms();
     await updateBadgeFromStorage();
-    console.log('[MOOC Reminder] Settings updated, domScrapingEnabled:', saved.domScrapingEnabled);
+    console.log('[MOOC Reminder] Settings updated');
     return { success: true, settings: saved };
   },
 
@@ -742,27 +712,6 @@ function getUrgencyColor(items) {
   return '#007BFF'; // blue
 }
 
-async function processScrapeResponse(response) {
-  if (!response || typeof response !== 'object') {
-    return { itemCount: 0, changedCount: 0, handled: false };
-  }
-
-  if (response.scrapeStatus) {
-    await setScrapeStatus(response.scrapeStatus);
-  }
-
-  if (response.course && Array.isArray(response.homeworkItems)) {
-    const result = await reconcileHomeworkData(response.course, response.homeworkItems);
-    return {
-      itemCount: response.homeworkItems.length,
-      changedCount: result.added + result.updated,
-      handled: true
-    };
-  }
-
-  return { itemCount: 0, changedCount: 0, handled: !!response.scrapeStatus };
-}
-
 // ─── Periodic Scraping ──────────────────────────────────
 
 
@@ -974,38 +923,18 @@ async function performPeriodicScrape() {
         } catch {}
       }
 
-    var settings = normalizeSettings(await getUserSettings());
-    var doDomScrape = settings.domScrapingEnabled !== false;
-
-    let scrapedCount = 0;
-    if (doDomScrape) {
-      for (const tab of tabs) {
-        try {
-          const response = await chrome.tabs.sendMessage(tab.id, {
-            type: 'SCRAPE_NOW'
-        });
-
-        const processed = await processScrapeResponse(response);
-        scrapedCount += processed.itemCount;
-        } catch (e) {
-          console.debug('[MOOC Reminder] Could not scrape tab', tab.id, e.message);
-        }
-      }
-    } else {
-      console.log('[MOOC Reminder] DOM scraping disabled, using API-only mode');
-      // 等待 API 响应到达（周期性检查，较短超时）
-      var lastSyncBefore = await getLastSync();
-      var waitStart = Date.now();
-      var maxWait = 15000; // 15s max
-      while (Date.now() - waitStart < maxWait) {
-        await sleep(800);
-        var currentSync = await getLastSync();
-        if (currentSync && currentSync !== lastSyncBefore) break;
-      }
+    // 等待 API 响应到达（BATCH_API_FETCH 是异步的）
+    var lastSyncBefore = await getLastSync();
+    var waitStart = Date.now();
+    var maxWait = 15000; // 15s max
+    while (Date.now() - waitStart < maxWait) {
+      await sleep(800);
+      var currentSync = await getLastSync();
+      if (currentSync && currentSync !== lastSyncBefore) break;
     }
 
     await updateBadgeFromStorage();
-    console.log(`[MOOC Reminder] Periodic scrape complete: ${scrapedCount} items from ${tabs.length} tabs`);
+    console.log('[MOOC Reminder] Periodic scrape complete');
   } catch (e) {
     console.error('[MOOC Reminder] Periodic scrape failed:', e);
     await addSyncError(`Periodic scrape: ${e.message}`);
@@ -1037,7 +966,6 @@ async function triggerManualScrape() {
     console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', courses.length, 'courses to', tabs.length, 'tabs');
     var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '' }; });
 
-    var s = normalizeSettings(await getUserSettings());
     var lastSyncBefore = await getLastSync();
 
     // 发送 BATCH_API_FETCH 到所有标签页
@@ -1047,70 +975,28 @@ async function triggerManualScrape() {
       } catch {}
     }
 
-    let totalItems = 0;
-    let errorCount = 0;
-
-    if (s.domScrapingEnabled !== false) {
-      // DOM 抓取模式：await SCRAPE_NOW 响应（同步等待，立即可得）
-      for (const tab of tabs) {
-        try {
-          const response = await chrome.tabs.sendMessage(tab.id, {
-            type: 'SCRAPE_NOW'
-        });
-
-        const processed = await processScrapeResponse(response);
-        totalItems += processed.changedCount;
-      } catch (e) {
-        errorCount++;
-        // Try injecting content script and retrying
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ['src/content/main.js']
-          });
-          await sleep(2000);
-          const response = await chrome.tabs.sendMessage(tab.id, {
-            type: 'SCRAPE_NOW'
-          });
-          if (response && response.course && response.homeworkItems) {
-            const result = await reconcileHomeworkData(response.course, response.homeworkItems);
-            totalItems += result.added + result.updated;
-          }
-        } catch (e2) {
-          console.debug('[MOOC Reminder] Inject+retry failed for tab', tab.id, e2.message);
-          await addSyncError(`Manual scrape tab ${tab.id}: ${e2.message}`);
-        }
+    // 等待 COURSE_API_DATA 异步响应被处理
+    console.log('[MOOC Reminder] Waiting for API responses...');
+    var waitStart = Date.now();
+    var maxWait = 25000; // 25s max
+    while (Date.now() - waitStart < maxWait) {
+      await sleep(800);
+      var currentSync = await getLastSync();
+      if (currentSync && currentSync !== lastSyncBefore) {
+        console.log('[MOOC Reminder] API data arrived, lastSync updated');
+        await sleep(1000);
+        break;
       }
-    }
-    } else {
-      // API-only 模式：等待 COURSE_API_DATA 异步响应被处理
-      // BATCH_API_FETCH 是 fire-and-forget，content script 收到后会发 COURSE_API_DATA 回来
-      // SW 单线程会在 await sleep 期间处理到达的消息
-      console.log('[MOOC Reminder] DOM scraping disabled, waiting for API responses...');
-      var waitStart = Date.now();
-      var maxWait = 25000; // 25s max for API responses
-      while (Date.now() - waitStart < maxWait) {
-        await sleep(800);
-        var currentSync = await getLastSync();
-        if (currentSync && currentSync !== lastSyncBefore) {
-          console.log('[MOOC Reminder] API data arrived, lastSync updated');
-          // 再等一小会，确保所有 COURSE_API_DATA 都处理完
-          await sleep(1000);
-          break;
-        }
-      }
-      // 统计 API 模式下的条目数
-      var allItems = await getHomeworkItems();
-      totalItems = allItems.length;
     }
 
     await updateBadgeFromStorage();
 
+    var allItems = await getHomeworkItems();
     return {
       success: true,
-      scrapedCount: totalItems,
+      scrapedCount: allItems.length,
       tabsScanned: tabs.length,
-      errors: errorCount
+      errors: 0
     };
   } catch (e) {
     console.error('[MOOC Reminder] Manual scrape failed:', e);
@@ -1171,20 +1057,6 @@ async function getSyncErrors() {
   return Array.isArray(raw) ? raw.filter(Boolean) : [];
 }
 
-async function getScrapeStatus() {
-  const result = await chrome.storage.local.get(KEYS.SCRAPE_STATUS);
-  return result[KEYS.SCRAPE_STATUS] || null;
-}
-
-async function setScrapeStatus(status) {
-  if (!status || typeof status !== 'object') return;
-  await chrome.storage.local.set({
-    [KEYS.SCRAPE_STATUS]: {
-      ...status,
-      checkedAt: status.checkedAt || new Date().toISOString()
-    }
-  });
-}
 
 async function addSyncError(errorMessage) {
   const errors = await getSyncErrors();

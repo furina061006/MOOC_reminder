@@ -25,7 +25,6 @@ export const DEFAULT_SETTINGS = {
   autoDismissErrors: true,    // auto-clear sync errors from the UI
   showSnoozeButton: true,       // show snooze button in popup
   showCourseMute: true,         // show course mute button
-  domScrapingEnabled: false         // allow DOM scraping alongside API
 };
 
 function clampInt(value, min, max, fallback) {
@@ -63,7 +62,6 @@ export function normalizeSettings(stored) {
     autoDismissErrors: s.autoDismissErrors === true,
     showSnoozeButton: s.showSnoozeButton !== false,
     showCourseMute: s.showCourseMute !== false,
-    domScrapingEnabled: s.domScrapingEnabled !== false
   };
 }
 

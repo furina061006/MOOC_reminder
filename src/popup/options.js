@@ -25,7 +25,6 @@ const DEFAULTS = {
   autoDismissErrors: true,
   showSnoozeButton: true,
   showCourseMute: true,
-  domScrapingEnabled: false
 };
 
 function $(id) { return document.getElementById(id); }
@@ -82,7 +81,6 @@ function populate(settings) {
   safeSetChecked('auto-dismiss-errors', s.autoDismissErrors === true);
   safeSetChecked('show-snooze-btn', s.showSnoozeButton !== false);
   safeSetChecked('show-course-mute', s.showCourseMute !== false);
-  safeSetChecked('dom-scrape', s.domScrapingEnabled !== false);
   safeSetChecked('digest-enabled', s.dailyDigestEnabled === true);
   safeSetValue('digest-hour', s.dailyDigestHour);
   const leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULTS.notifyLeadHours;
@@ -123,8 +121,7 @@ function collect() {
     mutedCourseIds: currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : [],
     autoDismissErrors: safeGetChecked('auto-dismiss-errors'),
     showSnoozeButton: safeGetChecked('show-snooze-btn'),
-    showCourseMute: safeGetChecked('show-course-mute'),
-    domScrapingEnabled: safeGetChecked('dom-scrape')
+    showCourseMute: safeGetChecked('show-course-mute')
   };
 }
 
@@ -197,7 +194,7 @@ async function save() {
     try {
       const resp = await chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', settings: settings });
       if (resp && resp.success) {
-        console.log('[Options] save OK, domScrapingEnabled:', resp.settings && resp.settings.domScrapingEnabled);
+        console.log('[Options] save OK');
         populate(resp.settings);
         showStatus('✓ 已保存');
         try { if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS(); } catch {}
@@ -216,7 +213,7 @@ async function save() {
   try {
     const raw = await chrome.storage.local.get('user_settings');
     const merged = Object.assign({}, raw.user_settings || DEFAULTS, settings);
-    console.log('[Options] save fallback, domScrapingEnabled:', merged.domScrapingEnabled);
+    console.log('[Options] save fallback');
     await chrome.storage.local.set({ user_settings: merged });
     showStatus('✓ 已保存（本地）');
   } catch (e2) {

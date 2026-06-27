@@ -114,20 +114,6 @@
 - [ ] 检查 Test 3 的各项选择器匹配情况
 - [ ] 记录所有 ❌ 的选择器
 
-### 5.2 使用 Selector Calibrator
-- [ ] 打开 `tests/selector-calibrator.html` (通过 http-server)
-- [ ] 对比 debug-helper 的结果与 calibrator 中的默认选择器
-- [ ] 调整不匹配的选择器
-- [ ] 导出新的 selectors.json
-- [ ] 替换 `src/content/selectors.json`
-
-### 5.3 常见需要校准的选择器
-| 目标 | 很可能需要调整 |
-|------|---------------|
-| 章节容器 | 检查是否有 `.j-chapterlist` 或不同类名 |
-| 作业列表项 | 类名可能为 `.j-test`, `.u-testItem` 等变体 |
-| 完成状态 | 可能需要添加新的 class pattern |
-| 截止日期 | 日期格式可能有变化 |
 
 ---
 

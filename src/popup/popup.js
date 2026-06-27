@@ -83,7 +83,6 @@ const state = {
   courses: [],
   lastSync: null,
   syncErrors: [],
-  scrapeStatus: null,
   settings: {},
   filter: 'unfinished',  // 'unfinished' | 'overdue' | 'completed' | 'all'
   collapsedCourses: new Set()
@@ -335,7 +334,6 @@ async function loadData() {
   state.courses = [];
   state.lastSync = null;
   state.syncErrors = [];
-  state.scrapeStatus = null;
   state.items = [];
 
   var response = await sendMessageSafe({ type: 'GET_HOMEWORK' });
@@ -346,7 +344,6 @@ async function loadData() {
     state.courses  = Array.isArray(response.courses)  ? response.courses.filter(Boolean)  : [];
     state.lastSync = response.lastSync || null;
     state.syncErrors = Array.isArray(response.syncErrors) ? response.syncErrors.filter(Boolean) : [];
-    state.scrapeStatus = response.scrapeStatus || null;
     state.settings = response.settings || {};
   }
 
@@ -396,53 +393,6 @@ function applyFilter() {
 
 // ─── Rendering ─────────────────────────────────────────
 
-function getScrapeWarning() {
-  const status = state.scrapeStatus;
-  if (!status || typeof status !== 'object') return null;
-
-  if (status.status === 'login_required') {
-    return {
-      type: 'login',
-      title: '请先登录 icourse163.org',
-      message: status.message || '登录过期会导致作业无法刷新'
-    };
-  }
-
-  if (status.status === 'empty_on_homework_page') {
-    return {
-      type: 'scrape',
-      title: '可能未识别到作业列表',
-      message: status.message || '页面已加载，但未抓取到作业条目，可能是网页结构变化'
-    };
-  }
-
-  if (status.status === 'error') {
-    return {
-      type: 'error',
-      title: '最近一次抓取失败',
-      message: status.message || '请重新打开课程页面后刷新'
-    };
-  }
-
-  return null;
-}
-
-function renderScrapeWarning() {
-  const warning = getScrapeWarning();
-  if (!dom.loginWarning) return;
-
-  if (!warning) {
-    dom.loginWarning.style.display = 'none';
-    return;
-  }
-
-  dom.loginWarning.style.display = 'block';
-  dom.loginWarning.className = 'login-warning ' + (warning.type || 'scrape');
-  dom.loginWarning.innerHTML =
-    '<div class="warning-icon">' + wIcon(warning.type === 'login' ? 'lock' : 'alert-triangle', 32) + '</div>' +
-    '<p class="warning-title">' + escapeHtml(warning.title) + '</p>' +
-    '<p class="warning-desc">' + escapeHtml(warning.message) + '</p>';
-}
 
 function renderDiagnostics() {
   if (!dom.diagnostics) return;
@@ -501,13 +451,11 @@ function render() {
   }
 
   const itemCount = Array.isArray(state.items) ? state.items.length : 0;
-  const hasWarning = !!getScrapeWarning();
-  try { renderScrapeWarning(); } catch(e) { console.error('[Popup] renderScrapeWarning:', e.message); }
   try { renderDiagnostics(); } catch(e) { console.error('[Popup] renderDiagnostics:', e.message); }
 
   if (itemCount === 0) {
     try { list.style.display = 'none'; } catch {}
-    try { empty.style.display = hasWarning ? 'none' : 'block'; } catch {}
+    try { empty.style.display = 'block'; } catch {}
   } else {
     try { list.style.display = 'block'; } catch {}
     try { empty.style.display = 'none'; } catch {}
