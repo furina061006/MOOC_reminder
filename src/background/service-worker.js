@@ -1127,14 +1127,23 @@ function apiDetectPhase(node) {
   // 测验(type:2)无互评，作业(type:3)才有
   // 部分 SPOC 课程的这些字段在 node.test 中
   var nt = node.test || {};
-  var t = String(node.type || nt.type || '');
+  var t = String(node.type || nt.type || node.contentType || '');
   if (t !== '3') return null;
   var e = node.enableEvaluation != null ? node.enableEvaluation : nt.enableEvaluation;
   var es = node.evaluateStart != null ? node.evaluateStart : nt.evaluateStart;
   if (!e || es == null) return null;
   var pub = parseInt(node.scorePubStatus != null ? node.scorePubStatus : nt.scorePubStatus, 10) || 0;
   if (pub === 2) return 'results';
-  if (pub === 1) return 'results';  // 互评窗口关闭 → 过期当完成
+  if (pub === 1) {
+    // scorePubStatus=1 表示平台标记了窗口关闭，但实际 evaluateEnd 可能未到
+    // 只有 evaluateEnd 真正过了才当 results，否则按时间降级判断
+    var now = Date.now();
+    var start = parseInt(es, 10);
+    var end = parseInt((node.evaluateScoreReleaseTime || nt.evaluateScoreReleaseTime) || (node.evaluateEnd || nt.evaluateEnd), 10);
+    if (end && now >= end) return 'results';
+    if (start && now < start) return 'submit';
+    return 'peerreview';
+  }
   var now = Date.now();
   var start = parseInt(es, 10);
   var end = parseInt((node.evaluateScoreReleaseTime || nt.evaluateScoreReleaseTime) || (node.evaluateEnd || nt.evaluateEnd), 10);
@@ -1235,7 +1244,7 @@ function apiExtractHomework(input, course) {
         // 互评中：用 evaluateEnd 代替原来的提交截止日期
         var nt2 = node.test || {};
         var phaseDeadline = deadlineMs;
-        if (apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus,10) || 0) === 0) {
+        if (apiDetectPhase(node) === 'peerreview') {
           var pe = parseInt(node.evaluateEnd || nt2.evaluateEnd,10);
           if (pe > 0) phaseDeadline = pe;
         }
@@ -1244,7 +1253,7 @@ function apiExtractHomework(input, course) {
         var nType = parseInt(node.type || nt2.type || node.contentType, 10);
         var submitted = parseInt(node.usedTryCount || nt2.usedTryCount,10) > 0 && (nType === 3 || nType === 6);
         // 互评中不算完成（等待评分），互评期结束后回到已提交则算完成
-        var inPeerReview = apiDetectPhase(node) === 'peerreview' && (parseInt(node.scorePubStatus || nt2.scorePubStatus,10) || 0) === 0;
+        var inPeerReview = apiDetectPhase(node) === 'peerreview';
         var done = (score != null && totalScore != null && score > 0)
                 || (submitted && !inPeerReview)
                 || apiHasCompletedText(node, 0);

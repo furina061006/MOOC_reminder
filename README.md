@@ -133,6 +133,10 @@ popup 左上角可筛选：
 - **SPOC 跨课程污染修复**：`data-mooc-real-termid` 仅在本课程页面时才用于替换 termId
 - **后台刷新用 activeTermId**：`apiRefreshCourse` 使用 `course.activeTermId || course.termId`
 - **Course_UPDATE 携带 courseName**：SPOC 课程名称持久化，修复「未知课程」问题
+- **SPOC 互评作业修复**：`apiDetectPhase` 添加 `node.contentType` 后备（SPOC 数据无 `node.type` 和 `node.test`，类型标识在 `contentType`）
+- **`scorePubStatus:1` 时间检查**：不再看到 1 就直接判定完成，改为先验证 `evaluateEnd` 是否真正到期；到期才判完成，未到期按时间正常判断互评阶段
+- **移除冗余 `scorePubStatus===0` 门控**：`inPeerReview` 和 `phaseDeadline` 中额外检查 `scorePubStatus===0` 导致 `apiDetectPhase` 正确返回 `peerreview` 后被否决，现已移除，直接信任相位检测
+- **`.claude/logs/` 纳入版本管理**：开发日志解除 gitignore，供其他开发者追踪技术决策
 
 ### 2026-06-27
 

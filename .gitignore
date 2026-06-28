@@ -3,7 +3,6 @@ node_modules/
 
 # Logs
 logs/
-.claude/logs/
 
 # IDE / Editor
 .vscode/
