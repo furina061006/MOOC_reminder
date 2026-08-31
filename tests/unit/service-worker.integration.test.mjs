@@ -266,6 +266,10 @@ test('TEST_NOTIFICATION supports deadline, overdue, and digest variants', async 
     const [, options] = [...h.notificationsCreated][0];
     assert.equal(options.iconUrl, 'chrome-extension://test/src/assets/icons/icon128.png');
     assert.match(options.title, /MOOC/);
+    if (kind === 'digest') {
+      assert.match(options.message, /第一章作业/);
+      assert.match(options.message, /另有 2 项/);
+    }
   }
 });
 
