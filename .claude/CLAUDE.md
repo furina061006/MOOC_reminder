@@ -227,8 +227,10 @@ var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
 ### 涉及文件
 
 - `src/content/spoc-tid-bridge.js` — WAR 脚本，页面上下文读 window.moocTermDto.id
+- `src/content/xhr-hook.js` — document_start 注入外部页面 hook
+- `src/content/xhr-hook-page.js` — 页面上下文捕获 API 响应和真实 termId
 - `src/content/main.js` — init() 注入 bridge → 读 DOM → batchApiFetch 使用真实 termId
-- `manifest.json` — spoc-tid-bridge.js 在 web_accessible_resources
+- `manifest.json` — bridge 和 xhr-hook-page.js 在 web_accessible_resources
 
 ---
 
@@ -360,6 +362,19 @@ MOOC 作业按天更新、提醒阈值是 24h/48h 级，不需要高频轮询：
 SW 唤醒从 ~336 次/天降到 ~102 次/天。`BATCH_API_FETCH` 只发给 `lastAccessed` 最新的一个标签页（发给所有标签页 = N 倍重复抓取）。
 
 「完全脱离浏览器」（外部 cron/后端）不可行：登录 cookie 绑定浏览器 profile，扩展无法在浏览器外取用（与「无后端」设计决策一致）。
+
+### 通知与摘要
+
+- 通知通过 `chrome.notifications` 创建，再由 Chrome 交给 Windows 11；通知中心是否保留记录取决于 Chrome 和 Windows 的通知设置
+- 截止提醒按设置阈值逐档通知并去重，免打扰时段内延后
+- 每日摘要按截止时间升序排列，最多展示最早的 3 项，其余显示「另有 N 项」；完整列表在 popup 中查看
+- 设置页的「系统反馈」只展示通知权限、提醒开关、免打扰状态、可提醒数量和下次检查时间，不修改作业数据
+
+### 页面脚本与 CSP
+
+- `xhr-hook.js` 在 `document_start` 注入外部 `xhr-hook-page.js`
+- `xhr-hook-page.js` 通过 `web_accessible_resources` 暴露给 icourse163.org 页面上下文
+- 禁止使用 `script.textContent` 注入内联代码，否则会被 icourse163.org 的 CSP 拦截
 
 ### 截止提醒数据流
 

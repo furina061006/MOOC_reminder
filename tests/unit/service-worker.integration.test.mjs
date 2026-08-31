@@ -242,37 +242,6 @@ test('notification diagnostics exposes permission, next alarm, and due count', a
   assert.ok(response.alarms.badgeRefresh);
 });
 
-test('TEST_NOTIFICATION creates a Windows-delivery diagnostic notification', async () => {
-  h.notificationsCreated.clear();
-
-  const response = await sendMessage({ type: 'TEST_NOTIFICATION' });
-
-  assert.equal(response.success, true);
-  assert.equal(response.permissionLevel, 'granted');
-  assert.equal(h.notificationsCreated.size, 1);
-  const [id, options] = [...h.notificationsCreated][0];
-  assert.match(id, /^mooc-reminder:system-test:/);
-  assert.equal(options.title, 'MOOC Reminder 系统反馈测试');
-  assert.equal(options.iconUrl, 'chrome-extension://test/src/assets/icons/icon128.png');
-});
-
-test('TEST_NOTIFICATION supports deadline, overdue, and digest variants', async () => {
-  for (const kind of ['deadline', 'overdue', 'digest']) {
-    h.notificationsCreated.clear();
-    const response = await sendMessage({ type: 'TEST_NOTIFICATION', kind });
-    assert.equal(response.success, true);
-    assert.equal(response.kind, kind);
-    assert.equal(h.notificationsCreated.size, 1);
-    const [, options] = [...h.notificationsCreated][0];
-    assert.equal(options.iconUrl, 'chrome-extension://test/src/assets/icons/icon128.png');
-    assert.match(options.title, /MOOC/);
-    if (kind === 'digest') {
-      assert.match(options.message, /第一章作业/);
-      assert.match(options.message, /另有 2 项/);
-    }
-  }
-});
-
 test('daily digest inside quiet hours defers via retry alarm and keeps the date unset', async () => {
   h.notificationsCreated.clear();
   h.alarmsCreated.clear();

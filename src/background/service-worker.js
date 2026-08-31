@@ -524,54 +524,6 @@ const MESSAGE_HANDLERS = {
     };
   },
 
-  // Creates an immediate notification without modifying homework state. The
-  // variants exercise the same Chrome notification delivery path as reminders.
-  async TEST_NOTIFICATION(msg) {
-    if (!chrome.notifications || !chrome.notifications.create) {
-      return { success: false, error: '浏览器不支持通知 API' };
-    }
-    let permissionLevel = 'unknown';
-    try {
-      if (chrome.notifications.getPermissionLevel) {
-        permissionLevel = await chrome.notifications.getPermissionLevel();
-      }
-    } catch {}
-    if (permissionLevel === 'denied') {
-      return { success: false, error: 'Chrome 已禁止此扩展发送通知', permissionLevel };
-    }
-    const kind = ['deadline', 'overdue', 'digest'].includes(msg?.kind) ? msg.kind : 'system';
-    const digestNow = new Date();
-    const digestItems = [
-      '第一章作业', '第二章测验', '第三章作业', '期中考试', '第四章作业'
-    ].map(function(title, index) {
-      return {
-        title,
-        courseName: index === 3 ? '大学英语' : '数据结构',
-        deadline: new Date(digestNow.getTime() + (index + 1) * 3 * 60 * 60 * 1000).toISOString(),
-        checkedOff: false
-      };
-    });
-    const copy = {
-      system: { title: 'MOOC Reminder 系统反馈测试', message: '若未显示，请检查 Chrome 与 Windows 11 的通知和免打扰设置。', priority: 1 },
-      deadline: { title: 'MOOC 作业即将截止', message: '数据结构 · 测试作业（模拟：12 小时后截止）', priority: 1 },
-      overdue: { title: 'MOOC 作业已过期', message: '数据结构 · 测试作业（模拟：已过期）', priority: 2 },
-      digest: { title: '今日 MOOC 作业汇总', message: formatDigestMessage(digestItems, digestNow), priority: 1 }
-    }[kind];
-    try {
-      const id = 'mooc-reminder:system-test:' + kind + ':' + Date.now();
-      await chrome.notifications.create(id, {
-        type: 'basic',
-        iconUrl: getNotificationIconUrl(),
-        title: copy.title,
-        message: copy.message,
-        priority: copy.priority
-      });
-      return { success: true, permissionLevel, notificationId: id, kind };
-    } catch (e) {
-      return { success: false, error: String(e?.message || e), permissionLevel };
-    }
-  },
-
   // Clear sync errors from storage
   async CLEAR_ERRORS() {
     await chrome.storage.local.set({ [KEYS.SYNC_ERRORS]: [] });

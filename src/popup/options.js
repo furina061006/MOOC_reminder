@@ -265,24 +265,6 @@ async function loadNotificationDiagnostics() {
   }
 }
 
-async function handleTestNotification(kind) {
-  const btn = $(kind === 'system' ? 'test-notification-btn' : 'test-' + kind + '-btn');
-  if (btn) btn.disabled = true;
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'TEST_NOTIFICATION', kind });
-    if (response && response.success) {
-      showStatus('已发送' + (kind === 'deadline' ? '截止提醒' : kind === 'overdue' ? '过期提醒' : kind === 'digest' ? '每日摘要' : '系统测试') + '通知');
-    } else {
-      showStatus('测试通知失败：' + (response && response.error ? response.error : '未知错误'), true);
-    }
-  } catch (e) {
-    showStatus('测试通知失败：' + e.message, true);
-  } finally {
-    if (btn) btn.disabled = false;
-    loadNotificationDiagnostics();
-  }
-}
-
 async function loadErrorReport() {
   var body = $('error-report-body');
   if (!body) return;
@@ -446,14 +428,6 @@ async function init() {
     loadNotificationDiagnostics();
     var refreshDiagnosticsBtn = $('refresh-notification-diagnostics-btn');
     if (refreshDiagnosticsBtn) refreshDiagnosticsBtn.addEventListener('click', loadNotificationDiagnostics);
-    var testNotificationBtn = $('test-notification-btn');
-    if (testNotificationBtn) testNotificationBtn.addEventListener('click', function() { handleTestNotification('system'); });
-    var testDeadlineBtn = $('test-deadline-btn');
-    if (testDeadlineBtn) testDeadlineBtn.addEventListener('click', function() { handleTestNotification('deadline'); });
-    var testOverdueBtn = $('test-overdue-btn');
-    if (testOverdueBtn) testOverdueBtn.addEventListener('click', function() { handleTestNotification('overdue'); });
-    var testDigestBtn = $('test-digest-btn');
-    if (testDigestBtn) testDigestBtn.addEventListener('click', function() { handleTestNotification('digest'); });
   } catch(e) { console.error('[Options] notification diagnostics init:', e.message); }
 }
 
