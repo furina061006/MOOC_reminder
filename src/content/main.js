@@ -93,6 +93,13 @@
     // ═══ 检查 xhr-hook.js 拦截到的页面 API 响应 ═══
     checkPageHookData();
 
+    // ═══ 通知 SW「课程页刚打开」：SW 节流后触发全课程刷新 ═══
+    // 事件驱动调度的主入口——用户主动来 MOOC 时刷新数据最及时，
+    // 周期 alarm（默认 4h）只作兜底
+    try {
+      chrome.runtime.sendMessage({ type: 'PAGE_OPENED' }).catch(function() {});
+    } catch (e) { console.debug('[MOOC Reminder] PAGE_OPENED send failed:', e.message); }
+
     console.log('[MOOC Reminder] Content script initialized');
   }
 
@@ -309,7 +316,7 @@
 
         // 诊断：itemCount=0 时先看数据结构（首次或 SPOC 课程）
         if (c.courseType === 'spoc') {
-          try { var _d = JSON.parse(text); var r = _d && _d.result; var m = r && r.mocTermDto; var chs = m && m.chapters; console.log('[MOOC Reminder] SPOC:', c.courseId, 'ch=' + (chs ? chs.length : 0), 'len=' + text.length); if (chs) { var hw=0, qz=0, ex=0, le=0; for (var ci=0;ci<chs.length;ci++){var ch=chs[ci];hw+=(ch.homeworks&&ch.homeworks.length)||0;qz+=(ch.quizs&&ch.quizs.length)||0;ex+=(ch.exam?1:0);le+=(ch.lessons&&ch.lessons.length)||0;} console.log('[MOOC Reminder] SPOC totals: hw='+hw+' qz='+qz+' ex='+ex+' le='+le); for (var ci=0;ci<chs.length;ci++){if (chs[ci].quizs && chs[ci].quizs.length>0) { var q0=chs[ci].quizs[0]; console.log('[MOOC Reminder] quiz0 keys:', Object.keys(q0)); if (q0.test) console.log('[MOOC Reminder] quiz0.test keys:', Object.keys(q0.test)); console.log('[MOOC Reminder] quiz0 name:', q0.name); break; } } } } catch(e) {}
+          try { var _d = JSON.parse(text); var r = _d && _d.result; var mDto = r && r.mocTermDto; var chs = mDto && mDto.chapters; console.log('[MOOC Reminder] SPOC:', c.courseId, 'ch=' + (chs ? chs.length : 0), 'len=' + text.length); if (chs) { var hw=0, qz=0, ex=0, le=0; for (var ci=0;ci<chs.length;ci++){var ch=chs[ci];hw+=(ch.homeworks&&ch.homeworks.length)||0;qz+=(ch.quizs&&ch.quizs.length)||0;ex+=(ch.exam?1:0);le+=(ch.lessons&&ch.lessons.length)||0;} console.log('[MOOC Reminder] SPOC totals: hw='+hw+' qz='+qz+' ex='+ex+' le='+le); for (ci=0;ci<chs.length;ci++){if (chs[ci].quizs && chs[ci].quizs.length>0) { var q0=chs[ci].quizs[0]; console.log('[MOOC Reminder] quiz0 keys:', Object.keys(q0)); if (q0.test) console.log('[MOOC Reminder] quiz0.test keys:', Object.keys(q0.test)); console.log('[MOOC Reminder] quiz0 name:', q0.name); break; } } } } catch(e) {}
         }
 
         results.push({

@@ -40,8 +40,9 @@ src/
 
 ### 消息协议
 
-- `BATCH_API_FETCH {courses}` — SW → CS，触发批量 API 抓取
+- `BATCH_API_FETCH {courses}` — SW → CS，触发批量 API 抓取（只发给最近活跃的一个标签页）
 - `COURSE_API_DATA {course, rawData}` — CS → SW，API 原始响应
+- `PAGE_OPENED` — CS(main.js init) → SW，课程页刚打开；SW 节流（30min 内不重复）后触发全课程刷新
 - `TRIGGER_SCRAPE` — Popup → SW，手动刷新
 
 ---
@@ -341,6 +342,51 @@ API 提供 `contentType` 字段作为类型标识，优先级高于名字正则�
 详细实现见 `.claude/logs/2026-06-28-completion-logic.md`。
 
 ---
+
+## 调度与截止提醒（2026-08 定型）
+
+### 调度策略：事件驱动为主，周期 alarm 兜底
+
+MOOC 作业按天更新、提醒阈值是 24h/48h 级，不需要高频轮询：
+
+| 触发源 | 时机 | 说明 |
+|---|---|---|
+| `PAGE_OPENED`（main.js init） | 用户打开任意 learn/spoc 页 | **主通道**。SW 节流：距上次全量同步 <30min 跳过 |
+| `onStartup` | 浏览器启动 | 同上节流，每日新鲜度锚点 |
+| `periodic-scrape` alarm | 默认每 240min | 兜底；无标签页时退化为 SW 直连 API |
+| `badge-refresh` alarm | 默认每 15min | 纯本地重算徽章 + 截止提醒检查（兼通知投递粒度） |
+| `daily-digest` alarm | 默认关 | 启用时每天整点摘要 |
+
+SW 唤醒从 ~336 次/天降到 ~102 次/天。`BATCH_API_FETCH` 只发给 `lastAccessed` 最新的一个标签页（发给所有标签页 = N 倍重复抓取）。
+
+「完全脱离浏览器」（外部 cron/后端）不可行：登录 cookie 绑定浏览器 profile，扩展无法在浏览器外取用（与「无后端」设计决策一致）。
+
+### 截止提醒数据流
+
+```
+badge-refresh tick（或任何 updateBadgeFromStorage 调用）
+  → maybeNotifyDeadlines(unfinished)
+      ├─ 在途守卫 notifyInFlight（并发 tick 不重复弹）
+      ├─ collectDueNotifications()  ← shared/reminder.js 纯函数（可单测）
+      │    过滤: checkedOff / 静音 / snooze / 免打扰
+      │    判级: getNotificationLevel（每个档位跨越时弹一次）
+      ├─ chrome.notifications.create(...)
+      └─ mutateHomeworkItems 锁内按 uid 补丁 lastNotificationLevel（绝不整体写回陈旧快照）
+```
+
+### 关键不变量（改代码前必读）
+
+1. **`homework_items` 的所有读-改-写必须走 `mutateHomeworkItems`**（shared/items-mutex.js 的串行锁）。直接 `get→改→set` 会与并发的 reconcile/通知写回互相覆盖（症状：通知重复弹、已完成项被复活）。
+2. **SNOOZE 必须同时清 `lastNotificationLevel`**，否则 snooze 到期后同档位永不再提醒（对已过期条目致命）。
+3. **digest 先 create 成功再写 `last_digest_date`**；免打扰命中时创建一次性 `daily-digest-retry` alarm 而不是静默丢弃。
+4. 点击通知用 `resolveItemUrl`（shared/item-url.js）兜底重建 URL——API 条目没有 pageUrl。
+5. `notifyLeadHours: []`（显式空数组）= 用户关闭所有提前档位，normalizeSettings 不得回退默认值；仅字段缺失才用默认。
+
+### 测试结构
+
+- `tests/unit/*.test.mjs` — shared 纯函数（settings/reminder/item-url/items-mutex/calendar/date-utils/homework-model/icourse163-api/manifest）
+- `tests/unit/service-worker.integration.test.mjs` — **stub chrome.* 后 import 真实 SW 模块**，驱动真实 alarm/消息/通知点击路径（通知去重、snooze 重弹、PAGE_OPENED 单标签页分发、digest 重试等）
+- `npm run validate` = eslint + 全部 node --test
 
 ## 数据模型
 

@@ -325,7 +325,7 @@ export function extractHomeworkFromTermDto(input, course) {
     if (resultObj && typeof resultObj === 'object') {
       console.log('[MOOC Reminder] apiExtractHomework: result keys:', Object.keys(resultObj));
       for (const rk in resultObj) {
-        if (resultObj.hasOwnProperty(rk) && typeof resultObj[rk] === 'object' && resultObj[rk] !== null) {
+        if (Object.prototype.hasOwnProperty.call(resultObj, rk) && typeof resultObj[rk] === 'object' && resultObj[rk] !== null) {
           console.log('[MOOC Reminder] result.' + rk + ' keys:', Object.keys(resultObj[rk]).slice(0, 15));
         }
       }

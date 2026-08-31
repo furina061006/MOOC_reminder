@@ -1,17 +1,20 @@
 /**
- * User settings — schema, defaults, and the pure logic that the (formerly
- * dormant) settings actually drive: alarm periods, notification thresholds,
- * and quiet hours.
+ * User settings — schema, defaults, and the pure logic that settings actually
+ * drive: alarm periods, notification thresholds, and quiet hours.
  *
- * These are pure functions, unit-tested here and inlined into the service
- * worker (see [[runtime-vs-shared-duplication]]). Until this PR, user_settings
- * was stored and validated but NEVER read — setupAlarms hard-coded 30/5 and the
- * notifier hard-coded its thresholds. Now both consult these helpers.
+ * These are pure functions, unit-tested here and imported by the service
+ * worker. Until 2026-06, user_settings was stored and validated but NEVER
+ * read — setupAlarms hard-coded its periods and the notifier hard-coded its
+ * thresholds. Now both consult these helpers.
+ *
+ * 2026-08: 默认抓取间隔 30→240 分钟。MOOC 作业按天更新，提醒阈值是
+ * 24h/48h 级；全量刷新主要由「打开课程页/浏览器启动」事件驱动，周期
+ * alarm 只作兜底（见 service-worker 的 PAGE_OPENED）。
  */
 
 export const DEFAULT_SETTINGS = {
-  checkIntervalMinutes: 30,    // periodic scrape + API refresh cadence
-  badgeRefreshMinutes: 5,      // badge recompute cadence
+  checkIntervalMinutes: 240,   // periodic scrape fallback cadence (page-open events refresh sooner)
+  badgeRefreshMinutes: 15,     // badge recompute + deadline-notification check cadence
   autoDetectEnabled: true,     // honor scraper/API auto-completion
   notificationsEnabled: true,  // desktop deadline notifications master switch
   notifyLeadHours: [48, 24],   // fire as each threshold is crossed
@@ -27,7 +30,7 @@ export const DEFAULT_SETTINGS = {
   showCourseMute: true,         // show course mute button
 };
 
-function clampInt(value, min, max, fallback) {
+export function clampInt(value, min, max, fallback) {
   const n = typeof value === 'string' ? parseInt(value, 10) : value;
   if (typeof n !== 'number' || !isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -36,7 +39,10 @@ function clampInt(value, min, max, fallback) {
 /** Merge stored settings over defaults and clamp every field to a sane range. */
 export function normalizeSettings(stored) {
   const s = (stored && typeof stored === 'object') ? stored : {};
-  let leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULT_SETTINGS.notifyLeadHours;
+  // Explicit empty array means "all lead levels off" (options UI allows
+  // unchecking every threshold) — only a missing/invalid field falls back
+  // to defaults. getNotificationLevel handles an empty list naturally.
+  let leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULT_SETTINGS.notifyLeadHours.slice();
   leads = leads
     .map((h) => {
       const n = typeof h === 'string' ? parseInt(h, 10) : h;
@@ -45,7 +51,6 @@ export function normalizeSettings(stored) {
     })
     .filter((h) => h != null)
     .sort((a, b) => b - a); // descending, so larger thresholds are crossed first
-  if (leads.length === 0) leads = DEFAULT_SETTINGS.notifyLeadHours.slice();
   return {
     checkIntervalMinutes: clampInt(s.checkIntervalMinutes, 1, 1440, DEFAULT_SETTINGS.checkIntervalMinutes),
     badgeRefreshMinutes: clampInt(s.badgeRefreshMinutes, 1, 1440, DEFAULT_SETTINGS.badgeRefreshMinutes),
