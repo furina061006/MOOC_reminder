@@ -524,9 +524,9 @@ const MESSAGE_HANDLERS = {
     };
   },
 
-  // Creates an immediate system notification to distinguish extension-side
-  // scheduling from Chrome/Windows notification delivery settings.
-  async TEST_NOTIFICATION() {
+  // Creates an immediate notification without modifying homework state. The
+  // variants exercise the same Chrome notification delivery path as reminders.
+  async TEST_NOTIFICATION(msg) {
     if (!chrome.notifications || !chrome.notifications.create) {
       return { success: false, error: '浏览器不支持通知 API' };
     }
@@ -539,16 +539,23 @@ const MESSAGE_HANDLERS = {
     if (permissionLevel === 'denied') {
       return { success: false, error: 'Chrome 已禁止此扩展发送通知', permissionLevel };
     }
+    const kind = ['deadline', 'overdue', 'digest'].includes(msg?.kind) ? msg.kind : 'system';
+    const copy = {
+      system: { title: 'MOOC Reminder 系统反馈测试', message: '若未显示，请检查 Chrome 与 Windows 11 的通知和免打扰设置。', priority: 1 },
+      deadline: { title: 'MOOC 作业即将截止', message: '数据结构 · 测试作业（模拟：12 小时后截止）', priority: 1 },
+      overdue: { title: 'MOOC 作业已过期', message: '数据结构 · 测试作业（模拟：已过期）', priority: 2 },
+      digest: { title: '今日 MOOC 作业汇总', message: '数据结构 · 测试作业（模拟：明天 23:59 截止）', priority: 1 }
+    }[kind];
     try {
-      const id = 'mooc-reminder:system-test:' + Date.now();
+      const id = 'mooc-reminder:system-test:' + kind + ':' + Date.now();
       await chrome.notifications.create(id, {
         type: 'basic',
         iconUrl: getNotificationIconUrl(),
-        title: 'MOOC Reminder 系统反馈测试',
-        message: '若未显示，请检查 Chrome 与 Windows 11 的通知和免打扰设置。',
-        priority: 1
+        title: copy.title,
+        message: copy.message,
+        priority: copy.priority
       });
-      return { success: true, permissionLevel, notificationId: id };
+      return { success: true, permissionLevel, notificationId: id, kind };
     } catch (e) {
       return { success: false, error: String(e?.message || e), permissionLevel };
     }
