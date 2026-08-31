@@ -49,7 +49,8 @@ function makeChromeStub() {
     runtime: {
       onInstalled: { addListener: fn => listeners.onInstalled.push(fn) },
       onStartup: { addListener: fn => listeners.onStartup.push(fn) },
-      onMessage: { addListener: fn => listeners.onMessage.push(fn) }
+      onMessage: { addListener: fn => listeners.onMessage.push(fn) },
+      getURL(path) { return 'chrome-extension://test/' + path; }
     },
     alarms: {
       onAlarm: { addListener: fn => listeners.onAlarm.push(fn) },
@@ -252,6 +253,7 @@ test('TEST_NOTIFICATION creates a Windows-delivery diagnostic notification', asy
   const [id, options] = [...h.notificationsCreated][0];
   assert.match(id, /^mooc-reminder:system-test:/);
   assert.equal(options.title, 'MOOC Reminder 系统反馈测试');
+  assert.equal(options.iconUrl, 'chrome-extension://test/src/assets/icons/icon128.png');
 });
 
 test('daily digest inside quiet hours defers via retry alarm and keeps the date unset', async () => {

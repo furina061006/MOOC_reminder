@@ -25,6 +25,15 @@ const KEYS = {
   LAST_DIGEST_DATE: 'last_digest_date'
 };
 
+function getNotificationIconUrl() {
+  try {
+    return chrome.runtime.getURL('src/assets/icons/icon128.png');
+  } catch {
+    // Test stubs and older browsers may not expose getURL.
+    return 'src/assets/icons/icon128.png';
+  }
+}
+
 // Settings defaults/logic live in src/shared/settings.js (unit-tested) and are
 // imported here — the SW is a module worker (manifest "type": "module"), so no
 // inlined duplicate copy is kept anymore.
@@ -534,7 +543,7 @@ const MESSAGE_HANDLERS = {
       const id = 'mooc-reminder:system-test:' + Date.now();
       await chrome.notifications.create(id, {
         type: 'basic',
-        iconUrl: 'src/assets/icons/icon128.png',
+        iconUrl: getNotificationIconUrl(),
         title: 'MOOC Reminder 系统反馈测试',
         message: '若未显示，请检查 Chrome 与 Windows 11 的通知和免打扰设置。',
         priority: 1
@@ -863,7 +872,7 @@ async function sendDailyDigestNotification() {
   try {
     await chrome.notifications.create('mooc-reminder:daily-digest', {
       type: 'basic',
-      iconUrl: 'src/assets/icons/icon128.png',
+      iconUrl: getNotificationIconUrl(),
       title: '今日 MOOC 作业汇总',
       message,
       priority: 1
@@ -907,7 +916,7 @@ async function maybeNotifyDeadlines(unfinishedItems) {
     try {
       await chrome.notifications.create(notificationIdFor(d.uid, d.level), {
         type: 'basic',
-        iconUrl: 'src/assets/icons/icon128.png',
+        iconUrl: getNotificationIconUrl(),
         title: d.title,
         message: d.message,
         priority: d.priority
