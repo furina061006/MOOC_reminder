@@ -11,6 +11,7 @@ const browserExtensionGlobals = {
   URL: 'readonly',
   MutationObserver: 'readonly',
   NodeFilter: 'readonly',
+  XMLHttpRequest: 'readonly',
   setTimeout: 'readonly',
   setInterval: 'readonly',
   clearTimeout: 'readonly',
@@ -42,7 +43,8 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['src/background/**/*.js', 'src/content/main.js', 'src/content/course-discovery.js', 'src/popup/**/*.js', 'tests/**/*.js'],
+    // Page-context scripts (classic, run in the page or content-script world)
+    files: ['src/content/main.js', 'src/content/course-discovery.js', 'src/content/xhr-hook.js', 'src/content/spoc-tid-bridge.js', 'src/popup/**/*.js', 'tests/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',
@@ -51,7 +53,7 @@ export default [
     rules: projectRules
   },
   {
-    files: ['src/shared/**/*.js', 'src/content/scrapers/**/*.js', 'src/content/observers/**/*.js'],
+    files: ['src/shared/**/*.js', 'src/background/**/*.js', 'src/content/scrapers/**/*.js', 'src/content/observers/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
@@ -67,7 +69,9 @@ export default [
       globals: {
         console: 'readonly',
         process: 'readonly',
-        URL: 'readonly'
+        URL: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly'
       }
     },
     rules: projectRules

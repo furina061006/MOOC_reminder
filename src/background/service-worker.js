@@ -25,72 +25,34 @@ const KEYS = {
   LAST_DIGEST_DATE: 'last_digest_date'
 };
 
-// Inlined from src/shared/settings.js — keep in sync (shared copy is unit-tested).
-const DEFAULT_SETTINGS = {
-  checkIntervalMinutes: 30,
-  badgeRefreshMinutes: 5,
-  autoDetectEnabled: true,
-  notificationsEnabled: true,
-  notifyLeadHours: [48, 24],
-  notifyOverdue: true,
-  quietHoursEnabled: false,
-  quietStart: 22,
-  quietEnd: 8,
-  dailyDigestEnabled: false,
-  dailyDigestHour: 8,
-  mutedCourseIds: [],
-  autoDismissErrors: true,
-  showSnoozeButton: true,
-  showCourseMute: true,
-};
+// Settings defaults/logic live in src/shared/settings.js (unit-tested) and are
+// imported here — the SW is a module worker (manifest "type": "module"), so no
+// inlined duplicate copy is kept anymore.
+import {
+  DEFAULT_SETTINGS,
+  clampInt,
+  normalizeSettings,
+  resolveAlarmPeriods,
+  isWithinQuietHours
+} from '../shared/settings.js';
+import {
+  collectDueNotifications,
+  isCourseMuted,
+  isSnoozed,
+  notificationIdFor,
+  nextQuietEndWhen
+} from '../shared/reminder.js';
+import { resolveItemUrl } from '../shared/item-url.js';
+import { createSerializedStore } from '../shared/items-mutex.js';
 
-function clampInt(value, min, max, fallback) {
-  const n = typeof value === 'string' ? parseInt(value, 10) : value;
-  if (typeof n !== 'number' || !isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, Math.round(n)));
-}
-
-function normalizeSettings(stored) {
-  const s = (stored && typeof stored === 'object') ? stored : {};
-  let leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULT_SETTINGS.notifyLeadHours;
-  leads = leads.map(h => {
-    const n = typeof h === 'string' ? parseInt(h, 10) : h;
-    if (typeof n !== 'number' || !isFinite(n) || n < 1) return null;
-    return Math.min(720, Math.round(n));
-  }).filter(h => h != null).sort((a, b) => b - a);
-  if (leads.length === 0) leads = DEFAULT_SETTINGS.notifyLeadHours.slice();
-  return {
-    checkIntervalMinutes: clampInt(s.checkIntervalMinutes, 1, 1440, DEFAULT_SETTINGS.checkIntervalMinutes),
-    badgeRefreshMinutes: clampInt(s.badgeRefreshMinutes, 1, 1440, DEFAULT_SETTINGS.badgeRefreshMinutes),
-    autoDetectEnabled: s.autoDetectEnabled !== false,
-    notificationsEnabled: s.notificationsEnabled !== false,
-    notifyLeadHours: leads,
-    notifyOverdue: s.notifyOverdue !== false,
-    quietHoursEnabled: s.quietHoursEnabled === true,
-    quietStart: clampInt(s.quietStart, 0, 23, DEFAULT_SETTINGS.quietStart),
-    quietEnd: clampInt(s.quietEnd, 0, 23, DEFAULT_SETTINGS.quietEnd),
-    dailyDigestEnabled: s.dailyDigestEnabled === true,
-    dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour),
-    mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : [],
-    autoDismissErrors: s.autoDismissErrors === true,
-    showSnoozeButton: s.showSnoozeButton !== false,
-    showCourseMute: s.showCourseMute !== false,
-  };
-}
-
-function resolveAlarmPeriods(settings) {
-  const s = normalizeSettings(settings);
-  return { scrapeMinutes: s.checkIntervalMinutes, badgeMinutes: s.badgeRefreshMinutes };
-}
-
-function isWithinQuietHours(settings, date) {
-  const s = normalizeSettings(settings);
-  if (!s.quietHoursEnabled) return false;
-  const hour = date.getHours();
-  if (s.quietStart === s.quietEnd) return false;
-  if (s.quietStart < s.quietEnd) return hour >= s.quietStart && hour < s.quietEnd;
-  return hour >= s.quietStart || hour < s.quietEnd;
-}
+// homework_items has many concurrent read-modify-write writers (reconcile,
+// notification bookkeeping, popup actions). All RMW mutations must go through
+// this serialized store; direct get→mutate→setHomeworkItems sequences race
+// and silently revert each other.
+const mutateHomeworkItems = createSerializedStore({
+  get: getHomeworkItems,
+  set: setHomeworkItems
+});
 
 // ─── Lifecycle ──────────────────────────────────────────
 
@@ -107,6 +69,9 @@ chrome.runtime.onStartup.addListener(async () => {
   await validateAndRepairStorage();
   await setupAlarms();
   await checkMissedDigest();
+  // 浏览器启动 = 每日新鲜度锚点：配合 4h 兜底周期，构成「事件驱动为主、
+  // 周期 alarm 兜底」的调度（作业按天更新，不需要高频轮询）
+  maybeTriggerEventRefresh('startup').catch(() => {});
 });
 
 // ─── Storage Validation ─────────────────────────────────
@@ -213,6 +178,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     case 'daily-digest':
       await sendDailyDigestNotification();
       break;
+    case 'daily-digest-retry':
+      // 免打扰时段结束时的一次性补发（sendDailyDigestNotification 内部
+      // 自查当天是否已发，无需重复判断）
+      await sendDailyDigestNotification();
+      break;
   }
 });
 
@@ -244,17 +214,6 @@ function makeManualHomeworkUid(title, deadline, courseName) {
   return 'manual_tidmanual_ch_le_hw' + (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-function isCourseMuted(item, settings) {
-  const muted = settings && Array.isArray(settings.mutedCourseIds) ? settings.mutedCourseIds : [];
-  return !!(item && muted.indexOf(item.courseId) >= 0);
-}
-
-function isSnoozed(item, now) {
-  if (!item || !item.snoozedUntil) return false;
-  const t = new Date(item.snoozedUntil).getTime();
-  return !isNaN(t) && t > now.getTime();
-}
-
 const MESSAGE_HANDLERS = {
   // Content script proxies API results (page-context same-origin fetch)
   async COURSE_API_DATA(msg) {
@@ -282,9 +241,11 @@ const MESSAGE_HANDLERS = {
       return { success: false, error: 'Invalid payload' };
     }
 
-    const items = await getHomeworkItems();
-    const item = items.find(i => i.uid === msg.homeworkUid);
-    if (item) {
+    let found = false;
+    await mutateHomeworkItems(items => {
+      const item = items.find(i => i && i.uid === msg.homeworkUid);
+      if (!item) return;
+      found = true;
       item.checkedOff = msg.checkedOff;
       item.manuallyCheckedOff = msg.checkedOff;
       item.lastUpdated = new Date().toISOString();
@@ -294,11 +255,9 @@ const MESSAGE_HANDLERS = {
       if (!msg.checkedOff) {
         item.autoDetectedCompleted = false;
       }
-
-      await setHomeworkItems(items);
-      await updateBadgeFromStorage();
-      return { success: true };
-    }
+    });
+    await updateBadgeFromStorage();
+    if (found) return { success: true };
     return { success: false, error: 'Item not found' };
   },
 
@@ -370,6 +329,13 @@ const MESSAGE_HANDLERS = {
     return await triggerManualScrape();
   },
 
+  // Content script (main.js) signals a learn/spoc page just loaded — the user
+  // is actively on MOOC, so all known courses can refresh right now (throttled).
+  async PAGE_OPENED() {
+    const kicked = await maybeTriggerEventRefresh('page-open');
+    return { success: true, refreshTriggered: kicked };
+  },
+
   // Popup adds a manually-created reminder (for missed scraper items or offline homework)
   async ADD_MANUAL_ITEM(msg) {
     const title = String(msg.title || '').trim();
@@ -404,11 +370,10 @@ const MESSAGE_HANDLERS = {
       pageUrl: String(msg.pageUrl || '').trim(),
       source: 'manual'
     };
-    const items = await getHomeworkItems();
-    items.push(item);
-    await setHomeworkItems(items);
-    await upsertCourse({ courseId, termId: 'manual', courseName, schoolName: item.schoolName, courseType: 'manual' });
-    await updateBadgeFromStorage();
+    await mutateHomeworkItems(items => {
+      items.push(item);
+    });
+    await upsertCourse({ courseId, termId: 'manual', courseName, schoolName: item.schoolName, courseType: 'manual' });    await updateBadgeFromStorage();
     return { success: true, item };
   },
 
@@ -417,12 +382,19 @@ const MESSAGE_HANDLERS = {
     if (!msg.homeworkUid) return { success: false, error: 'Invalid payload' };
     const hours = clampInt(msg.hours, 1, 168, 24);
     const until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
-    const items = await getHomeworkItems();
-    const item = items.find(i => i && i.uid === msg.homeworkUid);
-    if (!item) return { success: false, error: 'Item not found' };
-    item.snoozedUntil = until;
-    item.lastUpdated = new Date().toISOString();
-    await setHomeworkItems(items);
+    let found = false;
+    await mutateHomeworkItems(items => {
+      const item = items.find(i => i && i.uid === msg.homeworkUid);
+      if (!item) return;
+      found = true;
+      item.snoozedUntil = until;
+      item.lastUpdated = new Date().toISOString();
+      // 必须同时清掉已通知档位：否则 snooze 到期后 level 与记忆值相同，
+      // maybeNotifyDeadlines 会永远跳过同档位提醒（对已过期条目尤其致命）
+      item.lastNotificationLevel = null;
+      item.lastNotifiedAt = null;
+    });
+    if (!found) return { success: false, error: 'Item not found' };
     return { success: true, snoozedUntil: until };
   },
 
@@ -455,11 +427,14 @@ const MESSAGE_HANDLERS = {
 
   // Popup clears completed items
   async CLEAR_COMPLETED() {
-    const items = await getHomeworkItems();
-    const active = items.filter(i => !i.checkedOff);
-    await setHomeworkItems(active);
+    let remaining = 0;
+    await mutateHomeworkItems(items => {
+      const active = items.filter(i => !i.checkedOff);
+      remaining = active.length;
+      return active;
+    });
     await updateBadgeFromStorage();
-    return { success: true, remaining: active.length };
+    return { success: true, remaining };
   },
 
   // Popup clears all cached data
@@ -492,9 +467,82 @@ const MESSAGE_HANDLERS = {
     const saved = normalizeSettings(msg && msg.settings);
     await chrome.storage.local.set({ [KEYS.USER_SETTINGS]: saved });
     await setupAlarms();
+    // Apply notification-related setting changes immediately instead of waiting
+    // for the next badge-refresh alarm tick.
     await updateBadgeFromStorage();
     console.log('[MOOC Reminder] Settings updated');
     return { success: true, settings: saved };
+  },
+
+  // Diagnostic snapshot for the options page. Notification delivery beyond this
+  // point is controlled by Chrome and Windows notification settings.
+  async GET_NOTIFICATION_DIAGNOSTICS() {
+    const settings = normalizeSettings(await getUserSettings());
+    const now = new Date();
+    const items = await getHomeworkItems();
+    const unfinished = items.filter(item => item && !item.checkedOff && !isCourseMuted(item, settings));
+    const dueNow = collectDueNotifications(unfinished, settings, now);
+    const alarms = await Promise.all([
+      chrome.alarms.get('badge-refresh'),
+      chrome.alarms.get('periodic-scrape'),
+      chrome.alarms.get('daily-digest'),
+      chrome.alarms.get('daily-digest-retry')
+    ]);
+    let permissionLevel = 'unknown';
+    try {
+      if (chrome.notifications && chrome.notifications.getPermissionLevel) {
+        permissionLevel = await chrome.notifications.getPermissionLevel();
+      }
+    } catch {
+      permissionLevel = 'unknown';
+    }
+    return {
+      success: true,
+      now: now.toISOString(),
+      permissionLevel,
+      notificationsApiAvailable: !!(chrome.notifications && chrome.notifications.create),
+      settings,
+      unfinishedCount: unfinished.length,
+      dueNowCount: dueNow.length,
+      dueNow: dueNow.map(item => ({ uid: item.uid, level: item.level, message: item.message })),
+      quietHoursActive: isWithinQuietHours(settings, now),
+      alarms: {
+        badgeRefresh: alarms[0] || null,
+        periodicScrape: alarms[1] || null,
+        dailyDigest: alarms[2] || null,
+        dailyDigestRetry: alarms[3] || null
+      }
+    };
+  },
+
+  // Creates an immediate system notification to distinguish extension-side
+  // scheduling from Chrome/Windows notification delivery settings.
+  async TEST_NOTIFICATION() {
+    if (!chrome.notifications || !chrome.notifications.create) {
+      return { success: false, error: '浏览器不支持通知 API' };
+    }
+    let permissionLevel = 'unknown';
+    try {
+      if (chrome.notifications.getPermissionLevel) {
+        permissionLevel = await chrome.notifications.getPermissionLevel();
+      }
+    } catch {}
+    if (permissionLevel === 'denied') {
+      return { success: false, error: 'Chrome 已禁止此扩展发送通知', permissionLevel };
+    }
+    try {
+      const id = 'mooc-reminder:system-test:' + Date.now();
+      await chrome.notifications.create(id, {
+        type: 'basic',
+        iconUrl: 'src/assets/icons/icon128.png',
+        title: 'MOOC Reminder 系统反馈测试',
+        message: '若未显示，请检查 Chrome 与 Windows 11 的通知和免打扰设置。',
+        priority: 1
+      });
+      return { success: true, permissionLevel, notificationId: id };
+    } catch (e) {
+      return { success: false, error: String(e?.message || e), permissionLevel };
+    }
   },
 
   // Clear sync errors from storage
@@ -540,11 +588,13 @@ function findUniqueHomeworkCandidate(items, newItem) {
 }
 
 async function reconcileHomeworkData(course, newItems) {
-  const existingItems = await getHomeworkItems();
   const autoDetect = normalizeSettings(await getUserSettings()).autoDetectEnabled;
   let added = 0;
   let updated = 0;
 
+  // Whole merge runs inside the items lock so a concurrent notification
+  // write-back can't interleave between our read and write.
+  await mutateHomeworkItems(async function(existingItems) {
   for (const newItem of newItems) {
     // Skip null/undefined entries from content script
     if (!newItem || typeof newItem !== 'object') continue;
@@ -662,7 +712,7 @@ async function reconcileHomeworkData(course, newItems) {
   if (course && course.courseId) {
     var courseMeta = {};
     for (var key in course) {
-      if (course.hasOwnProperty(key) && key !== 'courseName' && key !== 'schoolName') {
+      if (Object.prototype.hasOwnProperty.call(course, key) && key !== 'courseName' && key !== 'schoolName') {
         courseMeta[key] = course[key];
       }
     }
@@ -671,8 +721,10 @@ async function reconcileHomeworkData(course, newItems) {
     await upsertCourse(courseMeta);
   }
 
-  // Save
-  await setHomeworkItems(existingItems);
+  return existingItems;
+  });
+
+  // Save（mutateHomeworkItems 已写回 items；LAST_SYNC 单独记录）
   await chrome.storage.local.set({
     [KEYS.LAST_SYNC]: new Date().toISOString()
   });
@@ -697,7 +749,7 @@ async function updateBadgeFromStorage() {
 
     await chrome.action.setBadgeText({ text: String(count) });
     await chrome.action.setBadgeBackgroundColor({ color: getUrgencyColor(unfinished) });
-    await maybeNotifyDeadlines(items, unfinished);
+    await maybeNotifyDeadlines(unfinished);
   } catch (e) {
     console.error('[MOOC Reminder] Badge update failed:', e);
   }
@@ -774,11 +826,9 @@ function formatDigestMessage(items, now) {
 async function checkMissedDigest() {
   var settings = normalizeSettings(await getUserSettings());
   if (!settings.dailyDigestEnabled) return;
-  var today = new Date();
-  var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
   var raw = await chrome.storage.local.get(KEYS.LAST_DIGEST_DATE);
-  if (raw[KEYS.LAST_DIGEST_DATE] === todayStr) return;
-  var nowHour = today.getHours();
+  if (raw[KEYS.LAST_DIGEST_DATE] === localDateStr(new Date())) return;
+  var nowHour = new Date().getHours();
   var digestHour = clampInt(settings.dailyDigestHour, 0, 23, 8);
   if (nowHour < digestHour) return;
   console.log('[MOOC Reminder] Missed daily digest at ' + digestHour + ':00, sending now');
@@ -789,13 +839,28 @@ async function sendDailyDigestNotification() {
   if (!chrome.notifications) return;
   const settings = normalizeSettings(await getUserSettings());
   if (!settings.dailyDigestEnabled || !settings.notificationsEnabled) return;
+
+  // 当天已发过就直接返回（retry alarm / 补发 / 正常 alarm 共用本函数）
+  const todayStr = localDateStr(new Date());
+  const raw = await chrome.storage.local.get(KEYS.LAST_DIGEST_DATE);
+  if (raw[KEYS.LAST_DIGEST_DATE] === todayStr) return;
+
   const now = new Date();
-  if (isWithinQuietHours(settings, now)) return;
+  if (isWithinQuietHours(settings, now)) {
+    // 免打扰时段命中：daily-digest alarm 周期是 24h，直接 return 会丢掉
+    // 当天摘要——改为在免打扰结束时安排一次性重试
+    const retryAt = nextQuietEndWhen(settings, now);
+    if (retryAt) {
+      chrome.alarms.create('daily-digest-retry', { when: retryAt });
+      console.log('[MOOC Reminder] Daily digest deferred to quiet-hours end');
+    }
+    return;
+  }
+
   const items = (await getHomeworkItems()).filter(item => !isCourseMuted(item, settings) && !isSnoozed(item, now));
   const message = formatDigestMessage(items, now);
   if (!message) return;
   try {
-    await chrome.storage.local.set({ [KEYS.LAST_DIGEST_DATE]: new Date().getFullYear() + '-' + String(new Date().getMonth()+1).padStart(2,'0') + '-' + String(new Date().getDate()).padStart(2,'0') });
     await chrome.notifications.create('mooc-reminder:daily-digest', {
       type: 'basic',
       iconUrl: 'src/assets/icons/icon128.png',
@@ -803,50 +868,28 @@ async function sendDailyDigestNotification() {
       message,
       priority: 1
     });
+    // 先发成功再记日期：create 失败时当天还有重试机会（补发/下一次触发）
+    await chrome.storage.local.set({ [KEYS.LAST_DIGEST_DATE]: todayStr });
+    await chrome.alarms.clear('daily-digest-retry');
   } catch (e) {
     console.warn('[MOOC Reminder] Daily digest notification failed:', e.message);
   }
 }
 
-function getNotificationLevel(item, now, settings) {
-  const s = normalizeSettings(settings);
-  if (!s.notificationsEnabled || !item || !item.deadline) return null;
-  let deadline;
-  try {
-    deadline = new Date(item.deadline);
-  } catch {
-    return null;
-  }
-  if (isNaN(deadline.getTime())) return null;
-
-  const diff = deadline.getTime() - now.getTime();
-  if (diff < 0) return s.notifyOverdue ? 'overdue' : null;
-
-  const ascending = s.notifyLeadHours.slice().sort((a, b) => a - b);
-  for (const lead of ascending) {
-    if (diff <= lead * 60 * 60 * 1000) return 'due_' + lead + 'h';
-  }
-  return null;
+function localDateStr(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-function formatNotificationDeadline(deadline) {
+// 通知判重基于读取时的快照；两个 maybeNotifyDeadlines 并发在途（如
+// badge-refresh tick 撞上 COURSE_API_DATA 触发的更新）会各自基于旧数据
+// 决定弹通知而重复。在途时直接跳过，下一 tick 会补上。
+let notifyInFlight = false;
+
+async function maybeNotifyDeadlines(unfinishedItems) {
+  if (!chrome.notifications || !Array.isArray(unfinishedItems)) return;
+  if (notifyInFlight) return;
+  notifyInFlight = true;
   try {
-    const d = new Date(deadline);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleString('zh-CN', {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch {
-    return '';
-  }
-}
-
-async function maybeNotifyDeadlines(allItems, unfinishedItems) {
-  if (!chrome.notifications || !Array.isArray(allItems) || !Array.isArray(unfinishedItems)) return;
-
   const settings = normalizeSettings(await getUserSettings());
   if (!settings.notificationsEnabled) return;
 
@@ -855,36 +898,41 @@ async function maybeNotifyDeadlines(allItems, unfinishedItems) {
   // window will deliver any still-pending reminders.
   if (isWithinQuietHours(settings, now)) return;
 
-  let changed = false;
+  // 纯判定逻辑（档位/去重/静音/snooze 过滤）在 shared/reminder.js，可单测
+  const due = collectDueNotifications(unfinishedItems, settings, now);
+  if (due.length === 0) return;
 
-  for (const item of unfinishedItems) {
-    if (isCourseMuted(item, settings) || isSnoozed(item, now)) continue;
-    const level = getNotificationLevel(item, now, settings);
-    if (!level || item.lastNotificationLevel === level) continue;
-
-    const notificationId = `mooc-reminder:${encodeURIComponent(item.uid || '')}:${level}`;
-    const title = level === 'overdue' ? 'MOOC 作业已过期' : 'MOOC 作业即将截止';
-    const deadlineText = formatNotificationDeadline(item.deadline);
-    const message = `${item.courseName || '未知课程'} · ${item.title || '未命名作业'}${deadlineText ? '（' + deadlineText + '）' : ''}`;
-
+  const fired = [];
+  for (const d of due) {
     try {
-      await chrome.notifications.create(notificationId, {
+      await chrome.notifications.create(notificationIdFor(d.uid, d.level), {
         type: 'basic',
         iconUrl: 'src/assets/icons/icon128.png',
-        title,
-        message,
-        priority: level === 'overdue' ? 2 : 1
+        title: d.title,
+        message: d.message,
+        priority: d.priority
       });
-      item.lastNotificationLevel = level;
-      item.lastNotifiedAt = new Date().toISOString();
-      changed = true;
+      fired.push(d);
     } catch (e) {
       console.warn('[MOOC Reminder] Notification failed:', e.message);
     }
   }
+  if (fired.length === 0) return;
 
-  if (changed) {
-    await setHomeworkItems(allItems);
+  // 在锁内基于最新数据按 uid 补丁通知字段——绝不整体写回进入函数时的
+  // 陈旧快照，否则会覆盖并发的 reconcile 结果（完成状态被复活等）
+  const nowIso = new Date().toISOString();
+  await mutateHomeworkItems(items => {
+    for (const d of fired) {
+      const item = items.find(i => i && i.uid === d.uid);
+      if (item) {
+        item.lastNotificationLevel = d.level;
+        item.lastNotifiedAt = nowIso;
+      }
+    }
+  });
+  } finally {
+    notifyInFlight = false;
   }
 }
 
@@ -897,14 +945,46 @@ chrome.notifications?.onClicked?.addListener(async (notificationId) => {
   try {
     const items = await getHomeworkItems();
     const item = items.find(i => i && i.uid === uid);
-    if (item && item.pageUrl) {
-      await chrome.tabs.create({ url: item.pageUrl });
+    // API 抓取的条目常没有 pageUrl——与 popup 相同的兜底：按 courseId+termId
+    // 重建课程学习页 URL，并按条目类型修正 hash 路由
+    const url = item ? resolveItemUrl(item) : null;
+    if (url) {
+      await chrome.tabs.create({ url });
     }
     await chrome.notifications.clear(notificationId);
   } catch (e) {
     console.debug('[MOOC Reminder] Notification click failed:', e.message);
   }
 });
+// 事件驱动全量刷新的最小间隔：打开课程页/浏览器启动都触发，但 30 分钟内
+// 不重复全量抓取（每次全量 = 课程数 × ~200KB API 响应）
+const EVENT_REFRESH_MIN_GAP_MS = 30 * 60 * 1000;
+
+async function maybeTriggerEventRefresh(reason) {
+  try {
+    const last = await getLastSync();
+    const lastMs = last ? new Date(last).getTime() : 0;
+    if (lastMs && Date.now() - lastMs < EVENT_REFRESH_MIN_GAP_MS) {
+      console.log('[MOOC Reminder] Event refresh (' + reason + ') skipped: synced ' + Math.round((Date.now() - lastMs) / 60000) + ' min ago');
+      return false;
+    }
+    console.log('[MOOC Reminder] Event refresh triggered by', reason);
+    performPeriodicScrape().catch(function() {});
+    return true;
+  } catch (e) {
+    console.debug('[MOOC Reminder] Event refresh check failed:', e.message);
+    return false;
+  }
+}
+
+// 抓取只发给最近活跃的一个标签页：BATCH_API_FETCH 会让 content script
+// 抓取全部课程，发给每个匹配标签页 = 开 N 个 MOOC 标签页就完整重复 N 次
+function pickApiProxyTab(tabs) {
+  if (!tabs || tabs.length === 0) return null;
+  const sorted = tabs.slice().sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+  return sorted[0];
+}
+
 async function performPeriodicScrape() {
   console.log('[MOOC Reminder] Periodic scrape started');
 
@@ -933,15 +1013,16 @@ async function performPeriodicScrape() {
       return;
     }
 
-    // 把已知课程发一份给 content script，让它用页面上下文拉 API
+    // 把已知课程发给 content script，让它用页面上下文拉 API（只发一个标签页）
     const courses = await getCourses();
-    console.log('[MOOC Reminder] Periodic: Sending BATCH_API_FETCH, courses:', courses.length);
+    const proxyTab = pickApiProxyTab(tabs);
+    console.log('[MOOC Reminder] Periodic: Sending BATCH_API_FETCH, courses:', courses.length, 'tab:', proxyTab && proxyTab.id);
     var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '', courseType: c.courseType || '' }; });
-    for (const tab of tabs) {
+    if (proxyTab) {
       try {
-        chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
-        } catch {}
-      }
+        chrome.tabs.sendMessage(proxyTab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
+      } catch {}
+    }
 
     // 等待 API 响应到达（BATCH_API_FETCH 是异步的）
     var lastSyncBefore = await getLastSync();
@@ -981,17 +1062,17 @@ async function triggerManualScrape() {
       };
     }
 
-    // 把已知课程发给 content script 做页面上下文 API 抓取
+    // 把已知课程发给 content script 做页面上下文 API 抓取（只发一个标签页）
     const courses = await getCourses();
-    console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', courses.length, 'courses to', tabs.length, 'tabs');
+    const proxyTab = pickApiProxyTab(tabs);
+    console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', courses.length, 'courses to tab', proxyTab && proxyTab.id);
     var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '', courseType: c.courseType || '' }; });
 
     var lastSyncBefore = await getLastSync();
 
-    // 发送 BATCH_API_FETCH 到所有标签页
-    for (const tab of tabs) {
+    if (proxyTab) {
       try {
-        chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
+        chrome.tabs.sendMessage(proxyTab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
       } catch {}
     }
 
@@ -1144,9 +1225,9 @@ function apiDetectPhase(node) {
     if (start && now < start) return 'submit';
     return 'peerreview';
   }
-  var now = Date.now();
-  var start = parseInt(es, 10);
-  var end = parseInt((node.evaluateScoreReleaseTime || nt.evaluateScoreReleaseTime) || (node.evaluateEnd || nt.evaluateEnd), 10);
+  now = Date.now();
+  start = parseInt(es, 10);
+  end = parseInt((node.evaluateScoreReleaseTime || nt.evaluateScoreReleaseTime) || (node.evaluateEnd || nt.evaluateEnd), 10);
   if (start && now < start) return 'submit';
   if (end && now >= end) return 'results';
   return 'peerreview';
@@ -1299,7 +1380,7 @@ function apiExtractHomework(input, course) {
       console.log('[MOOC Reminder] apiExtractHomework: result keys:', Object.keys(resultObj));
       // 遍历 result 所有直接子级，找出哪个有 chapters/lessons/units/homework 相关结构
       for (var rk in resultObj) {
-        if (resultObj.hasOwnProperty(rk) && typeof resultObj[rk] === 'object' && resultObj[rk] !== null) {
+        if (Object.prototype.hasOwnProperty.call(resultObj, rk) && typeof resultObj[rk] === 'object' && resultObj[rk] !== null) {
           var subKeys = Object.keys(resultObj[rk]).slice(0, 15);
           console.log('[MOOC Reminder] result.' + rk + ' keys:', subKeys);
         }
@@ -1307,8 +1388,8 @@ function apiExtractHomework(input, course) {
     } else if (data && typeof data === 'object') {
       // result 不在顶层，遍历 data 所有直接子级
       for (var dk in data) {
-        if (data.hasOwnProperty(dk) && typeof data[dk] === 'object' && data[dk] !== null) {
-          var subKeys = Object.keys(data[dk]).slice(0, 15);
+        if (Object.prototype.hasOwnProperty.call(data, dk) && typeof data[dk] === 'object' && data[dk] !== null) {
+          subKeys = Object.keys(data[dk]).slice(0, 15);
           console.log('[MOOC Reminder] data.' + dk + ' keys:', subKeys);
         }
       }

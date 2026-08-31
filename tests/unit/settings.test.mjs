@@ -35,6 +35,23 @@ test('normalizeSettings preserves default booleans when missing', () => {
   assert.deepEqual(s.mutedCourseIds, []);
 });
 
+test('defaults use event-driven cadence: 4h scrape fallback, 15min badge/notify', () => {
+  const s = normalizeSettings(null);
+  assert.equal(s.checkIntervalMinutes, 240);
+  assert.equal(s.badgeRefreshMinutes, 15);
+  assert.deepEqual(s.notifyLeadHours, [48, 24]);
+});
+
+test('normalizeSettings honors an explicit empty lead list (all levels off)', () => {
+  // options UI allows unchecking every threshold — that must stick, not
+  // silently fall back to the defaults
+  const s = normalizeSettings({ notifyLeadHours: [] });
+  assert.deepEqual(s.notifyLeadHours, []);
+  // missing/invalid field still falls back
+  assert.deepEqual(normalizeSettings({ notifyLeadHours: 'nope' }).notifyLeadHours, [48, 24]);
+  assert.deepEqual(normalizeSettings({}).notifyLeadHours, [48, 24]);
+});
+
 test('resolveAlarmPeriods derives alarm cadence from settings', () => {
   assert.deepEqual(resolveAlarmPeriods({ checkIntervalMinutes: 17, badgeRefreshMinutes: 3 }), {
     scrapeMinutes: 17,
