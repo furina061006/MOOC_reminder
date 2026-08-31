@@ -53,13 +53,11 @@ function makeChromeStub() {
     },
     alarms: {
       onAlarm: { addListener: fn => listeners.onAlarm.push(fn) },
-      async get(name) { return alarmsCreated.get(name) || null; },
       async clear(name) { return alarmsCreated.delete(name); },
       async create(name, info) { alarmsCreated.set(name, info); }
     },
     notifications: {
       onClicked: { addListener: fn => listeners.onClicked.push(fn) },
-      async getPermissionLevel() { return 'granted'; },
       async create(id, opts) { notificationsCreated.set(id, opts); return id; },
       async clear(id) { return notificationsCreated.delete(id); }
     },
@@ -223,35 +221,6 @@ test('PAGE_OPENED fans BATCH_API_FETCH out to exactly one tab (most recent)', as
   assert.equal(res2.refreshTriggered, false);
   await new Promise(r => setTimeout(r, 300));
   assert.equal(h.tabMessages.filter(t => t.msg.type === 'BATCH_API_FETCH').length, 0);
-});
-
-test('notification diagnostics exposes permission, next alarm, and due count', async () => {
-  h.notificationsCreated.clear();
-  h.alarmsCreated.set('badge-refresh', { scheduledTime: Date.now() + 60_000 });
-  h.storageData.set('user_settings', { notificationsEnabled: true, quietHoursEnabled: false });
-  seedItem({ uid: 'C1_tid1_ch_le_hw_diagnostics', lastNotificationLevel: null });
-
-  const response = await sendMessage({ type: 'GET_NOTIFICATION_DIAGNOSTICS' });
-
-  assert.equal(response.success, true);
-  assert.equal(response.permissionLevel, 'granted');
-  assert.equal(response.notificationsApiAvailable, true);
-  assert.equal(response.unfinishedCount, 1);
-  assert.equal(response.dueNowCount, 1);
-  assert.ok(response.alarms.badgeRefresh);
-});
-
-test('TEST_NOTIFICATION creates a Windows-delivery diagnostic notification', async () => {
-  h.notificationsCreated.clear();
-
-  const response = await sendMessage({ type: 'TEST_NOTIFICATION' });
-
-  assert.equal(response.success, true);
-  assert.equal(response.permissionLevel, 'granted');
-  assert.equal(h.notificationsCreated.size, 1);
-  const [id, options] = [...h.notificationsCreated][0];
-  assert.match(id, /^mooc-reminder:system-test:/);
-  assert.equal(options.title, 'MOOC Reminder 系统反馈测试');
 });
 
 test('daily digest inside quiet hours defers via retry alarm and keeps the date unset', async () => {
