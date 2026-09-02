@@ -131,14 +131,6 @@ popup 左上角可筛选：
 - **页面 API hook CSP 修复**：移除 `script.textContent` 内联注入，改用 `web_accessible_resources` 中的外部 `xhr-hook-page.js`，避免 icourse163.org 页面 CSP 阻止 hook 执行
 - **清理临时测试入口**：删除设置页测试通知按钮和 Service Worker 测试通知处理，仅保留生产通知路径与自动化测试
 
-### 2026-09-01
-
-- **通知资源加载修复**：通知图标统一使用 `chrome.runtime.getURL()` 生成扩展绝对资源 URL，修复 `Unable to download all specified images` 导致通知创建失败的问题
-- **摘要按截止时间排序**：每日摘要始终优先展示最早截止的 3 项，其余以「另有 N 项」汇总；完整作业仍可在 popup 查看
-- **通知诊断完善**：设置页系统反馈显示 Chrome 通知权限、插件开关、免打扰状态、可提醒数量和下次本地检查时间；通知由 Chrome 转交 Windows 11 通知中心
-- **页面 API hook CSP 修复**：移除 `script.textContent` 内联注入，改用 `web_accessible_resources` 中的外部 `xhr-hook-page.js`
-- **清理临时测试入口**：删除设置页测试通知按钮和 Service Worker 测试通知处理，仅保留生产通知路径与自动化测试
-
 ### 2026-08-16
 
 - **修复「稍后提醒」失效**：snooze 现在会同时清除已通知档位记忆，24h 后同档位会正常再次提醒（此前对已过期条目点一次稍后提醒就永远不再提醒）
