@@ -37,6 +37,7 @@ export default [
       'node_modules/**',
       'dist/**',
       'mooc-reminder.zip',
+      'reference_projects/**',
       '.claude/**',
       '.serena/**'
     ]
