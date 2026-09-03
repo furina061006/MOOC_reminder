@@ -26,23 +26,32 @@ src/
 ### 数据流
 
 ```
-用户打开课程页面
-  → main.js 注入
-    → chrome.cookies.get({name:'NTESSTUDYSI'}) 读取 CSRF（HttpOnly cookie）
-    → XHR POST getLastLearnedMocTermDto.rpc → 200KB+ 完整课程 DTO
-    → (可选) getOpenHomeworkInfo.rpc → submitStatus 等补充字段
-    → SPOC: spoc-tid-bridge.js (WAR) 读 window.moocTermDto.id → DOM bridge
+已有 MOOC / SPOC 学习页
+  → main.js 注入并发送 PAGE_OPENED
+  → Service Worker 复用最近活跃的学习页
+
+没有学习页，但已有载入过的课程
+  → Service Worker 从已保存的 courseId + route termId 创建非激活临时学习页
+  → 仅该 tab 的 PAGE_OPENED 认领临时任务，避免重复全量抓取
+
+代理页面 main.js
+  → chrome.cookies.get({name:'NTESSTUDYSI'}) 读取 CSRF（HttpOnly cookie）
+  → XHR POST getLastLearnedMocTermDto.rpc → 200KB+ 完整课程 DTO
+  → (可选) getOpenHomeworkInfo.rpc → submitStatus 等补充字段
+  → SPOC: spoc-tid-bridge.js (WAR) 读 window.moocTermDto.id → DOM bridge
   → COURSE_API_DATA → Service Worker
     → apiExtractHomework() 解析 → HomeworkItem[]
     → reconcileHomeworkData() 合并（UID 匹配 dedup）
     → updateBadgeFromStorage()
+  → 批量响应完成、超时或 tab 被关闭后，只清理扩展自己创建的临时页
 ```
 
 ### 消息协议
 
-- `BATCH_API_FETCH {courses}` — SW → CS，触发批量 API 抓取（只发给最近活跃的一个标签页）
+- `BATCH_API_FETCH {courses, proxyJobId?}` — SW → CS，触发批量 API 抓取；正常路径发给最近活跃学习页，临时路径附带持久化任务 ID
 - `COURSE_API_DATA {course, rawData}` — CS → SW，API 原始响应
-- `PAGE_OPENED` — CS(main.js init) → SW，课程页刚打开；SW 节流（30min 内不重复）后触发全课程刷新
+- `TEMPORARY_PROXY_BATCH_COMPLETE {proxyJobId, resultCount}` — CS → SW，临时批量中的所有 `COURSE_API_DATA` 已发出；支持 Service Worker 被回收后恢复清理
+- `PAGE_OPENED` — CS(main.js init) → SW；匹配临时 tab ID 时立即开始该任务，否则按 30 分钟节流触发常规全课程刷新
 - `TRIGGER_SCRAPE` — Popup → SW，手动刷新
 
 ---
@@ -355,13 +364,22 @@ MOOC 作业按天更新、提醒阈值是 24h/48h 级，不需要高频轮询：
 |---|---|---|
 | `PAGE_OPENED`（main.js init） | 用户打开任意 learn/spoc 页 | **主通道**。SW 节流：距上次全量同步 <30min 跳过 |
 | `onStartup` | 浏览器启动 | 同上节流，每日新鲜度锚点 |
-| `periodic-scrape` alarm | 默认每 240min | 兜底；无标签页时退化为 SW 直连 API |
-| `badge-refresh` alarm | 默认每 15min | 纯本地重算徽章 + 截止提醒检查（兼通知投递粒度） |
-| `daily-digest` alarm | 默认关 | 启用时每天整点摘要 |
+| `periodic-scrape` alarm | 默认每 12h | 兜底；无学习页时从已保存课程创建非激活临时代理页，由 Content Script 发同源 XHR |
+| `badge-refresh` alarm | 默认每 12h | 纯本地重算徽章 + 截止提醒检查 |
+| `daily-digest` alarm | 默认关 | 启用后每天定时摘要；当天首次启动浏览器时补发临期摘要 |
 
-SW 唤醒从 ~336 次/天降到 ~102 次/天。`BATCH_API_FETCH` 只发给 `lastAccessed` 最新的一个标签页（发给所有标签页 = N 倍重复抓取）。
+SW 唤醒从 ~336 次/天降到 ~102 次/天。`BATCH_API_FETCH` 只发给 `lastAccessed` 最新的一个现有学习页（发给所有标签页 = N 倍重复抓取）；没有现有学习页时最多创建一个扩展拥有的非激活代理页，任务成功、超时或关闭后清理。
 
 「完全脱离浏览器」（外部 cron/后端）不可行：登录 cookie 绑定浏览器 profile，扩展无法在浏览器外取用（与「无后端」设计决策一致）。
+
+### 临时代理页生命周期
+
+1. 只在没有 `/learn/` 或 `/spoc/learn/` 现有标签页且 `courses` 中有已载入的非手动课程时使用。
+2. 先创建非激活 `about:blank` 标签页，再把 `{ id, tabId, proxyUrl, phase, deadlineAt, expectedCourseIds }` 写入 `temporary_proxy_job` 并创建一次性 alarm，最后才导航到课程 URL，避免快速 `PAGE_OPENED` 抢在落盘前到达。
+3. 仅 `sender.tab.id === job.tabId` 的 `PAGE_OPENED` 可以将 `waiting_ready` 转为 `fetching`；普通用户页绝不被关闭。
+4. 临时页的 SPOC 路由使用保存的 URL `termId`，批量 API payload 使用 `activeTermId || termId`，两者不可混用。
+5. `BATCH_API_FETCH` 的响应和 `TEMPORARY_PROXY_BATCH_COMPLETE` 都可完成任务；后者覆盖 Service Worker 在批量请求中被 MV3 回收的情况。
+6. 90 秒 deadline 覆盖整个临时任务。成功、超时、用户关闭临时 tab、浏览器/扩展重启与重置数据都只清理该 job 记录的 tab ID；并行终结者以持久化 job ID 先到者为准。
 
 ### 通知与摘要
 
@@ -396,6 +414,7 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 3. **digest 先 create 成功再写 `last_digest_date`**；免打扰命中时创建一次性 `daily-digest-retry` alarm 而不是静默丢弃。
 4. 点击通知用 `resolveItemUrl`（shared/item-url.js）兜底重建 URL——API 条目没有 pageUrl。
 5. `notifyLeadHours: []`（显式空数组）= 用户关闭所有提前档位，normalizeSettings 不得回退默认值；仅字段缺失才用默认。
+6. **临时代理任务只能写 `temporary_proxy_job`，不能借用 `scrape_status`**。先落盘再 `tabs.update()` 导航；只可清理由该持久化 job ID 认领的 tab，现有用户标签页永不关闭。
 
 ### 测试结构
 
@@ -417,7 +436,8 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 - `last_sync` — ISO timestamp
 - `sync_errors` — 最近错误的环形缓冲
 - `user_settings` — 用户偏好
-- `scrape_status` — 抓取状态
+- `scrape_status` — 通用抓取状态（不属于临时代理）
+- `temporary_proxy_job` — 扩展拥有的临时代理页任务；含 tab ID、phase、deadline 和预期课程
 - `popup_ui_state` — popup UI 状态
 
 ### Course 结构
@@ -442,7 +462,7 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 
 ## 已知限制
 
-- 需要 icourse163.org 标签页打开才能抓取
+- 首次仍需登录 icourse163.org 并至少载入过一门课程以保存课程路由；之后无现成课程标签页时会短暂创建非激活代理页，登录失效或页面无法加载时会在 90 秒后失败并清理
 - 网页 DOM/API 改版可能导致选择器/端点失效
 - 不支持跨设备同步 (chrome.storage.local 是设备本地)
 - 互评窗口内的作业无法自动判断互评是否完成

@@ -10,8 +10,8 @@ const LEAD_CHOICES = [72, 48, 24, 12, 6, 2]; // hours
 let currentSettings = null;
 
 const DEFAULTS = {
-  checkIntervalMinutes: 30,
-  badgeRefreshMinutes: 5,
+  checkIntervalMinutes: 12 * 60,
+  badgeRefreshMinutes: 12 * 60,
   autoDetectEnabled: true,
   notificationsEnabled: true,
   notifyLeadHours: [48, 24],
@@ -70,8 +70,8 @@ function safeSetValue(id, val) {
 function populate(settings) {
   currentSettings = Object.assign({}, DEFAULTS, settings || {});
   const s = currentSettings;
-  safeSetValue('check-interval', s.checkIntervalMinutes);
-  safeSetValue('badge-interval', s.badgeRefreshMinutes);
+  safeSetValue('check-interval', Math.max(1, Math.round(s.checkIntervalMinutes / 60)));
+  safeSetValue('badge-interval', Math.max(1, Math.round(s.badgeRefreshMinutes / 60)));
   safeSetChecked('auto-detect', s.autoDetectEnabled !== false);
   safeSetChecked('notify-enabled', s.notificationsEnabled !== false);
   safeSetChecked('notify-overdue', s.notifyOverdue !== false);
@@ -107,8 +107,8 @@ function collect() {
     if (cb && cb.checked) leads.push(h);
   }
   return {
-    checkIntervalMinutes: safeGetInt('check-interval', 30),
-    badgeRefreshMinutes: safeGetInt('badge-interval', 5),
+    checkIntervalMinutes: safeGetInt('check-interval', 12) * 60,
+    badgeRefreshMinutes: safeGetInt('badge-interval', 12) * 60,
     autoDetectEnabled: safeGetChecked('auto-detect'),
     notificationsEnabled: safeGetChecked('notify-enabled'),
     notifyLeadHours: leads,
@@ -257,7 +257,7 @@ async function loadNotificationDiagnostics() {
     } else if (response.quietHoursActive) {
       html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">当前处于插件免打扰时段，截止提醒会在该时段结束后的下一次检查发送。</p>';
     } else if (response.dueNowCount === 0) {
-      html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">当前没有跨过提醒阈值的新作业。发送测试通知可验证 Windows 是否接收扩展通知。</p>';
+      html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">当前没有跨过提醒阈值的新作业。</p>';
     }
     body.innerHTML = html;
   } catch (e) {
@@ -426,8 +426,6 @@ async function init() {
   try { loadMutedCourses(); } catch(e) { console.error('[Options] loadMutedCourses:', e.message); }
   try {
     loadNotificationDiagnostics();
-    var refreshDiagnosticsBtn = $('refresh-notification-diagnostics-btn');
-    if (refreshDiagnosticsBtn) refreshDiagnosticsBtn.addEventListener('click', loadNotificationDiagnostics);
   } catch(e) { console.error('[Options] notification diagnostics init:', e.message); }
 }
 

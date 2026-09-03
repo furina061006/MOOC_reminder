@@ -62,12 +62,12 @@
   <div class="opt-section">
     <div class="opt-section-title"><span class="icon-slot" data-icon="refresh" data-icon-size="16"></span>刷新与检测</div>
     <div class="opt-row">
-      <div class="opt-label">后台检查间隔<span class="opt-hint">每隔多少分钟刷新一次作业（含后台接口）</span></div>
-      <div class="opt-control"><input type="number" id="check-interval" min="1" max="1440"><span class="opt-unit">分钟</span></div>
+      <div class="opt-label">后台检查间隔<span class="opt-hint">每隔多少小时刷新一次作业（含后台接口）</span></div>
+      <div class="opt-control"><input type="number" id="check-interval" min="1" max="24"><span class="opt-unit">小时</span></div>
     </div>
     <div class="opt-row">
-      <div class="opt-label">徽章刷新间隔<span class="opt-hint">每隔多少分钟重算徽章数量与颜色</span></div>
-      <div class="opt-control"><input type="number" id="badge-interval" min="1" max="1440"><span class="opt-unit">分钟</span></div>
+      <div class="opt-label">徽章刷新间隔<span class="opt-hint">每隔多少小时重算徽章数量与颜色</span></div>
+      <div class="opt-control"><input type="number" id="badge-interval" min="1" max="24"><span class="opt-unit">小时</span></div>
     </div>
     <div class="opt-row">
       <div class="opt-label">自动检测完成<span class="opt-hint">关闭后，所有条目都需手动勾选确认</span></div>
@@ -91,7 +91,7 @@
       <div class="opt-control"><label class="switch"><input type="checkbox" id="notify-overdue"><span class="track"></span></label></div>
     </div>
     <div class="opt-row">
-      <div class="opt-label">每日摘要<span class="opt-hint">每天早上汇总所有未完成作业，推送一条通知</span></div>
+      <div class="opt-label">每日摘要<span class="opt-hint">每天定时汇总所有未完成作业，推送一条通知</span></div>
       <div class="opt-control"><label class="switch"><input type="checkbox" id="digest-enabled"><span class="track"></span></label></div>
     </div>
     <div class="opt-row">
@@ -143,9 +143,6 @@
     <div class="opt-section-title"><span class="icon-slot" data-icon="bell" data-icon-size="16"></span>系统反馈</div>
     <div id="notification-diagnostics-body">
       <p class="opt-sub" style="margin:8px 0 0;">加载通知状态中...</p>
-    </div>
-    <div class="opt-actions" style="padding:8px 0;">
-      <button id="refresh-notification-diagnostics-btn" class="btn btn-sm btn-ghost">刷新状态</button>
     </div>
   </div>
 
