@@ -10,8 +10,8 @@ const LEAD_CHOICES = [72, 48, 24, 12, 6, 2]; // hours
 let currentSettings = null;
 
 const DEFAULTS = {
-  checkIntervalMinutes: 30,
-  badgeRefreshMinutes: 5,
+  checkIntervalMinutes: 12 * 60,
+  badgeRefreshMinutes: 12 * 60,
   autoDetectEnabled: true,
   notificationsEnabled: true,
   notifyLeadHours: [48, 24],
@@ -70,8 +70,8 @@ function safeSetValue(id, val) {
 function populate(settings) {
   currentSettings = Object.assign({}, DEFAULTS, settings || {});
   const s = currentSettings;
-  safeSetValue('check-interval', s.checkIntervalMinutes);
-  safeSetValue('badge-interval', s.badgeRefreshMinutes);
+  safeSetValue('check-interval', Math.max(1, Math.round(s.checkIntervalMinutes / 60)));
+  safeSetValue('badge-interval', Math.max(1, Math.round(s.badgeRefreshMinutes / 60)));
   safeSetChecked('auto-detect', s.autoDetectEnabled !== false);
   safeSetChecked('notify-enabled', s.notificationsEnabled !== false);
   safeSetChecked('notify-overdue', s.notifyOverdue !== false);
@@ -107,8 +107,8 @@ function collect() {
     if (cb && cb.checked) leads.push(h);
   }
   return {
-    checkIntervalMinutes: safeGetInt('check-interval', 30),
-    badgeRefreshMinutes: safeGetInt('badge-interval', 5),
+    checkIntervalMinutes: safeGetInt('check-interval', 12) * 60,
+    badgeRefreshMinutes: safeGetInt('badge-interval', 12) * 60,
     autoDetectEnabled: safeGetChecked('auto-detect'),
     notificationsEnabled: safeGetChecked('notify-enabled'),
     notifyLeadHours: leads,
@@ -221,6 +221,48 @@ async function save() {
     showStatus('✗ 保存失败：' + (lastError || e2.message), true);
   }
   setSaveBtnLoading(false);
+}
+
+function formatAlarmTime(alarm) {
+  if (!alarm || !alarm.scheduledTime) return '未设置';
+  try { return new Date(alarm.scheduledTime).toLocaleString('zh-CN'); } catch { return '时间不可用'; }
+}
+
+async function loadNotificationDiagnostics() {
+  const body = $('notification-diagnostics-body');
+  if (!body) return;
+  body.innerHTML = '<p class="opt-sub" style="margin:8px 0 0;">加载通知状态中...</p>';
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_NOTIFICATION_DIAGNOSTICS' });
+    if (!response || !response.success) throw new Error(response && response.error ? response.error : '无法获取通知状态');
+    const permission = response.permissionLevel === 'granted' ? '已允许' : response.permissionLevel === 'denied' ? '已禁止' : '未知';
+    const settings = response.settings || {};
+    const alarm = response.alarms && response.alarms.badgeRefresh;
+    const rows = [
+      ['Chrome 通知权限', permission],
+      ['通知总开关', settings.notificationsEnabled ? '已开启' : '已关闭'],
+      ['免打扰时段', response.quietHoursActive ? '当前生效，提醒会延后' : '当前未生效'],
+      ['可立即提醒项目', String(response.dueNowCount || 0) + ' 项'],
+      ['下次提醒检查', formatAlarmTime(alarm)]
+    ];
+    let html = '<div style="font-size:12px;margin:8px 0;">';
+    for (const row of rows) {
+      html += '<div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px solid var(--border-soft);"><span style="color:var(--text-faint);">' + escapeHtml(row[0]) + '</span><span>' + escapeHtml(row[1]) + '</span></div>';
+    }
+    html += '</div>';
+    if (response.permissionLevel === 'denied') {
+      html += '<p style="font-size:12px;color:var(--overdue,#dc3545);margin:8px 0;">请在 Chrome 扩展通知权限与 Windows 11 设置 > 系统 > 通知中允许 Chrome 通知。</p>';
+    } else if (!settings.notificationsEnabled) {
+      html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">开启“启用桌面通知”并保存设置后，系统才会发送截止提醒。</p>';
+    } else if (response.quietHoursActive) {
+      html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">当前处于插件免打扰时段，截止提醒会在该时段结束后的下一次检查发送。</p>';
+    } else if (response.dueNowCount === 0) {
+      html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">当前没有跨过提醒阈值的新作业。</p>';
+    }
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<p style="color:var(--overdue,#dc3545);font-size:12px;margin:8px 0;">加载失败：' + escapeHtml(String(e.message || e)) + '</p>';
+  }
 }
 
 async function loadErrorReport() {
@@ -382,6 +424,9 @@ async function init() {
     if (clearErrBtn) clearErrBtn.addEventListener('click', handleClearErrors);
   } catch(e) { console.error('[Options] error report init:', e.message); }
   try { loadMutedCourses(); } catch(e) { console.error('[Options] loadMutedCourses:', e.message); }
+  try {
+    loadNotificationDiagnostics();
+  } catch(e) { console.error('[Options] notification diagnostics init:', e.message); }
 }
 
 // 全局未捕获 Promise 拒绝处理

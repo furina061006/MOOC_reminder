@@ -17,7 +17,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "src/content/spoc-tid-bridge.js"
+        "src/content/spoc-tid-bridge.js",
+        "src/content/xhr-hook-page.js"
       ],
       "matches": [
         "https://www.icourse163.org/*"

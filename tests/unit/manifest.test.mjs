@@ -27,6 +27,10 @@ test('manifest registers the course-discovery content script site-wide', () => {
   const discovery = scripts.find(s => (s.js || []).includes('src/content/course-discovery.js'));
   assert.ok(discovery, 'course-discovery.js content script is registered');
   assert.ok(discovery.matches.includes('https://www.icourse163.org/*'));
+  const resources = manifest.web_accessible_resources || [];
+  const pageHook = resources.find(r => (r.resources || []).includes('src/content/xhr-hook-page.js'));
+  assert.ok(pageHook, 'page hook is exposed as an external resource');
+  assert.ok(pageHook.matches.includes('https://www.icourse163.org/*'));
   // main.js handles BATCH_API_FETCH on learn pages (SPOC termId + API proxy).
   const main = scripts.find(s => (s.js || []).includes('src/content/main.js'));
   assert.ok(main);

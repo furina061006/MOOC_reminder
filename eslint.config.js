@@ -37,6 +37,7 @@ export default [
       'node_modules/**',
       'dist/**',
       'mooc-reminder.zip',
+      'reference_projects/**',
       '.claude/**',
       '.serena/**'
     ]
@@ -44,7 +45,7 @@ export default [
   js.configs.recommended,
   {
     // Page-context scripts (classic, run in the page or content-script world)
-    files: ['src/content/main.js', 'src/content/course-discovery.js', 'src/content/xhr-hook.js', 'src/content/spoc-tid-bridge.js', 'src/popup/**/*.js', 'tests/**/*.js'],
+    files: ['src/content/main.js', 'src/content/course-discovery.js', 'src/content/xhr-hook.js', 'src/content/xhr-hook-page.js', 'src/content/spoc-tid-bridge.js', 'src/popup/**/*.js', 'tests/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',

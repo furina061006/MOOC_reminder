@@ -7,14 +7,14 @@
  * read — setupAlarms hard-coded its periods and the notifier hard-coded its
  * thresholds. Now both consult these helpers.
  *
- * 2026-08: 默认抓取间隔 30→240 分钟。MOOC 作业按天更新，提醒阈值是
- * 24h/48h 级；全量刷新主要由「打开课程页/浏览器启动」事件驱动，周期
- * alarm 只作兜底（见 service-worker 的 PAGE_OPENED）。
+ * 2026-09: 默认后台检查和徽章刷新均为 12 小时。全量刷新主要由「打开
+ * 课程页/浏览器启动」事件驱动，周期 alarm 只作低频兜底（见 service-worker
+ * 的 PAGE_OPENED）。设置页以小时展示，存储仍使用分钟以兼容既有数据。
  */
 
 export const DEFAULT_SETTINGS = {
-  checkIntervalMinutes: 240,   // periodic scrape fallback cadence (page-open events refresh sooner)
-  badgeRefreshMinutes: 15,     // badge recompute + deadline-notification check cadence
+  checkIntervalMinutes: 12 * 60,  // periodic scrape fallback cadence
+  badgeRefreshMinutes: 12 * 60,   // badge recompute + deadline-notification check cadence
   autoDetectEnabled: true,     // honor scraper/API auto-completion
   notificationsEnabled: true,  // desktop deadline notifications master switch
   notifyLeadHours: [48, 24],   // fire as each threshold is crossed

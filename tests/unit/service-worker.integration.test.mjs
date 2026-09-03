@@ -13,13 +13,18 @@ import assert from 'node:assert/strict';
 
 function makeChromeStub() {
   const storageData = new Map();
-  const listeners = { onInstalled: [], onStartup: [], onMessage: [], onAlarm: [], onClicked: [] };
+  const listeners = { onInstalled: [], onStartup: [], onMessage: [], onAlarm: [], onClicked: [], onRemoved: [] };
   const notificationsCreated = new Map();
+  const tabCreateRequests = [];
   const tabsCreated = [];
+  const tabsUpdated = [];
+  const tabsRemoved = [];
   const tabMessages = [];
   const alarmsCreated = new Map();
   const badge = { text: null, color: null };
   let tabsQueryResult = [];
+  let tabMessageResponder = null;
+  let tabUpdateResponder = null;
 
   const storage = {
     local: {
@@ -49,15 +54,18 @@ function makeChromeStub() {
     runtime: {
       onInstalled: { addListener: fn => listeners.onInstalled.push(fn) },
       onStartup: { addListener: fn => listeners.onStartup.push(fn) },
-      onMessage: { addListener: fn => listeners.onMessage.push(fn) }
+      onMessage: { addListener: fn => listeners.onMessage.push(fn) },
+      getURL(path) { return 'chrome-extension://test/' + path; }
     },
     alarms: {
       onAlarm: { addListener: fn => listeners.onAlarm.push(fn) },
+      async get(name) { return alarmsCreated.get(name) || null; },
       async clear(name) { return alarmsCreated.delete(name); },
       async create(name, info) { alarmsCreated.set(name, info); }
     },
     notifications: {
       onClicked: { addListener: fn => listeners.onClicked.push(fn) },
+      async getPermissionLevel() { return 'granted'; },
       async create(id, opts) { notificationsCreated.set(id, opts); return id; },
       async clear(id) { return notificationsCreated.delete(id); }
     },
@@ -66,14 +74,28 @@ function makeChromeStub() {
       async setBadgeBackgroundColor(o) { badge.color = o.color; }
     },
     tabs: {
+      onRemoved: { addListener: fn => listeners.onRemoved.push(fn) },
       async query() { return tabsQueryResult; },
-      async create(o) { tabsCreated.push(o); return { id: tabsCreated.length }; },
+      async create(o) {
+        tabCreateRequests.push({ ...o });
+        const tab = { id: 100 + tabsCreated.length, ...o };
+        tabsCreated.push(tab);
+        return tab;
+      },
+      async update(tabId, changes) {
+        const tab = tabsCreated.find(entry => entry.id === tabId);
+        if (tab) Object.assign(tab, changes);
+        tabsUpdated.push({ tabId, changes });
+        if (tabUpdateResponder) return await tabUpdateResponder(tabId, changes);
+        return tab || { id: tabId, ...changes };
+      },
+      async remove(tabId) { tabsRemoved.push(tabId); },
       async sendMessage(tabId, msg) {
         tabMessages.push({ tabId, msg });
-        // Simulate the content script reporting COURSE_API_DATA arrival so
-        // performPeriodicScrape's last_sync wait loop exits quickly.
+        if (tabMessageResponder) return await tabMessageResponder(tabId, msg);
         if (msg && msg.type === 'BATCH_API_FETCH') {
           storageData.set('last_sync', new Date().toISOString());
+          return [{ courseId: 'stub-course' }];
         }
         return true;
       }
@@ -82,18 +104,23 @@ function makeChromeStub() {
   };
 
   return {
-    storageData, listeners, notificationsCreated, tabsCreated, tabMessages,
+    storageData, listeners, notificationsCreated, tabCreateRequests, tabsCreated, tabsUpdated, tabsRemoved, tabMessages,
     alarmsCreated, badge,
-    setTabsQuery(tabs) { tabsQueryResult = tabs; }
+    setTabsQuery(tabs) { tabsQueryResult = tabs; },
+    setTabMessageResponder(fn) { tabMessageResponder = fn; },
+    setTabUpdateResponder(fn) { tabUpdateResponder = fn; }
   };
 }
 
 const h = makeChromeStub();
 const fireAlarm = name => h.listeners.onAlarm[0]({ name });
 const fireClick = id => h.listeners.onClicked[0](id);
-function sendMessage(msg) {
+async function fireTabRemoved(tabId) {
+  for (const listener of h.listeners.onRemoved) await listener(tabId, { isWindowClosing: false });
+}
+function sendMessage(msg, sender) {
   return new Promise(resolve => {
-    h.listeners.onMessage[0](msg, {}, resolve);
+    h.listeners.onMessage[0](msg, sender || {}, resolve);
   });
 }
 function seedItem(overrides) {
@@ -110,18 +137,26 @@ function seedItem(overrides) {
   return items[0];
 }
 function storedItems() { return h.storageData.get('homework_items') || []; }
+function seedCourses(courses) { h.storageData.set('courses', courses); }
+async function waitFor(predicate, attempts = 20) {
+  for (let i = 0; i < attempts; i++) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  assert.fail('Timed out waiting for expected test state');
+}
 
 // Import the real SW (module side effects register listeners on our stub)
 await import('../../src/background/service-worker.js');
 
 // ── tests ─────────────────────────────────────────────────────────────────
 
-test('onInstalled registers alarms with the new low-frequency defaults', async () => {
+test('onInstalled registers alarms with the 12-hour defaults', async () => {
   await h.listeners.onInstalled[0]({ reason: 'install' });
   assert.ok(h.alarmsCreated.has('periodic-scrape'));
   assert.ok(h.alarmsCreated.has('badge-refresh'));
-  assert.equal(h.alarmsCreated.get('periodic-scrape').periodInMinutes, 240);
-  assert.equal(h.alarmsCreated.get('badge-refresh').periodInMinutes, 15);
+  assert.equal(h.alarmsCreated.get('periodic-scrape').periodInMinutes, 12 * 60);
+  assert.equal(h.alarmsCreated.get('badge-refresh').periodInMinutes, 12 * 60);
 });
 
 test('badge tick fires a due notification once, then dedups', async () => {
@@ -198,6 +233,7 @@ test('notification click opens the reconstructed course URL (no pageUrl)', async
 test('PAGE_OPENED fans BATCH_API_FETCH out to exactly one tab (most recent)', async () => {
   h.notificationsCreated.clear();
   seedItem({ uid: 'C1_tid1_ch_le_hw3', deadline: new Date(Date.now() + 100 * 3600 * 1000).toISOString() });
+  seedCourses([{ courseId: 'C1', termId: '1', courseName: '大学物理', courseType: 'mooc' }]);
   h.tabMessages.length = 0;
   h.setTabsQuery([
     { id: 11, lastAccessed: 1000 },
@@ -223,9 +259,321 @@ test('PAGE_OPENED fans BATCH_API_FETCH out to exactly one tab (most recent)', as
   assert.equal(h.tabMessages.filter(t => t.msg.type === 'BATCH_API_FETCH').length, 0);
 });
 
+test('manual refresh creates one temporary proxy, waits for its PAGE_OPENED, then cleans it up', async () => {
+  h.tabCreateRequests.length = 0;
+  h.tabsCreated.length = 0;
+  h.tabsUpdated.length = 0;
+  h.tabsRemoved.length = 0;
+  h.tabMessages.length = 0;
+  h.alarmsCreated.delete('temporary-proxy-timeout');
+  h.storageData.delete('temporary_proxy_job');
+  h.storageData.set('scrape_status', { phase: 'unrelated-scrape-state' });
+  h.storageData.set('last_sync', null);
+  h.setTabsQuery([]);
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  seedCourses([
+    { courseId: 'BIT-100', termId: '101', courseName: '普通课程', courseType: 'mooc', lastSeen: '2026-09-01T10:00:00.000Z' },
+    { courseId: 'NEU-200', termId: '202', activeTermId: '303', courseName: 'SPOC 课程', courseType: 'spoc', lastSeen: '2026-09-01T09:00:00.000Z' }
+  ]);
+
+  const refresh = sendMessage({ type: 'TRIGGER_SCRAPE' });
+  await waitFor(() => h.tabsCreated.length === 1 && !!h.storageData.get('temporary_proxy_job'));
+
+  const temporaryTab = h.tabsCreated[0];
+  const job = h.storageData.get('temporary_proxy_job');
+  assert.equal(h.tabCreateRequests[0].url, 'about:blank');
+  assert.equal(h.tabsUpdated[0].changes.url, 'https://www.icourse163.org/learn/BIT-100?tid=101#/learn/testlist');
+  assert.equal(temporaryTab.active, false);
+  assert.equal(temporaryTab.url, 'https://www.icourse163.org/learn/BIT-100?tid=101#/learn/testlist');
+  assert.equal(job.tabId, temporaryTab.id);
+  assert.equal(job.phase, 'waiting_ready');
+  assert.ok(h.alarmsCreated.has('temporary-proxy-timeout'));
+
+  // A user page must not claim the extension-created temporary job.
+  await sendMessage({ type: 'PAGE_OPENED' }, { tab: { id: 999 } });
+  assert.equal(h.tabMessages.filter(entry => entry.msg.type === 'BATCH_API_FETCH').length, 0);
+
+  const pageOpened = await sendMessage({ type: 'PAGE_OPENED' }, { tab: { id: temporaryTab.id } });
+  const result = await refresh;
+  const batches = h.tabMessages.filter(entry => entry.msg.type === 'BATCH_API_FETCH');
+
+  assert.equal(pageOpened.temporaryProxy, true);
+  assert.equal(batches.length, 1);
+  assert.deepEqual(
+    batches[0].msg.courses.map(course => [course.courseId, course.termId]),
+    [['BIT-100', '101'], ['NEU-200', '303']]
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.temporaryProxy, true);
+  assert.deepEqual(h.tabsRemoved, [temporaryTab.id]);
+  assert.equal(h.storageData.get('temporary_proxy_job'), null);
+  assert.deepEqual(h.storageData.get('scrape_status'), { phase: 'unrelated-scrape-state' });
+  assert.equal(h.alarmsCreated.has('temporary-proxy-timeout'), false);
+});
+
+test('a PAGE_OPENED emitted during proxy navigation sees the persisted job', async () => {
+  h.tabCreateRequests.length = 0;
+  h.tabsCreated.length = 0;
+  h.tabsUpdated.length = 0;
+  h.tabsRemoved.length = 0;
+  h.tabMessages.length = 0;
+  h.alarmsCreated.delete('temporary-proxy-timeout');
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([]);
+  h.setTabMessageResponder(null);
+  seedCourses([{ courseId: 'BIT-FAST', termId: '707', courseName: '快速加载课程', courseType: 'mooc' }]);
+
+  let earlyPageOpened;
+  h.setTabUpdateResponder((tabId, changes) => {
+    earlyPageOpened = sendMessage({ type: 'PAGE_OPENED' }, { tab: { id: tabId } });
+    return { id: tabId, ...changes };
+  });
+
+  const refresh = sendMessage({ type: 'TRIGGER_SCRAPE' });
+  await waitFor(() => !!earlyPageOpened);
+  const pageResult = await earlyPageOpened;
+  const result = await refresh;
+  h.setTabUpdateResponder(null);
+
+  assert.equal(h.tabCreateRequests[0].url, 'about:blank');
+  assert.equal(pageResult.temporaryProxy, true);
+  assert.equal(result.success, true);
+  assert.equal(h.tabMessages.filter(entry => entry.msg.type === 'BATCH_API_FETCH').length, 1);
+  assert.equal(h.alarmsCreated.has('temporary-proxy-timeout'), false);
+});
+
+test('a SPOC-only temporary proxy uses its route term ID and batches with activeTermId', async () => {
+  h.tabCreateRequests.length = 0;
+  h.tabsCreated.length = 0;
+  h.tabsUpdated.length = 0;
+  h.tabsRemoved.length = 0;
+  h.tabMessages.length = 0;
+  h.alarmsCreated.delete('temporary-proxy-timeout');
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([]);
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  seedCourses([{
+    courseId: 'NEU-400',
+    termId: '505',
+    activeTermId: '606',
+    courseName: '仅 SPOC 课程',
+    courseType: 'spoc'
+  }]);
+
+  const refresh = sendMessage({ type: 'TRIGGER_SCRAPE' });
+  await waitFor(() => h.tabsCreated.length === 1 && !!h.storageData.get('temporary_proxy_job'));
+  const temporaryTab = h.tabsCreated[0];
+  assert.equal(temporaryTab.url, 'https://www.icourse163.org/spoc/learn/NEU-400?tid=505#/learn/testlist');
+
+  await sendMessage({ type: 'PAGE_OPENED' }, { tab: { id: temporaryTab.id } });
+  await refresh;
+
+  const batch = h.tabMessages.find(entry => entry.msg.type === 'BATCH_API_FETCH');
+  assert.equal(batch.msg.courses[0].termId, '606');
+  assert.deepEqual(h.tabsRemoved, [temporaryTab.id]);
+});
+
+test('manual refresh reuses an existing MOOC page without closing it', async () => {
+  h.tabsCreated.length = 0;
+  h.tabsRemoved.length = 0;
+  h.tabMessages.length = 0;
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabMessageResponder(null);
+  seedCourses([{ courseId: 'BIT-300', termId: '404', courseName: '已有页面课程', courseType: 'mooc' }]);
+  h.setTabsQuery([{ id: 55, lastAccessed: 9999 }]);
+
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+
+  assert.equal(result.success, true);
+  assert.equal(result.temporaryProxy, false);
+  assert.equal(h.tabsCreated.length, 0);
+  assert.equal(h.tabsRemoved.length, 0);
+  assert.equal(h.tabMessages.filter(entry => entry.msg.type === 'BATCH_API_FETCH').length, 1);
+  assert.equal(h.tabMessages[0].tabId, 55);
+});
+
+test('a completion message finalizes a persisted fetching proxy job after worker revival', async () => {
+  h.tabsRemoved.length = 0;
+  h.alarmsCreated.set('temporary-proxy-timeout', { when: Date.now() + 60_000 });
+  h.storageData.set('temporary_proxy_job', {
+    kind: 'temporary-proxy',
+    id: 'temporary-proxy-resume-test',
+    tabId: 776,
+    temporary: true,
+    phase: 'fetching',
+    source: 'periodic',
+    courseId: 'BIT-776',
+    proxyUrl: 'https://www.icourse163.org/learn/BIT-776?tid=776#/learn/testlist',
+    createdAt: Date.now(),
+    deadlineAt: Date.now() + 60_000,
+    expectedCourseIds: ['BIT-776']
+  });
+
+  const result = await sendMessage(
+    { type: 'TEMPORARY_PROXY_BATCH_COMPLETE', proxyJobId: 'temporary-proxy-resume-test', resultCount: 2 },
+    { tab: { id: 776 } }
+  );
+
+  assert.equal(result.success, true);
+  assert.deepEqual(h.tabsRemoved, [776]);
+  assert.equal(h.storageData.get('temporary_proxy_job'), null);
+  assert.equal(h.alarmsCreated.has('temporary-proxy-timeout'), false);
+});
+
+test('a completion message with no course data fails and cleans the persisted job', async () => {
+  h.tabsRemoved.length = 0;
+  h.alarmsCreated.set('temporary-proxy-timeout', { when: Date.now() + 60_000 });
+  h.storageData.set('temporary_proxy_job', {
+    kind: 'temporary-proxy',
+    id: 'temporary-proxy-empty-result-test',
+    tabId: 775,
+    temporary: true,
+    phase: 'fetching',
+    source: 'manual',
+    courseId: 'BIT-775',
+    proxyUrl: 'https://www.icourse163.org/learn/BIT-775?tid=775#/learn/testlist',
+    createdAt: Date.now(),
+    deadlineAt: Date.now() + 60_000,
+    expectedCourseIds: ['BIT-775']
+  });
+
+  const result = await sendMessage(
+    { type: 'TEMPORARY_PROXY_BATCH_COMPLETE', proxyJobId: 'temporary-proxy-empty-result-test', resultCount: 0 },
+    { tab: { id: 775 } }
+  );
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /no course data/);
+  assert.deepEqual(h.tabsRemoved, [775]);
+  assert.equal(h.storageData.get('temporary_proxy_job'), null);
+});
+
+test('temporary proxy timeout closes only the owned tab and clears its job', async () => {
+  h.tabsRemoved.length = 0;
+  h.alarmsCreated.set('temporary-proxy-timeout', { when: Date.now() + 60_000 });
+  h.storageData.set('temporary_proxy_job', {
+    kind: 'temporary-proxy',
+    id: 'temporary-proxy-timeout-test',
+    tabId: 777,
+    temporary: true,
+    phase: 'waiting_ready',
+    source: 'periodic',
+    courseId: 'BIT-777',
+    createdAt: Date.now(),
+    deadlineAt: Date.now() + 60_000,
+    expectedCourseIds: ['BIT-777']
+  });
+
+  await fireAlarm('temporary-proxy-timeout');
+
+  assert.deepEqual(h.tabsRemoved, [777]);
+  assert.equal(h.storageData.get('temporary_proxy_job'), null);
+  assert.equal(h.alarmsCreated.has('temporary-proxy-timeout'), false);
+});
+
+test('timeout wins deterministically over a late successful temporary batch response', async () => {
+  h.tabsCreated.length = 0;
+  h.tabsRemoved.length = 0;
+  h.tabMessages.length = 0;
+  h.alarmsCreated.delete('temporary-proxy-timeout');
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([]);
+  h.setTabUpdateResponder(null);
+  seedCourses([{ courseId: 'BIT-LATE', termId: '808', courseName: '延迟响应课程', courseType: 'mooc' }]);
+
+  let resolveBatch;
+  h.setTabMessageResponder((_tabId, _msg) => new Promise(resolve => { resolveBatch = resolve; }));
+  const refresh = sendMessage({ type: 'TRIGGER_SCRAPE' });
+  await waitFor(() => h.tabsCreated.length === 1 && !!h.storageData.get('temporary_proxy_job'));
+  const tabId = h.tabsCreated[0].id;
+  const pageOpened = sendMessage({ type: 'PAGE_OPENED' }, { tab: { id: tabId } });
+  await waitFor(() => typeof resolveBatch === 'function');
+
+  await fireAlarm('temporary-proxy-timeout');
+  const refreshResult = await refresh;
+  resolveBatch([]);
+  await pageOpened;
+  h.setTabMessageResponder(null);
+
+  assert.equal(refreshResult.success, false);
+  assert.match(refreshResult.error, /timed out/);
+  assert.deepEqual(h.tabsRemoved, [tabId]);
+  assert.equal(h.storageData.get('temporary_proxy_job'), null);
+});
+
+test('manual closure of a temporary proxy clears its job without closing another tab', async () => {
+  h.tabsRemoved.length = 0;
+  h.alarmsCreated.set('temporary-proxy-timeout', { when: Date.now() + 60_000 });
+  h.storageData.set('temporary_proxy_job', {
+    kind: 'temporary-proxy',
+    id: 'temporary-proxy-user-close-test',
+    tabId: 778,
+    temporary: true,
+    phase: 'waiting_ready',
+    source: 'manual',
+    courseId: 'BIT-778',
+    createdAt: Date.now(),
+    deadlineAt: Date.now() + 60_000,
+    expectedCourseIds: ['BIT-778']
+  });
+
+  await fireTabRemoved(778);
+  await waitFor(() => h.storageData.get('temporary_proxy_job') === null);
+
+  assert.equal(h.tabsRemoved.length, 0);
+  assert.equal(h.storageData.get('temporary_proxy_job'), null);
+  assert.equal(h.alarmsCreated.has('temporary-proxy-timeout'), false);
+});
+
+test('manual refresh reports no proxy when only manual courses are known', async () => {
+  h.tabsCreated.length = 0;
+  h.tabsRemoved.length = 0;
+  h.tabMessages.length = 0;
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([]);
+  seedCourses([{ courseId: 'manual', termId: 'manual', courseName: '线下作业', courseType: 'manual' }]);
+
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /没有可抓取/);
+  assert.equal(h.tabsCreated.length, 0);
+});
+
+test('notification diagnostics exposes permission, next alarm, and due count', async () => {
+  h.notificationsCreated.clear();
+  h.alarmsCreated.set('badge-refresh', { scheduledTime: Date.now() + 60_000 });
+  h.storageData.set('user_settings', { notificationsEnabled: true, quietHoursEnabled: false });
+  seedItem({ uid: 'C1_tid1_ch_le_hw_diagnostics', lastNotificationLevel: null });
+
+  const response = await sendMessage({ type: 'GET_NOTIFICATION_DIAGNOSTICS' });
+
+  assert.equal(response.success, true);
+  assert.equal(response.permissionLevel, 'granted');
+  assert.equal(response.notificationsApiAvailable, true);
+  assert.equal(response.unfinishedCount, 1);
+  assert.equal(response.dueNowCount, 1);
+  assert.ok(response.alarms.badgeRefresh);
+});
+
+test('browser startup sends the first pending daily digest before its configured time', async () => {
+  h.notificationsCreated.clear();
+  h.storageData.delete('last_digest_date');
+  h.storageData.set('user_settings', { dailyDigestEnabled: true, notificationsEnabled: true, quietHoursEnabled: false, dailyDigestHour: 23 });
+  seedItem({ uid: 'C1_tid1_ch_le_hw_startup_digest' });
+
+  await h.listeners.onStartup[0]();
+
+  assert.ok(h.notificationsCreated.has('mooc-reminder:daily-digest'));
+  assert.equal(typeof h.storageData.get('last_digest_date'), 'string');
+});
+
 test('daily digest inside quiet hours defers via retry alarm and keeps the date unset', async () => {
   h.notificationsCreated.clear();
   h.alarmsCreated.clear();
+  h.storageData.delete('last_digest_date');
   const now = new Date();
   // a quiet window that definitely contains the current hour
   const quietStart = now.getHours();

@@ -55,6 +55,22 @@ test('getDigestItems includes overdue and due-within-48h unfinished items', () =
   assert.deepEqual(getDigestItems(items, now).map(i => i.uid), ['overdue', 'soon']);
 });
 
+test('formatDigestMessage keeps the three earliest deadlines when input is unordered', () => {
+  const now = new Date('2026-06-22T08:00:00Z');
+  const msg = formatDigestMessage([
+    { checkedOff: false, deadline: '2026-06-23T08:00:00Z', courseName: '课程C', title: '作业C' },
+    { checkedOff: false, deadline: '2026-06-23T20:00:00Z', courseName: '课程E', title: '作业E' },
+    { checkedOff: false, deadline: '2026-06-22T09:00:00Z', courseName: '课程A', title: '作业A' },
+    { checkedOff: false, deadline: '2026-06-23T12:00:00Z', courseName: '课程D', title: '作业D' },
+    { checkedOff: false, deadline: '2026-06-22T10:00:00Z', courseName: '课程B', title: '作业B' }
+  ], now);
+  assert.match(msg, /^课程A · 作业A/);
+  assert.match(msg, /课程B · 作业B/);
+  assert.match(msg, /课程C · 作业C/);
+  assert.doesNotMatch(msg, /课程D|课程E/);
+  assert.match(msg, /另有 2 项/);
+});
+
 test('formatDigestMessage summarizes a short digest', () => {
   const now = new Date('2026-06-22T08:00:00Z');
   const msg = formatDigestMessage([

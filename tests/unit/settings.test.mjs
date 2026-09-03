@@ -35,10 +35,10 @@ test('normalizeSettings preserves default booleans when missing', () => {
   assert.deepEqual(s.mutedCourseIds, []);
 });
 
-test('defaults use event-driven cadence: 4h scrape fallback, 15min badge/notify', () => {
+test('defaults use event-driven cadence: 12h scrape fallback and badge refresh', () => {
   const s = normalizeSettings(null);
-  assert.equal(s.checkIntervalMinutes, 240);
-  assert.equal(s.badgeRefreshMinutes, 15);
+  assert.equal(s.checkIntervalMinutes, 12 * 60);
+  assert.equal(s.badgeRefreshMinutes, 12 * 60);
   assert.deepEqual(s.notifyLeadHours, [48, 24]);
 });
 

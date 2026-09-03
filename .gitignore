@@ -25,3 +25,9 @@ mooc-reminder.zip
 
 # Local settings (may contain sensitive paths)
 .claude/settings.local.json
+
+# reference projects
+reference_projects/
+
+# zcode
+zcode/

@@ -47,6 +47,16 @@
         batchApiFetch(msg.courses || []).then(results => {
           console.log('[MOOC Reminder] BATCH_API_FETCH done, results:', results.length);
           try { sendResponse(results || []); } catch {}
+          // A temporary proxy can outlive the Service Worker that initiated it.
+          // This completion message lets a revived worker clean up the owned tab
+          // after every COURSE_API_DATA delivery has finished.
+          if (msg.proxyJobId) {
+            chrome.runtime.sendMessage({
+              type: 'TEMPORARY_PROXY_BATCH_COMPLETE',
+              proxyJobId: msg.proxyJobId,
+              resultCount: Array.isArray(results) ? results.length : 0
+            }).catch(function() {});
+          }
         }).catch(err => {
           console.warn('[MOOC Reminder] BATCH_API_FETCH error:', err.message);
           try { sendResponse([]); } catch {}
@@ -95,7 +105,7 @@
 
     // ═══ 通知 SW「课程页刚打开」：SW 节流后触发全课程刷新 ═══
     // 事件驱动调度的主入口——用户主动来 MOOC 时刷新数据最及时，
-    // 周期 alarm（默认 4h）只作兜底
+    // 周期 alarm（默认 12h）只作兜底
     try {
       chrome.runtime.sendMessage({ type: 'PAGE_OPENED' }).catch(function() {});
     } catch (e) { console.debug('[MOOC Reminder] PAGE_OPENED send failed:', e.message); }

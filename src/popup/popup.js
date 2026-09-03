@@ -165,7 +165,7 @@ async function init() {
       render();
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
       if (!state.lastSync && state.allItems.length === 0) {
-        try { showToast('请打开 MOOC 课程页面后重试'); } catch {}
+        try { showToast('请先登录 MOOC 并至少打开过一门课程后重试'); } catch {}
       } else {
         var now = Date.now();
         if (now - lastRefreshSuccess > 120000) {
@@ -236,8 +236,8 @@ async function validateAndAutoRepair() {
         last_sync: null,
         sync_errors: [],
         user_settings: {
-          checkIntervalMinutes: 30,
-          badgeRefreshMinutes: 5,
+          checkIntervalMinutes: 12 * 60,
+          badgeRefreshMinutes: 12 * 60,
           autoDetectEnabled: true,
           notificationsEnabled: true,
           notifyLeadHours: [48, 24],
@@ -819,7 +819,7 @@ async function handleRefresh() {
       }
       lastRefreshSuccess = now;
     } else {
-      showToast('请打开 MOOC 课程页面后重试');
+      showToast('请先登录 MOOC 并至少打开过一门课程后重试');
     }
   } catch(e) {
     console.error('[Popup] handleRefresh failed:', e.message);

@@ -19,11 +19,21 @@ const KEYS = {
   LAST_SYNC: 'last_sync',
   SYNC_ERRORS: 'sync_errors',
   SCRAPE_STATUS: 'scrape_status',
+  TEMPORARY_PROXY_JOB: 'temporary_proxy_job',
   API_STATUS: 'api_status',
   USER_SETTINGS: 'user_settings',
   POPUP_UI_STATE: 'popup_ui_state',
   LAST_DIGEST_DATE: 'last_digest_date'
 };
+
+function getNotificationIconUrl() {
+  try {
+    return chrome.runtime.getURL('src/assets/icons/icon128.png');
+  } catch {
+    // Test stubs and older browsers may not expose getURL.
+    return 'src/assets/icons/icon128.png';
+  }
+}
 
 // Settings defaults/logic live in src/shared/settings.js (unit-tested) and are
 // imported here — the SW is a module worker (manifest "type": "module"), so no
@@ -60,16 +70,18 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('[MOOC Reminder] Extension installed/updated:', details.reason);
 
   await validateAndRepairStorage();
+  await recoverTemporaryProxyJob();
   await setupAlarms();
-  await checkMissedDigest();
+  await sendStartupDigestIfNeeded();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[MOOC Reminder] Browser started, validating storage and setting up alarms');
   await validateAndRepairStorage();
+  await recoverTemporaryProxyJob();
   await setupAlarms();
-  await checkMissedDigest();
-  // 浏览器启动 = 每日新鲜度锚点：配合 4h 兜底周期，构成「事件驱动为主、
+  await sendStartupDigestIfNeeded();
+  // 浏览器启动 = 每日新鲜度锚点：配合 12h 兜底周期，构成「事件驱动为主、
   // 周期 alarm 兜底」的调度（作业按天更新，不需要高频轮询）
   maybeTriggerEventRefresh('startup').catch(() => {});
 });
@@ -82,7 +94,8 @@ async function validateAndRepairStorage() {
       KEYS.HOMEWORK_ITEMS,
       KEYS.COURSES,
       KEYS.USER_SETTINGS,
-      KEYS.SCRAPE_STATUS
+      KEYS.SCRAPE_STATUS,
+      KEYS.TEMPORARY_PROXY_JOB
     ]);
 
     let needsRepair = false;
@@ -108,6 +121,7 @@ async function validateAndRepairStorage() {
         [KEYS.LAST_SYNC]: null,
         [KEYS.SYNC_ERRORS]: [],
         [KEYS.SCRAPE_STATUS]: data[KEYS.SCRAPE_STATUS] || null,
+        [KEYS.TEMPORARY_PROXY_JOB]: data[KEYS.TEMPORARY_PROXY_JOB] || null,
         [KEYS.USER_SETTINGS]: normalizeSettings(data[KEYS.USER_SETTINGS])
       });
       console.log('[MOOC Reminder] Storage repaired — all data reset');
@@ -119,6 +133,7 @@ async function validateAndRepairStorage() {
         [KEYS.LAST_SYNC]: (await chrome.storage.local.get(KEYS.LAST_SYNC))[KEYS.LAST_SYNC] || null,
         [KEYS.SYNC_ERRORS]: [],
         [KEYS.SCRAPE_STATUS]: data[KEYS.SCRAPE_STATUS] || null,
+        [KEYS.TEMPORARY_PROXY_JOB]: data[KEYS.TEMPORARY_PROXY_JOB] || null,
         [KEYS.USER_SETTINGS]: normalizeSettings(data[KEYS.USER_SETTINGS])
       });
     }
@@ -132,6 +147,7 @@ async function validateAndRepairStorage() {
         [KEYS.LAST_SYNC]: null,
         [KEYS.SYNC_ERRORS]: [],
         [KEYS.SCRAPE_STATUS]: null,
+        [KEYS.TEMPORARY_PROXY_JOB]: null,
         [KEYS.USER_SETTINGS]: normalizeSettings(DEFAULT_SETTINGS)
       });
     } catch {}
@@ -183,6 +199,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       // 自查当天是否已发，无需重复判断）
       await sendDailyDigestNotification();
       break;
+    case TEMPORARY_PROXY_TIMEOUT_ALARM:
+      await expireTemporaryProxyJob();
+      break;
   }
 });
 
@@ -221,6 +240,9 @@ const MESSAGE_HANDLERS = {
     try {
       const items = apiExtractHomework(msg.rawData, msg.course);
       if (items.length === 0) {
+        // A successful API response can legitimately contain no assessable items.
+        // It still proves the batch completed and must advance the sync timestamp.
+        await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
         console.log('[MOOC Reminder] COURSE_API_DATA: 0 items extracted for', msg.course.courseId, '(courseName:', msg.course.courseName || '?', 'rawData len:', (msg.rawData||'').length, ')');
         return { success: true, itemCount: 0 };
       }
@@ -331,9 +353,20 @@ const MESSAGE_HANDLERS = {
 
   // Content script (main.js) signals a learn/spoc page just loaded — the user
   // is actively on MOOC, so all known courses can refresh right now (throttled).
-  async PAGE_OPENED() {
+  async PAGE_OPENED(msg, sender) {
+    const temporaryProxy = await handleTemporaryProxyPageOpened(sender && sender.tab && sender.tab.id);
+    if (temporaryProxy.handled) {
+      return { success: true, refreshTriggered: temporaryProxy.refreshTriggered, temporaryProxy: true };
+    }
     const kicked = await maybeTriggerEventRefresh('page-open');
     return { success: true, refreshTriggered: kicked };
+  },
+
+  // Sent after main.js has delivered every COURSE_API_DATA message. This lets a
+  // revived MV3 worker finish an in-progress temporary job after its in-memory
+  // await chain was discarded.
+  async TEMPORARY_PROXY_BATCH_COMPLETE(msg, sender) {
+    return await handleTemporaryProxyBatchComplete(msg, sender && sender.tab && sender.tab.id);
   },
 
   // Popup adds a manually-created reminder (for missed scraper items or offline homework)
@@ -439,12 +472,17 @@ const MESSAGE_HANDLERS = {
 
   // Popup clears all cached data
   async RESET_DATA() {
+    const temporaryProxyJob = await getTemporaryProxyJob();
+    if (temporaryProxyJob) {
+      await finishTemporaryProxyJob(temporaryProxyJob, { success: false, error: 'Data reset' }, true);
+    }
     await chrome.storage.local.set({
       [KEYS.HOMEWORK_ITEMS]: [],
       [KEYS.COURSES]: [],
       [KEYS.LAST_SYNC]: null,
       [KEYS.SYNC_ERRORS]: [],
-      [KEYS.SCRAPE_STATUS]: null
+      [KEYS.SCRAPE_STATUS]: null,
+      [KEYS.TEMPORARY_PROXY_JOB]: null
     });
     await updateBadgeFromStorage();
     console.log('[MOOC Reminder] All data reset');
@@ -472,6 +510,47 @@ const MESSAGE_HANDLERS = {
     await updateBadgeFromStorage();
     console.log('[MOOC Reminder] Settings updated');
     return { success: true, settings: saved };
+  },
+
+  // Diagnostic snapshot for the options page. Notification delivery beyond this
+  // point is controlled by Chrome and Windows notification settings.
+  async GET_NOTIFICATION_DIAGNOSTICS() {
+    const settings = normalizeSettings(await getUserSettings());
+    const now = new Date();
+    const items = await getHomeworkItems();
+    const unfinished = items.filter(item => item && !item.checkedOff && !isCourseMuted(item, settings));
+    const dueNow = collectDueNotifications(unfinished, settings, now);
+    const alarms = await Promise.all([
+      chrome.alarms.get('badge-refresh'),
+      chrome.alarms.get('periodic-scrape'),
+      chrome.alarms.get('daily-digest'),
+      chrome.alarms.get('daily-digest-retry')
+    ]);
+    let permissionLevel = 'unknown';
+    try {
+      if (chrome.notifications && chrome.notifications.getPermissionLevel) {
+        permissionLevel = await chrome.notifications.getPermissionLevel();
+      }
+    } catch {
+      permissionLevel = 'unknown';
+    }
+    return {
+      success: true,
+      now: now.toISOString(),
+      permissionLevel,
+      notificationsApiAvailable: !!(chrome.notifications && chrome.notifications.create),
+      settings,
+      unfinishedCount: unfinished.length,
+      dueNowCount: dueNow.length,
+      dueNow: dueNow.map(item => ({ uid: item.uid, level: item.level, message: item.message })),
+      quietHoursActive: isWithinQuietHours(settings, now),
+      alarms: {
+        badgeRefresh: alarms[0] || null,
+        periodicScrape: alarms[1] || null,
+        dailyDigest: alarms[2] || null,
+        dailyDigestRetry: alarms[3] || null
+      }
+    };
   },
 
   // Clear sync errors from storage
@@ -752,15 +831,16 @@ function formatDigestMessage(items, now) {
   return shown.join('；') + more;
 }
 
-async function checkMissedDigest() {
-  var settings = normalizeSettings(await getUserSettings());
+async function sendStartupDigestIfNeeded() {
+  const settings = normalizeSettings(await getUserSettings());
   if (!settings.dailyDigestEnabled) return;
-  var raw = await chrome.storage.local.get(KEYS.LAST_DIGEST_DATE);
+  const raw = await chrome.storage.local.get(KEYS.LAST_DIGEST_DATE);
   if (raw[KEYS.LAST_DIGEST_DATE] === localDateStr(new Date())) return;
-  var nowHour = new Date().getHours();
-  var digestHour = clampInt(settings.dailyDigestHour, 0, 23, 8);
-  if (nowHour < digestHour) return;
-  console.log('[MOOC Reminder] Missed daily digest at ' + digestHour + ':00, sending now');
+
+  // 每天首次启动浏览器时直接尝试推送临期摘要，而不等待用户设置的定时
+  // alarm。sendDailyDigestNotification 会继续处理通知总开关、免打扰、无
+  // 临期项目和当天去重；免打扰时会安排结束后的补发。
+  console.log('[MOOC Reminder] First browser start today, sending pending digest');
   await sendDailyDigestNotification();
 }
 
@@ -792,7 +872,7 @@ async function sendDailyDigestNotification() {
   try {
     await chrome.notifications.create('mooc-reminder:daily-digest', {
       type: 'basic',
-      iconUrl: 'src/assets/icons/icon128.png',
+      iconUrl: getNotificationIconUrl(),
       title: '今日 MOOC 作业汇总',
       message,
       priority: 1
@@ -836,7 +916,7 @@ async function maybeNotifyDeadlines(unfinishedItems) {
     try {
       await chrome.notifications.create(notificationIdFor(d.uid, d.level), {
         type: 'basic',
-        iconUrl: 'src/assets/icons/icon128.png',
+        iconUrl: getNotificationIconUrl(),
         title: d.title,
         message: d.message,
         priority: d.priority
@@ -906,133 +986,396 @@ async function maybeTriggerEventRefresh(reason) {
   }
 }
 
-// 抓取只发给最近活跃的一个标签页：BATCH_API_FETCH 会让 content script
-// 抓取全部课程，发给每个匹配标签页 = 开 N 个 MOOC 标签页就完整重复 N 次
+// A batch is deliberately sent to one proxy tab only. Every matching tab would
+// otherwise fetch the full course list and multiply network traffic.
+const TEMPORARY_PROXY_TIMEOUT_ALARM = 'temporary-proxy-timeout';
+const TEMPORARY_PROXY_TIMEOUT_MS = 90 * 1000;
+let periodicScrapeInFlight = null;
+let activeTemporaryProxyJob = null;
+let temporaryProxyWaiter = null;
+let temporaryProxyDispatchingJobId = null;
+const temporaryProxyFinalizingJobIds = new Set();
+
 function pickApiProxyTab(tabs) {
   if (!tabs || tabs.length === 0) return null;
   const sorted = tabs.slice().sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
   return sorted[0];
 }
 
-async function performPeriodicScrape() {
-  console.log('[MOOC Reminder] Periodic scrape started');
+function buildApiCourseList(courses) {
+  return (Array.isArray(courses) ? courses : [])
+    .filter(course => course && course.courseType !== 'manual' && course.courseId && (course.activeTermId || course.termId))
+    .map(course => ({
+      courseId: course.courseId,
+      termId: course.activeTermId || course.termId || '',
+      courseName: course.courseName || '',
+      schoolName: course.schoolName || '',
+      courseType: course.courseType || ''
+    }));
+}
 
+function getProxyRouteTermId(course) {
+  if (!course) return '';
+  if (course.termId && course.termId !== 'manual') return String(course.termId);
+  // A SPOC activeTermId is an API ID and can differ from the route shell ID.
+  return course.courseType === 'spoc' ? '' : String(course.activeTermId || '');
+}
+
+function buildTemporaryProxyUrl(course) {
+  const routeTermId = getProxyRouteTermId(course);
+  if (!course || !course.courseId || !routeTermId) return null;
+
+  const storedUrl = course.pageUrl || course.courseUrl || '';
   try {
-    // Find open icourse163 learn tabs (preferred for API proxying)
-    let tabs = await chrome.tabs.query({
-      url: [
-        'https://www.icourse163.org/learn/*',
-        'https://www.icourse163.org/spoc/learn/*'
-      ]
-    });
-
-    // Fallback: any icourse163.org tab (course-discovery.js handles BATCH_API_FETCH everywhere)
-    if (tabs.length === 0) {
-      console.log('[MOOC Reminder] No learn tabs open, trying any icourse163.org tab...');
-      tabs = await chrome.tabs.query({
-        url: ['https://www.icourse163.org/*']
-      });
+    const url = new URL(storedUrl);
+    if (url.origin === 'https://www.icourse163.org' && /\/(?:spoc\/)?learn\//.test(url.pathname) && url.searchParams.get('tid')) {
+      url.hash = '/learn/testlist';
+      return url.toString();
     }
+  } catch {}
 
-    if (tabs.length === 0) {
-      console.log('[MOOC Reminder] No icourse163 tabs open, trying background API refresh');
-      // Last resort: use the SW's direct API (chrome.cookies-based)
-      await apiRefreshAllKnownCourses();
-      await updateBadgeFromStorage();
-      return;
-    }
+  const path = course.courseType === 'spoc' ? '/spoc/learn/' : '/learn/';
+  return 'https://www.icourse163.org' + path + encodeURIComponent(course.courseId) +
+    '?tid=' + encodeURIComponent(routeTermId) + '#/learn/testlist';
+}
 
-    // 把已知课程发给 content script，让它用页面上下文拉 API（只发一个标签页）
-    const courses = await getCourses();
-    const proxyTab = pickApiProxyTab(tabs);
-    console.log('[MOOC Reminder] Periodic: Sending BATCH_API_FETCH, courses:', courses.length, 'tab:', proxyTab && proxyTab.id);
-    var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '', courseType: c.courseType || '' }; });
-    if (proxyTab) {
+function pickTemporaryProxyCourse(courses) {
+  return (Array.isArray(courses) ? courses : [])
+    .filter(course => course && course.courseType !== 'manual' && buildTemporaryProxyUrl(course))
+    .sort((a, b) => new Date(b.lastSeen || 0) - new Date(a.lastSeen || 0))[0] || null;
+}
+
+function isTemporaryProxyJob(value) {
+  return !!(value && value.kind === 'temporary-proxy' && value.temporary === true && value.id && Number.isInteger(value.tabId));
+}
+
+function serializeTemporaryProxyJob(job) {
+  return {
+    kind: 'temporary-proxy',
+    id: job.id,
+    tabId: job.tabId,
+    temporary: true,
+    phase: job.phase,
+    source: job.source,
+    courseId: job.courseId,
+    proxyUrl: job.proxyUrl,
+    createdAt: job.createdAt,
+    deadlineAt: job.deadlineAt,
+    expectedCourseIds: job.expectedCourseIds
+  };
+}
+
+async function getTemporaryProxyJob() {
+  if (isTemporaryProxyJob(activeTemporaryProxyJob)) return activeTemporaryProxyJob;
+  const raw = await chrome.storage.local.get(KEYS.TEMPORARY_PROXY_JOB);
+  return isTemporaryProxyJob(raw[KEYS.TEMPORARY_PROXY_JOB]) ? raw[KEYS.TEMPORARY_PROXY_JOB] : null;
+}
+
+async function setTemporaryProxyJobPhase(job, phase) {
+  job.phase = phase;
+  await chrome.storage.local.set({ [KEYS.TEMPORARY_PROXY_JOB]: serializeTemporaryProxyJob(job) });
+}
+
+async function clearTemporaryProxyJob(job) {
+  const raw = await chrome.storage.local.get(KEYS.TEMPORARY_PROXY_JOB);
+  const stored = raw[KEYS.TEMPORARY_PROXY_JOB];
+  if (isTemporaryProxyJob(stored) && stored.id === job.id) {
+    await chrome.storage.local.set({ [KEYS.TEMPORARY_PROXY_JOB]: null });
+  }
+  if (activeTemporaryProxyJob && activeTemporaryProxyJob.id === job.id) {
+    activeTemporaryProxyJob = null;
+  }
+}
+
+function createTemporaryProxyWaiter(job) {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  temporaryProxyWaiter = { jobId: job.id, promise, resolve };
+  return promise;
+}
+
+function settleTemporaryProxyWaiter(job, outcome) {
+  if (temporaryProxyWaiter && temporaryProxyWaiter.jobId === job.id) {
+    temporaryProxyWaiter.resolve(outcome);
+    temporaryProxyWaiter = null;
+  }
+}
+
+async function finishTemporaryProxyJob(job, outcome, removeTab) {
+  if (!job || temporaryProxyFinalizingJobIds.has(job.id)) return false;
+  temporaryProxyFinalizingJobIds.add(job.id);
+  let finalized = false;
+  try {
+    // Never clear an unrelated or already-completed job. This also makes a
+    // timeout racing a late batch response resolve to one authoritative result.
+    const raw = await chrome.storage.local.get(KEYS.TEMPORARY_PROXY_JOB);
+    const stored = raw[KEYS.TEMPORARY_PROXY_JOB];
+    if (!isTemporaryProxyJob(stored) || stored.id !== job.id) return false;
+
+    await chrome.alarms.clear(TEMPORARY_PROXY_TIMEOUT_ALARM);
+    if (removeTab && Number.isInteger(job.tabId)) {
       try {
-        chrome.tabs.sendMessage(proxyTab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
-      } catch {}
+        await chrome.tabs.remove(job.tabId);
+      } catch (e) {
+        console.debug('[MOOC Reminder] Temporary proxy tab was already closed:', e.message);
+      }
     }
+    await clearTemporaryProxyJob(job);
+    finalized = true;
+    return true;
+  } finally {
+    temporaryProxyFinalizingJobIds.delete(job.id);
+    if (finalized) settleTemporaryProxyWaiter(job, outcome);
+  }
+}
 
-    // 等待 API 响应到达（BATCH_API_FETCH 是异步的）
-    var lastSyncBefore = await getLastSync();
-    var waitStart = Date.now();
-    var maxWait = 15000; // 15s max
-    while (Date.now() - waitStart < maxWait) {
-      await sleep(800);
-      var currentSync = await getLastSync();
-      if (currentSync && currentSync !== lastSyncBefore) break;
+async function recoverTemporaryProxyJob() {
+  const raw = await chrome.storage.local.get(KEYS.TEMPORARY_PROXY_JOB);
+  const job = raw[KEYS.TEMPORARY_PROXY_JOB];
+  if (!isTemporaryProxyJob(job)) return;
+  console.warn('[MOOC Reminder] Cleaning up an interrupted temporary proxy job:', job.id);
+  await finishTemporaryProxyJob(job, { success: false, error: 'Temporary proxy interrupted by extension restart' }, true);
+}
+
+async function expireTemporaryProxyJob() {
+  const job = await getTemporaryProxyJob();
+  if (!job) return;
+  const error = 'Temporary MOOC proxy timed out before the batch completed';
+  const finalized = await finishTemporaryProxyJob(job, { success: false, error, temporaryProxy: true }, true);
+  if (finalized) {
+    console.warn('[MOOC Reminder]', error, job.id);
+    await addSyncError(error);
+  }
+}
+
+chrome.tabs.onRemoved.addListener(tabId => {
+  handleTemporaryProxyTabRemoved(tabId).catch(error => {
+    console.debug('[MOOC Reminder] Temporary proxy tab removal cleanup failed:', error.message);
+  });
+});
+
+async function handleTemporaryProxyTabRemoved(tabId) {
+  const job = await getTemporaryProxyJob();
+  if (!job || job.tabId !== tabId || temporaryProxyFinalizingJobIds.has(job.id)) return;
+  await finishTemporaryProxyJob(job, {
+    success: false,
+    error: 'Temporary MOOC proxy tab was closed before the batch completed',
+    temporaryProxy: true
+  }, false);
+}
+
+function withTimeout(promise, timeoutMs, errorMessage) {
+  let timeoutId;
+  const timeout = new Promise((resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
+async function createTemporaryProxyJob(courses, source) {
+  const existing = await getTemporaryProxyJob();
+  if (existing) {
+    if (temporaryProxyWaiter && temporaryProxyWaiter.jobId === existing.id) {
+      return temporaryProxyWaiter.promise;
     }
+    return { success: false, pending: true, error: 'Temporary MOOC proxy is already running', temporaryProxy: true };
+  }
 
-    await updateBadgeFromStorage();
-    console.log('[MOOC Reminder] Periodic scrape complete');
+  const proxyCourse = pickTemporaryProxyCourse(courses);
+  const proxyUrl = buildTemporaryProxyUrl(proxyCourse);
+  if (!proxyCourse || !proxyUrl) {
+    return { success: false, error: '没有可用于后台刷新的已载入 MOOC 课程', temporaryProxy: false };
+  }
+
+  let job = null;
+  try {
+    // about:blank cannot run our content script, so it gives the worker a safe
+    // point to persist ownership before navigating to a fast-loading MOOC page.
+    const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
+    if (!tab || !Number.isInteger(tab.id)) throw new Error('Unable to create temporary MOOC proxy tab');
+
+    const createdAt = Date.now();
+    job = {
+      kind: 'temporary-proxy',
+      id: 'temporary-proxy-' + createdAt + '-' + Math.random().toString(36).slice(2, 8),
+      tabId: tab.id,
+      temporary: true,
+      phase: 'waiting_ready',
+      source: source || 'periodic',
+      courseId: proxyCourse.courseId,
+      proxyUrl,
+      createdAt,
+      deadlineAt: createdAt + TEMPORARY_PROXY_TIMEOUT_MS,
+      expectedCourseIds: buildApiCourseList(courses).map(course => course.courseId)
+    };
+    activeTemporaryProxyJob = job;
+    const completion = createTemporaryProxyWaiter(job);
+
+    // Store ownership before the page can report PAGE_OPENED. The timeout alarm
+    // survives a service-worker restart and prevents a background tab leak.
+    job.readyPromise = (async function() {
+      await chrome.storage.local.set({ [KEYS.TEMPORARY_PROXY_JOB]: serializeTemporaryProxyJob(job) });
+      await chrome.alarms.create(TEMPORARY_PROXY_TIMEOUT_ALARM, { when: job.deadlineAt });
+    })();
+    await job.readyPromise;
+    await chrome.tabs.update(job.tabId, { url: proxyUrl });
+    console.log('[MOOC Reminder] Created temporary proxy tab', job.tabId, 'for', job.courseId);
+
+    return await completion;
   } catch (e) {
-    console.error('[MOOC Reminder] Periodic scrape failed:', e);
-    await addSyncError(`Periodic scrape: ${e.message}`);
+    const outcome = { success: false, error: e.message, temporaryProxy: true };
+    if (job) {
+      await finishTemporaryProxyJob(job, outcome, true);
+    }
+    return outcome;
+  }
+}
+
+async function handleTemporaryProxyPageOpened(tabId) {
+  if (!Number.isInteger(tabId)) return { handled: false, refreshTriggered: false };
+  const job = await getTemporaryProxyJob();
+  if (!job || job.tabId !== tabId) return { handled: false, refreshTriggered: false };
+  if (job.phase === 'fetching' || temporaryProxyDispatchingJobId === job.id) {
+    return { handled: true, refreshTriggered: false };
+  }
+  if (job.phase !== 'waiting_ready') return { handled: true, refreshTriggered: false };
+  if (job.readyPromise) await job.readyPromise;
+
+  await runTemporaryProxyBatch(job);
+  return { handled: true, refreshTriggered: true };
+}
+
+async function handleTemporaryProxyBatchComplete(msg, tabId) {
+  if (!msg || !msg.proxyJobId || !Number.isInteger(tabId)) {
+    return { success: false, error: 'Invalid temporary proxy completion payload' };
+  }
+  const job = await getTemporaryProxyJob();
+  if (!job || job.id !== msg.proxyJobId || job.tabId !== tabId || job.phase !== 'fetching') {
+    return { success: false, ignored: true };
+  }
+
+  const fetchedCourseCount = Number.isInteger(msg.resultCount) ? msg.resultCount : 0;
+  const outcome = fetchedCourseCount > 0
+    ? { success: true, temporaryProxy: true, fetchedCourseCount, tabsScanned: 1 }
+    : { success: false, error: 'Temporary MOOC proxy returned no course data', temporaryProxy: true, tabsScanned: 1 };
+  if (outcome.success) await updateBadgeFromStorage();
+  const finalized = await finishTemporaryProxyJob(job, outcome, true);
+  if (finalized && !outcome.success) await addSyncError('Temporary proxy batch: ' + outcome.error);
+  return { success: finalized && outcome.success, ignored: !finalized, error: outcome.error };
+}
+
+async function runTemporaryProxyBatch(job) {
+  if (temporaryProxyDispatchingJobId === job.id) return;
+  temporaryProxyDispatchingJobId = job.id;
+  let outcome;
+  try {
+    await setTemporaryProxyJobPhase(job, 'fetching');
+    const apiCourses = buildApiCourseList(await getCourses());
+    if (apiCourses.length === 0) throw new Error('没有可抓取的已载入课程');
+
+    const remainingMs = Math.max(1, job.deadlineAt - Date.now());
+    const results = await withTimeout(
+      chrome.tabs.sendMessage(job.tabId, {
+        type: 'BATCH_API_FETCH',
+        courses: apiCourses,
+        proxyJobId: job.id
+      }),
+      remainingMs,
+      'Temporary MOOC proxy job timed out'
+    );
+    if (!Array.isArray(results) || results.length === 0) {
+      throw new Error('Temporary MOOC proxy returned no course data');
+    }
+    await updateBadgeFromStorage();
+    outcome = {
+      success: true,
+      temporaryProxy: true,
+      fetchedCourseCount: Array.isArray(results) ? results.length : 0,
+      tabsScanned: 1
+    };
+  } catch (e) {
+    console.warn('[MOOC Reminder] Temporary proxy batch failed:', e.message);
+    const stillOwned = await getTemporaryProxyJob();
+    if (stillOwned && stillOwned.id === job.id) {
+      await addSyncError('Temporary proxy batch: ' + e.message);
+    }
+    outcome = { success: false, error: e.message, temporaryProxy: true, tabsScanned: 1 };
+  } finally {
+    temporaryProxyDispatchingJobId = null;
+    await finishTemporaryProxyJob(job, outcome || { success: false, error: 'Temporary proxy batch did not finish', temporaryProxy: true }, true);
+  }
+  return outcome;
+}
+
+async function performPeriodicScrape(source) {
+  if (periodicScrapeInFlight) return periodicScrapeInFlight;
+
+  const run = (async function() {
+    console.log('[MOOC Reminder] Periodic scrape started');
+    try {
+      const courses = await getCourses();
+      const apiCourses = buildApiCourseList(courses);
+      if (apiCourses.length === 0) {
+        return { success: false, error: '没有可抓取的已载入课程', tabsScanned: 0 };
+      }
+
+      const tabs = await chrome.tabs.query({
+        url: [
+          'https://www.icourse163.org/learn/*',
+          'https://www.icourse163.org/spoc/learn/*'
+        ]
+      });
+      const proxyTab = pickApiProxyTab(tabs);
+
+      if (!proxyTab) {
+        console.log('[MOOC Reminder] No learn tab open, creating a temporary proxy tab');
+        return await createTemporaryProxyJob(courses, source || 'periodic');
+      }
+
+      console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', apiCourses.length, 'courses to tab', proxyTab.id);
+      const results = await withTimeout(
+        chrome.tabs.sendMessage(proxyTab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }),
+        TEMPORARY_PROXY_TIMEOUT_MS,
+        'MOOC proxy batch timed out'
+      );
+      if (!Array.isArray(results) || results.length === 0) {
+        throw new Error('MOOC proxy returned no course data');
+      }
+      await updateBadgeFromStorage();
+      console.log('[MOOC Reminder] Periodic scrape complete');
+      return {
+        success: true,
+        temporaryProxy: false,
+        fetchedCourseCount: Array.isArray(results) ? results.length : 0,
+        tabsScanned: 1
+      };
+    } catch (e) {
+      console.error('[MOOC Reminder] Periodic scrape failed:', e);
+      await addSyncError('Periodic scrape: ' + e.message);
+      return { success: false, error: e.message, tabsScanned: 0 };
+    }
+  })();
+
+  periodicScrapeInFlight = run;
+  try {
+    return await run;
+  } finally {
+    if (periodicScrapeInFlight === run) periodicScrapeInFlight = null;
   }
 }
 
 async function triggerManualScrape() {
   console.log('[MOOC Reminder] Manual scrape triggered');
-
-  try {
-    const tabs = await chrome.tabs.query({
-      url: [
-        'https://www.icourse163.org/learn/*',
-        'https://www.icourse163.org/spoc/learn/*'
-      ]
-    });
-
-    if (tabs.length === 0) {
-      // 没有打开的页面——不可能。让用户打开任一课程页面即可
-      return {
-        success: false,
-        error: '请打开任一 icourse163 课程页面后重试',
-        scrapedCount: 0
-      };
-    }
-
-    // 把已知课程发给 content script 做页面上下文 API 抓取（只发一个标签页）
-    const courses = await getCourses();
-    const proxyTab = pickApiProxyTab(tabs);
-    console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', courses.length, 'courses to tab', proxyTab && proxyTab.id);
-    var apiCourses = courses.map(function(c) { return { courseId: c.courseId, termId: c.activeTermId || c.termId || '', courseName: c.courseName || '', schoolName: c.schoolName || '', courseType: c.courseType || '' }; });
-
-    var lastSyncBefore = await getLastSync();
-
-    if (proxyTab) {
-      try {
-        chrome.tabs.sendMessage(proxyTab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }).catch(function(){});
-      } catch {}
-    }
-
-    // 等待 COURSE_API_DATA 异步响应被处理
-    console.log('[MOOC Reminder] Waiting for API responses...');
-    var waitStart = Date.now();
-    var maxWait = 25000; // 25s max
-    while (Date.now() - waitStart < maxWait) {
-      await sleep(800);
-      var currentSync = await getLastSync();
-      if (currentSync && currentSync !== lastSyncBefore) {
-        console.log('[MOOC Reminder] API data arrived, lastSync updated');
-        await sleep(1000);
-        break;
-      }
-    }
-
-    await updateBadgeFromStorage();
-
-    var allItems = await getHomeworkItems();
-    return {
-      success: true,
-      scrapedCount: allItems.length,
-      tabsScanned: tabs.length,
-      errors: 0
-    };
-  } catch (e) {
-    console.error('[MOOC Reminder] Manual scrape failed:', e);
-    await addSyncError(`Manual scrape: ${e.message}`);
-    return { success: false, error: e.message, scrapedCount: 0 };
-  }
+  const outcome = await performPeriodicScrape('manual');
+  const allItems = await getHomeworkItems();
+  return {
+    success: outcome.success === true,
+    error: outcome.error || null,
+    scrapedCount: allItems.length,
+    tabsScanned: outcome.tabsScanned || 0,
+    temporaryProxy: outcome.temporaryProxy === true,
+    errors: outcome.success === true ? 0 : 1
+  };
 }
 
 // ─── Storage Helpers ────────────────────────────────────
@@ -1111,17 +1454,15 @@ async function setApiStatus(status) {
   });
 }
 
-// ─── icourse163 API — background, no-tab homework refresh ───────────────
+// ─── icourse163 API — experimental direct refresh ──────────────────────
 // Inlined from src/shared/icourse163-api.js — keep the two in sync (the shared
-// copy is unit-tested; this copy is what actually runs). Pulls homework
-// deadlines for known course-terms WITHOUT an open tab, by calling the site's
-// web JSON-RPC with the logged-in session cookie. Experimental and fully
-// fenced: any failure is swallowed and the existing tab-based DOM scrape remains
-// the authoritative path. termId (from the canonical learn URL) is the bridge
-// key; our own courseId is attached to results so they dedup with DOM items.
+// copy is unit-tested; this copy is what actually runs). This path remains for
+// course-link discovery diagnostics, but periodic/manual refreshes use a
+// same-origin Content Script proxy, including a temporary proxy tab when no
+// learning page is open. termId (from the canonical learn URL) is the bridge
+// key; our own courseId is attached to results so they dedup with API items.
 
 const ICOURSE_ORIGIN = 'https://www.icourse163.org';
-const CSRF_COOKIE_NAME = 'NTESSTUDYSI';
 const API_TERM_DTO_RPC = 'web/j/courseBean.getMocTermDto.rpc';
 const API_TERM_DTO_SPOC_RPC = 'web/j/courseBean.getSpocTermDto.rpc';
 const API_TERM_DTO_DWR = 'dwr/call/plaincall/CourseBean.getMocTermDto.dwr';
@@ -1598,10 +1939,4 @@ async function apiRefreshAllKnownCourses() {
   } finally {
     apiRefreshInFlight = false;
   }
-}
-
-// ─── Utilities ──────────────────────────────────────────
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
