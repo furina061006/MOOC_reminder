@@ -28,7 +28,7 @@
 | **跨课程汇总** | 所有课程集中展示，按截止时间排序 |
 | **SPOC 完整支持** | 大学物理等 SPOC 课程与其他课程同样支持 |
 | **截止提醒** | 48h/24h/过期分档桌面通知 |
-| **每日摘要** | 早上汇总推送（可选） |
+| **每日摘要** | 每天定时汇总推送，首次启动浏览器时可补发（可选） |
 | **静音课程** | 不感兴趣的课可以隐藏 |
 | **导出日历** | ICS 格式导入手机 |
 | **深色模式** | 自动适配系统主题 |
@@ -113,9 +113,9 @@ SPOC（大学物理）是所有课程中最难啃的骨头。
 
 ### 三个角色
 
-**跑腿员（Content Script）** — 站在 icourse163.org 页面里，发同源 XHR 调 MOOC 内部 API，拿完整的课程数据。SPOC 课程会先用 WAR 脚本找真实 termId。
+**跑腿员（Content Script）** — 站在 icourse163.org 页面里，发同源 XHR 调 MOOC 内部 API，拿完整的课程数据。SPOC 课程会先用 WAR 脚本找真实 termId；没有现成学习页时，扩展会使用临时非激活代理页。
 
-**仓库管理员（Service Worker）** — 后台定时器 + 手动刷新 → 叫跑腿员拿数据 → 解析 JSON → 合并去重 → 存 `chrome.storage.local` → 更新徽章数字。
+**仓库管理员（Service Worker）** — 后台定时器 + 浏览器启动 + 手动刷新 → 复用现有学习页或创建临时代理页 → 叫跑腿员拿数据 → 解析 JSON → 合并去重 → 存 `chrome.storage.local` → 更新徽章数字。
 
 **看板（Popup）** — 点图标弹出，从仓库读数据，按课程分组展示，支持筛选/勾选/跳转。
 
@@ -126,7 +126,9 @@ SW 运行在 `chrome-extension://` 世界，调 `icourse163.org` 的 API 时 coo
 ### 数据流
 
 ```
-你打开 MOOC 页面
+课程页打开 / 浏览器启动 / 定时或手动刷新
+  → Service Worker 复用现有 learn/spoc 页面
+  → 没有学习页时创建临时非激活代理页
   → Content Script 注入
     → chrome.cookies.get('NTESSTUDYSI') 读 HttpOnly CSRF
     → XHR → getLastLearnedMocTermDto.rpc → ~200KB JSON
@@ -135,6 +137,7 @@ SW 运行在 `chrome-extension://` 世界，调 `icourse163.org` 的 API 时 coo
     → apiExtractHomework() 解析
     → reconcileHomeworkData() 合并（UID 匹配去重）
     → updateBadgeFromStorage()
+  → 临时代理任务完成、超时或关闭后清理扩展创建的 tab
 你点图标 → Popup 展示
 ```
 
@@ -142,10 +145,12 @@ SW 运行在 `chrome-extension://` 世界，调 `icourse163.org` 的 API 时 coo
 
 | 类型 | 条件 | 结果 |
 |---|---|---|
-| 测验/考试 | `usedTryCount > 0` | 完成 |
+| 测验 | `userScore > 0` | 完成 |
+| 考试 | 有成绩，或已提交且有成绩 | 完成（标签：手动确认） |
 | 作业无互评 | `usedTryCount > 0` | 完成 |
-| 作业互评中 (scorePubStatus:0 + 窗口内) | — | 未完成 · 手动确认 |
-| 作业互评窗口关闭/过期 | `scorePubStatus >= 1` | 完成 |
+| 作业互评中（窗口内） | `scorePubStatus:0` + 当前时间在窗口内 | 未完成 · 手动确认 |
+| 作业互评窗口关闭但未到期 | `scorePubStatus:1` + 当前时间早于结束时间 | 未完成 |
+| 作业互评窗口结束/成绩公布 | 窗口已结束或 `scorePubStatus:2` | 完成 |
 
 **唯一盲区**：互评窗口内的作业——平台不暴露互评提交状态。这一项标记为「手动确认」。
 
@@ -175,11 +180,12 @@ SW 运行在 `chrome-extension://` 世界，调 `icourse163.org` 的 API 时 coo
 
 ## 局限性
 
-- 需要 icourse163 页面打开才能刷新
+- 首次需要登录并至少打开过一门 icourse163 课程学习页，以保存课程路由；之后没有现成学习页时可使用临时非激活代理页刷新
 - 仅支持中国大学MOOC，不支持其他平台
 - 不跨设备同步（chrome.storage.local 是本地的）
 - API 端点改版可能暂时失效
 - 互评完成无法自动检测（平台 API 不暴露）
+- 登录失效或课程页面无法加载时，临时代理任务会超时并清理
 
 ---
 

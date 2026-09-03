@@ -5,11 +5,13 @@ Chrome/Edge Manifest V3 浏览器扩展，自动追踪中国大学MOOC (icourse1
 ## 知识管理约定（每次会话遵守）
 
 - **CLAUDE.md（本文件）** — 项目唯一事实来源。所有核心技术结论写在这里，任何开发者打开项目即能理解全貌
-- **`.claude/logs/`** — 开发过程记录。写「踩过什么坑、试过哪些死路、为什么选方案 A 不选 B」，给想深挖的人追溯
+- **README.md** — 面向用户的项目说明：安装、使用、功能、限制和当前能力；保持精简，不放完整更新日志
+- **CHANGELOG.md** — 面向用户的完整版本更新记录，按日期或版本记录可感知的新增、变更和修复
+- **`.claude/logs/`** — 面向开发者的过程记录。写「踩过什么坑、试过哪些死路、为什么选方案 A 不选 B」以及实现细节，供想深挖的人追溯
 - **Memory** — 仅用于快速回忆。不再重复存储 CLAUDE.md 已有的技术知识，只保留偏好、习惯等个人上下文
-- **每次重大技术变化后**：先更新本文件，再写日志，最后更新 memory 索引
+- **每次重大技术变化后**：先更新本文件，再写开发日志；涉及用户可感知变化时同步更新 `CHANGELOG.md`，最后更新 memory 索引
 
-详细开发日志见 `.claude/logs/` 目录。
+文档职责保持清晰：README 面向使用者，CHANGELOG 面向版本回顾，`.claude/logs/` 面向技术追溯。详细开发日志见 `.claude/logs/` 目录。
 
 ---
 
@@ -481,12 +483,13 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 # Lint
 npx eslint src/
 
-# 打包
-zip -r mooc-reminder.zip . -x ".*" "node_modules/*" "tests/*" "logs/*"
+# 打包（发布包应排除开发资料、测试和参考工程）
+zip -r mooc-reminder.zip . -x ".*" "node_modules/*" "tests/*" "logs/*" "reference_projects/*"
 ```
 
 ## 相关文档
 
+- `CHANGELOG.md` — 面向用户的完整更新记录
 - `.claude/logs/architecture.md` — 完整架构文档
 - `.claude/logs/2026-06-27-development.md` — 最近开发日志（API 字段分析、互评判定、SPOC 支持）
 - `.claude/logs/2026-06-26-development.md` — 背景 API 代理、完成检测重写
