@@ -1902,6 +1902,11 @@ function apiExtractHomework(input, course) {
   if (!data || !course) return [];
   const out = [];
   const seen = new Set();
+  // Nodes that carry a name AND a signal but fail the type gate. They used to be
+  // dropped in total silence, which made "this course's items are missing" almost
+  // undiagnosable — the contentType that caused it was never reported anywhere.
+  // Kept in sync with src/shared/icourse163-api.js (invariant 12).
+  const nearMisses = [];
   let visited = 0;
   function looksLikeChapter(node) { return Array.isArray(node.lessons) || /chapter/i.test(node.type || ''); }
   function looksLikeLesson(node) { return Array.isArray(node.units) || /lesson/i.test(node.type || ''); }
@@ -1918,8 +1923,9 @@ function apiExtractHomework(input, course) {
     // contentType 是权威字段：2=测验, 3=作业, 6=考试；名字正则作为后备
     var ct = String(node.contentType || '');
     var ctIsAssessed = ct === '2' || ct === '3' || ct === '6';
-    if (typeof name === 'string' && name.trim() && hasSignal &&
-        (ctIsAssessed || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)))) {
+    var isAssessed = typeof name === 'string' && name.trim() && hasSignal &&
+        (ctIsAssessed || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)));
+    if (isAssessed) {
 
       const homeworkId = String(node.id || node.jobId || node.quizId || node.testId || node.homeworkId || '') || ('h' + (out.length + 1));
       const uid = `${course.courseId}_tid${course.termId}_ch${chapterId || ''}_le${lessonId || ''}_hw${homeworkId}`;
@@ -1959,7 +1965,21 @@ function apiExtractHomework(input, course) {
           apiCompleted: done
         });
       }
+    } else if (typeof name === 'string' && name.trim() && hasSignal) {
+      // Name + signal but the type gate rejected it. Record why, capped so a
+      // 200KB DTO cannot flood the console.
+      if (nearMisses.length < 5) {
+        nearMisses.push({
+          name: String(name).trim().slice(0, 40),
+          contentType: ct || null,
+          type: node.type != null ? node.type : null,
+          testType: (node.test && node.test.type != null) ? node.test.type : null
+        });
+      } else if (nearMisses.length === 5) {
+        nearMisses.push('…');
+      }
     }
+
     const nextChapter = node.chapterId || (looksLikeChapter(node) ? node.id : chapterId);
     const nextLesson = node.lessonId || (looksLikeLesson(node) ? node.id : lessonId);
     for (const key of Object.keys(node)) {
@@ -2018,6 +2038,13 @@ function apiExtractHomework(input, course) {
         j--;
       }
     }
+  }
+
+  if (nearMisses.length > 0) {
+    // Deliberately actionable: when a course looks like it is missing items, this
+    // line names the contentType the gate rejected. See CLAUDE.md「抓不到/抓不全条目」.
+    console.log('[MOOC Reminder] apiExtractHomework: ' + nearMisses.length +
+      ' 个节点有名字+截止/分数但被类型门槛拦下（若某课程条目缺失，先看这里）:', JSON.stringify(nearMisses));
   }
 
   return out;

@@ -388,6 +388,44 @@ API 提供 `contentType` 字段作为类型标识，优先级高于名字正则�
 
 详细实现见 `.claude/logs/2026-06-28-completion-logic.md`。
 
+### 抓不到 / 抓不全条目（排查流程）
+
+平台改版、或老师新增内容类型（如「线上学习任务」「翻转课堂」）时，某门课会「少几条」甚至「一条都没有」。
+**按顺序定位，不要凭猜直接改门槛。**
+
+**当前类型门槛**（两份 extractor 副本都是这个规则）：
+
+```
+hasSignal（有 deadline 或 分数）
+  且（contentType ∈ {2,3,6}
+      或 contentType 空缺 且 名字命中 /测验|作业|考试|测试|quiz|exam|homework|test/i）
+```
+
+名字正则**只在 contentType 缺失时**启用——否则「期末考试」这类名字会被误判。
+
+排查步骤：
+
+1. **确认症状**：在**扩展的** Service Worker Console（`chrome://extensions` → MOOC Reminder → 「Service Worker」，
+   不是网页 Console）跑 `tools/diagnostics/dump-extension-state.js`。
+   条目不在 `homework_items` 里 → 抓取/提取问题；在 → 问题在展示层，别往抓取方向查。
+2. **看近失日志**：在同一个 Console 搜
+   `apiExtractHomework: N 个节点有名字+截止/分数但被类型门槛拦下`。
+   这条日志（2026-09 新增，见 `tests/unit/icourse163-api.test.mjs`）会直接列出被拦下的节点名与 `contentType`。
+   有 → 就是门槛过滤的，且已经告诉你 contentType 是什么。
+3. **看数据里到底有没有**：在课程页面 Console 跑 `tools/diagnostics/dump-page-dto.js`。
+   它复刻运行时门槛逐节点给判定，并给出 `gatedOutWithSignal`（有信号却被拦下）与
+   `keywordInDto`（DOM 里看到的名字是否出现在 DTO 原文里）。
+   - `keywordInDto` 全 `false` → API 数据里**根本没有**这些条目 → 查抓取来源（termId / 哪个 term 装了它）
+   - 有节点但 `passesGate: false` → 门槛问题，报告里有它的 contentType
+4. **页面不暴露 DTO 时**：脚本返回 `foundDtoIn: null`（部分 SPOC 页只把 `{id}` 空壳挂到
+   `window.moocTermDto`，2026-09 实测）。改为 DevTools → Network → 筛 `rpc` → 刷新页面 →
+   找响应最大的请求 → Copy response，拿原始响应离线分析。
+
+> [!IMPORTANT]
+> **不要靠猜放宽门槛。** 让「有名字 + 有截止/分数」却被拒的节点静默消失，正是 2026-09
+> 「线上学习任务抓不到」排查困难的根因——contentType 成了不可诊断的黑盒。近失日志就是为此加的；
+> 任何放宽门槛的改动都必须先由上面第 2、3 步拿到证据。
+
 ---
 
 ## 调度与截止提醒（2026-08 定型）

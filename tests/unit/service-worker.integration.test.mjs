@@ -875,6 +875,55 @@ test('COURSE_UPDATE rejects a non-learn routeUrl instead of storing it', async (
   assert.equal(spocCourseRecord().pageUrl, undefined);
 });
 
+// ── near-miss diagnostics in the RUNTIME copy ────────────────────────────
+// The SPOC bug happened because the inlined runtime extractor had drifted from
+// the tested shared copy. This pins the near-miss reporting on the copy that
+// actually runs, so the two cannot silently diverge again on this behaviour.
+
+test('the runtime extractor reports content-type near misses (copies stay in sync)', async () => {
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('dismissed_completed_uids');
+  seedCourses([{ courseId: 'NEU-1', termId: '1', courseName: '模拟电子技术', courseType: 'mooc' }]);
+
+  const deadline = Date.now() + 86400000;
+  const payload = {
+    result: {
+      mocTermDto: {
+        chapters: [{
+          id: 1, name: '第1章', type: 'chapter',
+          lessons: [{
+            id: 11, name: '1.1', type: 'lesson',
+            units: [
+              { id: 101, name: '第一章 测验', contentType: 2, test: { deadline } },
+              { id: 102, name: '“Multisim” 对应的测试', contentType: 9, test: { deadline } }
+            ]
+          }]
+        }]
+      }
+    }
+  };
+
+  const logs = [];
+  const original = console.log;
+  console.log = (...args) => logs.push(args.map(String).join(' '));
+  let res;
+  try {
+    res = await sendMessage({
+      type: 'COURSE_API_DATA',
+      course: { courseId: 'NEU-1', termId: '1', courseName: '模拟电子技术', schoolName: '', courseType: 'mooc' },
+      rawData: payload
+    });
+  } finally {
+    console.log = original;
+  }
+
+  assert.equal(res.success, true);
+  assert.equal(res.itemCount, 1, 'only the recognised contentType is extracted');
+  const line = logs.find((l) => l.includes('被类型门槛拦下'));
+  assert.ok(line, 'the inlined runtime copy must report near misses like the shared one');
+  assert.match(line, /"contentType":"9"/);
+});
+
 // ── update check (backlog: 客户端插件提醒有更新) ──────────────────────────
 //
 // The running version in the harness stub is 1.0.0 (chrome.runtime.getManifest).

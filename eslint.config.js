@@ -9,6 +9,7 @@ const browserExtensionGlobals = {
   history: 'readonly',
   fetch: 'readonly',
   URL: 'readonly',
+  URLSearchParams: 'readonly',
   MutationObserver: 'readonly',
   NodeFilter: 'readonly',
   XMLHttpRequest: 'readonly',
@@ -44,8 +45,10 @@ export default [
   },
   js.configs.recommended,
   {
-    // Page-context scripts (classic, run in the page or content-script world)
-    files: ['src/content/main.js', 'src/content/course-discovery.js', 'src/content/xhr-hook.js', 'src/content/xhr-hook-page.js', 'src/content/spoc-tid-bridge.js', 'src/popup/**/*.js', 'tests/**/*.js'],
+    // Page-context scripts (classic, run in the page or content-script world).
+    // tools/diagnostics/* are meant to be pasted into a DevTools Console, so they
+    // are classic scripts running against the same browser globals.
+    files: ['src/content/main.js', 'src/content/course-discovery.js', 'src/content/xhr-hook.js', 'src/content/xhr-hook-page.js', 'src/content/spoc-tid-bridge.js', 'src/popup/**/*.js', 'tests/**/*.js', 'tools/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',

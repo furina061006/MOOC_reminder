@@ -31,3 +31,11 @@ reference_projects/
 
 # zcode
 zcode/
+
+# Local diagnostic dumps — raw DOM snapshots and API captures contain the user's
+# own course/account data (userId, course ids, teacher content) and this repo is
+# public. See tools/diagnostics/README.md.
+element.txt
+mooc-dto-report.json
+dto*.json
+*-report.json
