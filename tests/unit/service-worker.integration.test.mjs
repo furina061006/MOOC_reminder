@@ -608,3 +608,127 @@ test('daily digest outside quiet hours sends once and records the date only afte
   await fireAlarm('daily-digest');
   assert.equal(h.notificationsCreated.size, 0);
 });
+
+// ── backlog regressions (2026-09-04 fixes) ───────────────────────────────
+
+test('notification click opens the SPOC route for a SPOC course item', async () => {
+  h.tabsCreated.length = 0;
+  seedItem({ uid: 'NEU-2_tid22_ch_le_hw7', courseId: 'NEU-2', termId: '22', pageUrl: '' });
+  seedCourses([{ courseId: 'NEU-2', termId: '22', courseName: '大学物理', courseType: 'spoc' }]);
+
+  await fireClick(`mooc-reminder:${encodeURIComponent('NEU-2_tid22_ch_le_hw7')}:due_24h`);
+
+  assert.equal(h.tabsCreated.length, 1);
+  assert.equal(
+    h.tabsCreated[0].url,
+    'https://www.icourse163.org/spoc/learn/NEU-2?tid=22#/learn/testlist'
+  );
+});
+
+test('concurrent course writes do not drop each other (serialized courses store)', async () => {
+  // Both handlers read-modify-write `courses`. Without the serialized store the
+  // later write wins and one course disappears.
+  h.storageData.set('courses', [
+    { courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' }
+  ]);
+
+  const [links, update] = await Promise.all([
+    sendMessage({
+      type: 'COURSE_LINKS',
+      courses: [{ courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' }]
+    }),
+    sendMessage({
+      type: 'COURSE_UPDATE',
+      courseId: 'NEU-2', activeTermId: '22', courseName: '大学物理', courseType: 'spoc'
+    })
+  ]);
+
+  assert.equal(links.success, true);
+  assert.equal(update.success, true);
+  const byId = new Map((h.storageData.get('courses') || []).map(c => [c.courseId, c]));
+  assert.deepEqual([...byId.keys()].sort(), ['BIT-1', 'NEU-2']);
+  assert.equal(byId.get('NEU-2').activeTermId, '22');
+});
+
+test('ADD_MANUAL_ITEM keeps same-named courses distinct (UID includes courseId)', async () => {
+  h.storageData.set('homework_items', []);
+  const deadline = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+
+  const first = await sendMessage({
+    type: 'ADD_MANUAL_ITEM', title: '读书报告', deadline, courseName: '大学物理', courseId: 'C-A'
+  });
+  const second = await sendMessage({
+    type: 'ADD_MANUAL_ITEM', title: '读书报告', deadline, courseName: '大学物理', courseId: 'C-B'
+  });
+
+  assert.equal(first.success, true);
+  assert.equal(second.success, true);
+  assert.notEqual(first.item.uid, second.item.uid);
+  assert.equal(storedItems().length, 2);
+});
+
+test('cleared completed items stay cleared across the next API sync', async () => {
+  const deadlineMs = new Date('2026-06-30T23:59:00').getTime();
+  const course = { courseId: 'BIT-268001', termId: '1460270441', courseName: '数据结构', courseType: 'mooc' };
+  const donePayload = {
+    result: {
+      mocTermDto: {
+        chapters: [{
+          id: 3, name: '第3章', type: 'chapter',
+          lessons: [{
+            id: 21, name: '3.1 树', type: 'lesson',
+            units: [{ id: 101, name: '单元测验：树', endTime: deadlineMs, mark: 18, totalMark: 20 }]
+          }]
+        }]
+      }
+    }
+  };
+  const unfinishedPayload = {
+    result: {
+      mocTermDto: {
+        chapters: [{
+          id: 3, name: '第3章', type: 'chapter',
+          lessons: [{
+            id: 21, name: '3.1 树', type: 'lesson',
+            units: [{ id: 101, name: '单元测验：树', endTime: deadlineMs }]
+          }]
+        }]
+      }
+    }
+  };
+
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('dismissed_completed_uids');
+  seedCourses([course]);
+
+  await sendMessage({ type: 'COURSE_API_DATA', course, rawData: donePayload });
+  assert.equal(storedItems().length, 1);
+  assert.equal(storedItems()[0].checkedOff, true);
+
+  const cleared = await sendMessage({ type: 'CLEAR_COMPLETED' });
+  assert.equal(cleared.remaining, 0);
+  assert.deepEqual(storedItems(), []);
+  assert.equal((h.storageData.get('dismissed_completed_uids') || []).length, 1);
+
+  // Same completed payload again → must NOT resurrect the cleared item.
+  await sendMessage({ type: 'COURSE_API_DATA', course, rawData: donePayload });
+  assert.deepEqual(storedItems(), []);
+
+  // If the item genuinely becomes unfinished again (e.g. a new attempt), the
+  // tombstone is dropped and the item is allowed back.
+  await sendMessage({ type: 'COURSE_API_DATA', course, rawData: unfinishedPayload });
+  assert.equal(storedItems().length, 1);
+  assert.equal(storedItems()[0].checkedOff, false);
+  assert.deepEqual(h.storageData.get('dismissed_completed_uids') || [], []);
+});
+
+test('RESET_DATA clears the dismissed tombstone list', async () => {
+  h.storageData.set('dismissed_completed_uids', ['X_tid1_ch_le_hw1']);
+  h.storageData.set('courses', [{ courseId: 'BIT-9', termId: '9', courseType: 'mooc' }]);
+
+  const result = await sendMessage({ type: 'RESET_DATA' });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(h.storageData.get('dismissed_completed_uids'), []);
+  assert.deepEqual(h.storageData.get('courses'), []);
+});

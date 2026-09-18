@@ -20,6 +20,7 @@ const KEYS = {
   SYNC_ERRORS: 'sync_errors',
   SCRAPE_STATUS: 'scrape_status',
   TEMPORARY_PROXY_JOB: 'temporary_proxy_job',
+  DISMISSED_COMPLETED: 'dismissed_completed_uids',
   API_STATUS: 'api_status',
   USER_SETTINGS: 'user_settings',
   POPUP_UI_STATE: 'popup_ui_state',
@@ -64,6 +65,16 @@ const mutateHomeworkItems = createSerializedStore({
   set: setHomeworkItems
 });
 
+// `courses` has the same concurrent-writer problem: COURSE_LINKS loops over
+// discovered courses, every COURSE_API_DATA reconcile upserts course metadata,
+// and COURSE_UPDATE fires from SPOC pages. Without a serialized RMW store, two
+// writers read the same array and the later write silently drops the other's
+// course (lost course, reverted activeTermId, overwritten name).
+const mutateCourses = createSerializedStore({
+  get: getCourses,
+  set: setCourses
+});
+
 // ─── Lifecycle ──────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -95,7 +106,8 @@ async function validateAndRepairStorage() {
       KEYS.COURSES,
       KEYS.USER_SETTINGS,
       KEYS.SCRAPE_STATUS,
-      KEYS.TEMPORARY_PROXY_JOB
+      KEYS.TEMPORARY_PROXY_JOB,
+      KEYS.DISMISSED_COMPLETED
     ]);
 
     let needsRepair = false;
@@ -114,6 +126,13 @@ async function validateAndRepairStorage() {
       needsRepair = true;
     }
 
+    // Check dismissed_completed_uids
+    const dismissed = data[KEYS.DISMISSED_COMPLETED];
+    if (dismissed !== undefined && !Array.isArray(dismissed)) {
+      console.warn('[MOOC Reminder] Corrupted dismissed_completed_uids detected, resetting');
+      needsRepair = true;
+    }
+
     if (needsRepair) {
       await chrome.storage.local.set({
         [KEYS.HOMEWORK_ITEMS]: [],
@@ -122,6 +141,7 @@ async function validateAndRepairStorage() {
         [KEYS.SYNC_ERRORS]: [],
         [KEYS.SCRAPE_STATUS]: data[KEYS.SCRAPE_STATUS] || null,
         [KEYS.TEMPORARY_PROXY_JOB]: data[KEYS.TEMPORARY_PROXY_JOB] || null,
+        [KEYS.DISMISSED_COMPLETED]: [],
         [KEYS.USER_SETTINGS]: normalizeSettings(data[KEYS.USER_SETTINGS])
       });
       console.log('[MOOC Reminder] Storage repaired — all data reset');
@@ -134,6 +154,7 @@ async function validateAndRepairStorage() {
         [KEYS.SYNC_ERRORS]: [],
         [KEYS.SCRAPE_STATUS]: data[KEYS.SCRAPE_STATUS] || null,
         [KEYS.TEMPORARY_PROXY_JOB]: data[KEYS.TEMPORARY_PROXY_JOB] || null,
+        [KEYS.DISMISSED_COMPLETED]: Array.isArray(dismissed) ? dismissed.filter(Boolean) : [],
         [KEYS.USER_SETTINGS]: normalizeSettings(data[KEYS.USER_SETTINGS])
       });
     }
@@ -148,6 +169,7 @@ async function validateAndRepairStorage() {
         [KEYS.SYNC_ERRORS]: [],
         [KEYS.SCRAPE_STATUS]: null,
         [KEYS.TEMPORARY_PROXY_JOB]: null,
+        [KEYS.DISMISSED_COMPLETED]: [],
         [KEYS.USER_SETTINGS]: normalizeSettings(DEFAULT_SETTINGS)
       });
     } catch {}
@@ -226,8 +248,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
-function makeManualHomeworkUid(title, deadline, courseName) {
-  const text = [title || '', deadline || '', courseName || ''].join('|');
+// `courseId` is part of the hash input: two courses can share a display name,
+// and without it the same title+deadline in both would collide on one UID, so
+// MARK_COMPLETED / SNOOZE / notification clicks could only ever address one of
+// them. `identityKey` (built at the call site) already treats courseId as part
+// of the identity, so this keeps the two consistent.
+function makeManualHomeworkUid(title, deadline, courseName, courseId) {
+  const text = [title || '', deadline || '', courseName || '', courseId || ''].join('|');
   let hash = 5381;
   for (let i = 0; i < text.length; i++) hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
   return 'manual_tidmanual_ch_le_hw' + (hash >>> 0).toString(16).padStart(8, '0');
@@ -379,14 +406,15 @@ const MESSAGE_HANDLERS = {
     const courseName = String(msg.courseName || '手动提醒').trim() || '手动提醒';
     const courseId = String(msg.courseId || 'manual').trim() || 'manual';
     const now = new Date().toISOString();
+    const manualUid = makeManualHomeworkUid(title, deadline.toISOString(), courseName, courseId);
     const item = {
-      uid: makeManualHomeworkUid(title, deadline.toISOString(), courseName),
+      uid: manualUid,
       identityKey: ['manual', courseId, title, deadline.toISOString()].join('|'),
       courseId,
       termId: 'manual',
       chapterId: '',
       lessonId: '',
-      homeworkId: makeManualHomeworkUid(title, deadline.toISOString(), courseName).replace(/^manual_tidmanual_ch_le_hw/, ''),
+      homeworkId: manualUid.replace(/^manual_tidmanual_ch_le_hw/, ''),
       title,
       type: msg.type || 'homework',
       courseName,
@@ -458,14 +486,25 @@ const MESSAGE_HANDLERS = {
     return { success: true, uiState };
   },
 
-  // Popup clears completed items
+  // Popup clears completed items. Cleared UIDs are remembered as dismissed so
+  // the next API sync (which still returns those completed items) does not
+  // resurrect them — "clear completed" is otherwise not a persistent action.
   async CLEAR_COMPLETED() {
     let remaining = 0;
+    const clearedUids = [];
     await mutateHomeworkItems(items => {
+      for (const item of items) {
+        if (item && item.checkedOff && item.uid) clearedUids.push(item.uid);
+      }
       const active = items.filter(i => !i.checkedOff);
       remaining = active.length;
       return active;
     });
+    if (clearedUids.length > 0) {
+      const dismissed = await getDismissedCompletedUids();
+      for (const uid of clearedUids) dismissed.add(uid);
+      await setDismissedCompletedUids(dismissed);
+    }
     await updateBadgeFromStorage();
     return { success: true, remaining };
   },
@@ -478,12 +517,15 @@ const MESSAGE_HANDLERS = {
     }
     await chrome.storage.local.set({
       [KEYS.HOMEWORK_ITEMS]: [],
-      [KEYS.COURSES]: [],
       [KEYS.LAST_SYNC]: null,
       [KEYS.SYNC_ERRORS]: [],
       [KEYS.SCRAPE_STATUS]: null,
-      [KEYS.TEMPORARY_PROXY_JOB]: null
+      [KEYS.TEMPORARY_PROXY_JOB]: null,
+      [KEYS.DISMISSED_COMPLETED]: []
     });
+    // Clear courses through the serialized store so an in-flight upsert cannot
+    // re-add a course after the reset wrote an empty array.
+    await mutateCourses(() => []);
     await updateBadgeFromStorage();
     console.log('[MOOC Reminder] All data reset');
     return { success: true };
@@ -600,6 +642,12 @@ async function reconcileHomeworkData(course, newItems) {
   let added = 0;
   let updated = 0;
 
+  // Tombstones for items the user cleared from "已完成". Read once per merge;
+  // a UID that comes back as unfinished (new attempt) is un-dismissed so it can
+  // legitimately reappear.
+  const dismissedCompleted = await getDismissedCompletedUids();
+  let dismissedChanged = false;
+
   // Whole merge runs inside the items lock so a concurrent notification
   // write-back can't interleave between our read and write.
   await mutateHomeworkItems(async function(existingItems) {
@@ -708,6 +756,16 @@ async function reconcileHomeworkData(course, newItems) {
             newItem.checkedOff = true;
             newItem.completionReason = 'auto';
           }
+          // The user cleared this completed item earlier: do not resurrect it on
+          // the next sync. If it now reports as unfinished (e.g. a new attempt),
+          // drop the tombstone and let it show again.
+          if (dismissedCompleted.has(newItem.uid)) {
+            if (newItem.checkedOff) {
+              continue;
+            }
+            dismissedCompleted.delete(newItem.uid);
+            dismissedChanged = true;
+          }
           newItem.firstSeen = newItem.firstSeen || new Date().toISOString();
           newItem.lastUpdated = newItem.firstSeen;
           existingItems.push(newItem);
@@ -731,6 +789,8 @@ async function reconcileHomeworkData(course, newItems) {
 
   return existingItems;
   });
+
+  if (dismissedChanged) await setDismissedCompletedUids(dismissedCompleted);
 
   // Save（mutateHomeworkItems 已写回 items；LAST_SYNC 单独记录）
   await chrome.storage.local.set({
@@ -955,8 +1015,15 @@ chrome.notifications?.onClicked?.addListener(async (notificationId) => {
     const items = await getHomeworkItems();
     const item = items.find(i => i && i.uid === uid);
     // API 抓取的条目常没有 pageUrl——与 popup 相同的兜底：按 courseId+termId
-    // 重建课程学习页 URL，并按条目类型修正 hash 路由
-    const url = item ? resolveItemUrl(item) : null;
+    // 重建课程学习页 URL，并按条目类型修正 hash 路由。课程类型决定是
+    // /learn/ 还是 /spoc/learn/，所以显式传入 Course 元数据。
+    let courseType = item && item.courseType;
+    if (item) {
+      const courses = await getCourses();
+      const course = courses.find(c => c && c.courseId === item.courseId);
+      if (course && course.courseType) courseType = course.courseType;
+    }
+    const url = item ? resolveItemUrl(item, courseType) : null;
     if (url) {
       await chrome.tabs.create({ url });
     }
@@ -1401,17 +1468,40 @@ async function getCourses() {
   return courses;
 }
 
+async function setCourses(courses) {
+  const clean = Array.isArray(courses) ? courses.filter(Boolean) : [];
+  await chrome.storage.local.set({ [KEYS.COURSES]: clean });
+}
+
+// UIDs the user removed via "清理已完成". Kept as a tombstone list so a later
+// API sync does not re-create them as brand-new completed items.
+async function getDismissedCompletedUids() {
+  const result = await chrome.storage.local.get(KEYS.DISMISSED_COMPLETED);
+  const raw = result[KEYS.DISMISSED_COMPLETED];
+  return new Set(Array.isArray(raw) ? raw.filter(Boolean) : []);
+}
+
+async function setDismissedCompletedUids(uids) {
+  await chrome.storage.local.set({
+    [KEYS.DISMISSED_COMPLETED]: Array.from(uids || []).filter(Boolean)
+  });
+}
+
+// Serialized read-modify-write: see mutateCourses above. Every course write
+// must go through here so concurrent COURSE_LINKS / COURSE_UPDATE /
+// COURSE_API_DATA updates cannot drop each other's courses.
 async function upsertCourse(course) {
-  const courses = await getCourses();
-  const idx = courses.findIndex(c => c.courseId === course.courseId);
-  if (idx >= 0) {
-    courses[idx] = { ...courses[idx], ...course, lastSeen: new Date().toISOString() };
-  } else {
-    course.firstSeen = course.firstSeen || new Date().toISOString();
-    course.lastSeen = new Date().toISOString();
-    courses.push(course);
-  }
-  await chrome.storage.local.set({ [KEYS.COURSES]: courses });
+  if (!course || !course.courseId) return;
+  await mutateCourses(courses => {
+    const idx = courses.findIndex(c => c && c.courseId === course.courseId);
+    const lastSeen = new Date().toISOString();
+    if (idx >= 0) {
+      courses[idx] = { ...courses[idx], ...course, lastSeen };
+    } else {
+      courses.push({ ...course, firstSeen: course.firstSeen || lastSeen, lastSeen });
+    }
+    return courses;
+  });
 }
 
 async function getLastSync() {
