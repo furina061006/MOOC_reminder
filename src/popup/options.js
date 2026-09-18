@@ -25,6 +25,7 @@ const DEFAULTS = {
   autoDismissErrors: true,
   showSnoozeButton: true,
   showCourseMute: true,
+  autoCheckUpdates: true,
 };
 
 function $(id) { return document.getElementById(id); }
@@ -81,6 +82,7 @@ function populate(settings) {
   safeSetChecked('auto-dismiss-errors', s.autoDismissErrors === true);
   safeSetChecked('show-snooze-btn', s.showSnoozeButton !== false);
   safeSetChecked('show-course-mute', s.showCourseMute !== false);
+  safeSetChecked('auto-check-updates', s.autoCheckUpdates !== false);
   safeSetChecked('digest-enabled', s.dailyDigestEnabled === true);
   safeSetValue('digest-hour', s.dailyDigestHour);
   const leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULTS.notifyLeadHours;
@@ -121,7 +123,8 @@ function collect() {
     mutedCourseIds: currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : [],
     autoDismissErrors: safeGetChecked('auto-dismiss-errors'),
     showSnoozeButton: safeGetChecked('show-snooze-btn'),
-    showCourseMute: safeGetChecked('show-course-mute')
+    showCourseMute: safeGetChecked('show-course-mute'),
+    autoCheckUpdates: safeGetChecked('auto-check-updates')
   };
 }
 
@@ -263,6 +266,94 @@ async function loadNotificationDiagnostics() {
   } catch (e) {
     body.innerHTML = '<p style="color:var(--overdue,#dc3545);font-size:12px;margin:8px 0;">加载失败：' + escapeHtml(String(e.message || e)) + '</p>';
   }
+}
+
+// ─── 更新 ──────────────────────────────────────────────
+//
+// 本扩展是开发者模式加载的，Chrome 不会自动更新它；这里只负责「告诉你有没有新版」
+// 并给出下载入口。版本判定在 shared/update-check.js（有单测），SW 负责网络请求。
+
+const SAFE_RELEASE_URL = /^https:\/\/github\.com\//;
+
+function formatCheckTime(iso) {
+  if (!iso) return '尚未检查';
+  try { return new Date(iso).toLocaleString('zh-CN'); } catch { return '时间不可用'; }
+}
+
+function renderUpdateStatus(payload) {
+  const body = $('update-status-body');
+  if (!body) return;
+  const status = (payload && payload.status) || null;
+  const current = (status && status.currentVersion) || (payload && payload.currentVersion) || '未知';
+
+  const rows = [['当前版本', 'v' + current]];
+  if (status && status.latestVersion) rows.push(['最新版本', 'v' + status.latestVersion]);
+  rows.push(['上次检查', formatCheckTime(status && status.checkedAt)]);
+
+  let html = '<div style="font-size:12px;margin:8px 0;">';
+  for (const row of rows) {
+    html += '<div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px solid var(--border-soft);">'
+      + '<span style="color:var(--text-faint);">' + escapeHtml(row[0]) + '</span>'
+      + '<span>' + escapeHtml(row[1]) + '</span></div>';
+  }
+  html += '</div>';
+
+  if (status && status.updateAvailable) {
+    html += '<p style="font-size:12px;color:var(--accent,#2f6fed);margin:8px 0;">发现新版本 v'
+      + escapeHtml(status.latestVersion) + '，点击「前往下载」获取。</p>';
+  } else if (status && status.error) {
+    // 网络失败时保留上次成功的结果，只提示这次没查成
+    html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">本次检查失败：'
+      + escapeHtml(status.error) + '（上方显示的是上次成功的结果）</p>';
+  } else if (status) {
+    html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">已是最新版本。</p>';
+  } else {
+    html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">尚未检查过更新。</p>';
+  }
+  body.innerHTML = html;
+
+  const btn = $('download-update-btn');
+  if (!btn) return;
+  const url = (status && (status.downloadUrl || status.releaseUrl)) || '';
+  const ok = !!(status && status.updateAvailable && SAFE_RELEASE_URL.test(url));
+  btn.style.display = ok ? '' : 'none';
+  btn.dataset.url = ok ? url : '';
+}
+
+async function loadUpdateStatus() {
+  try {
+    renderUpdateStatus(await chrome.runtime.sendMessage({ type: 'GET_UPDATE_STATUS' }));
+  } catch (e) {
+    console.error('[Options] GET_UPDATE_STATUS failed:', e.message);
+    renderUpdateStatus(null);
+  }
+}
+
+async function handleCheckUpdates() {
+  const btn = $('check-updates-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'CHECK_UPDATES' });
+    if (!resp || !resp.success) throw new Error((resp && resp.error) || '无法获取更新状态');
+    renderUpdateStatus({ status: resp.status });
+    showStatus(resp.status && resp.status.updateAvailable
+      ? '发现新版本 v' + resp.status.latestVersion
+      : '已是最新版本');
+  } catch (e) {
+    showStatus('检查更新失败：' + e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function handleDownloadUpdate() {
+  const btn = $('download-update-btn');
+  const url = (btn && btn.dataset && btn.dataset.url) || '';
+  if (!SAFE_RELEASE_URL.test(url)) return;
+  try {
+    if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: url });
+    else window.open(url, '_blank');
+  } catch { try { window.open(url, '_blank'); } catch { /* ignore */ } }
 }
 
 async function loadErrorReport() {
@@ -427,6 +518,13 @@ async function init() {
   try {
     loadNotificationDiagnostics();
   } catch(e) { console.error('[Options] notification diagnostics init:', e.message); }
+  try {
+    loadUpdateStatus();
+    var checkUpdatesBtn = $('check-updates-btn');
+    if (checkUpdatesBtn) checkUpdatesBtn.addEventListener('click', handleCheckUpdates);
+    var downloadUpdateBtn = $('download-update-btn');
+    if (downloadUpdateBtn) downloadUpdateBtn.addEventListener('click', handleDownloadUpdate);
+  } catch(e) { console.error('[Options] update section init:', e.message); }
 }
 
 // 全局未捕获 Promise 拒绝处理

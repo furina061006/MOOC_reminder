@@ -14,7 +14,10 @@ test('manifest is MV3 and has required runtime entries', () => {
 
 test('manifest grants site-wide icourse163 host access for API + discovery', () => {
   assert.deepEqual(manifest.host_permissions, [
-    'https://www.icourse163.org/*'
+    'https://www.icourse163.org/*',
+    // Update checks read the repo's newest GitHub Release (see shared/update-check.js).
+    // Pinned exactly on purpose: any new host access must be a deliberate edit here.
+    'https://api.github.com/*'
   ]);
 });
 

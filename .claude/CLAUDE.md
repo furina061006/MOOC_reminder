@@ -64,6 +64,8 @@ src/
 - `TEMPORARY_PROXY_BATCH_COMPLETE {proxyJobId, resultCount}` — CS → SW，临时批量中的所有 `COURSE_API_DATA` 已发出；支持 Service Worker 被回收后恢复清理
 - `PAGE_OPENED` — CS(main.js init) → SW；匹配临时 tab ID 时立即开始该任务，否则按 30 分钟节流触发常规全课程刷新
 - `TRIGGER_SCRAPE` — Popup → SW，手动刷新
+- `GET_UPDATE_STATUS` — Options → SW，读取缓存的更新状态（**不发网络请求**，渲染设置页用）
+- `CHECK_UPDATES` — Options → SW，手动「检查更新」；**故意绕过 `autoCheckUpdates` 开关**（该开关管的是后台 tick，不是用户点击）
 
 ---
 
@@ -455,12 +457,47 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 10. **Course 的 `pageUrl` 和 `termId` 只由真实页面写入**：`pageUrl` 只能由 `COURSE_UPDATE` 冻结（`isIcCourseLearnUrl()` 校验 origin/路径/`tid`），`termId` 只能由 `COURSE_LINKS`/`COURSE_UPDATE` 写入。`reconcileHomeworkData` **必须排除这两个字段**：API payload 的 `termId` 是抓取用的 termId（SPOC 下等于 `activeTermId`，是 API id 而非路由壳 id），写进去会毁掉 `?tid=`；`pageUrl` 的空值会抹掉已冻结的 SPOC 路由 URL。
 11. **`courses` 一门课只存一条记录（键 = `courseId`）**，而 SPOC 与同名 MOOC **共享 `courseId`**。因此已证明 SPOC 的课程必须整条拒绝弱 `'mooc'` patch（`upsertCourse` 内的 `isProvenSpocCourse` + `isWeakMoocPatch`），否则标题会变成 MOOC 名、点击目标会变成 `/learn/`。**已知代价**：同一 `courseId` 的 MOOC 与 SPOC 无法作为两条记录并存（SPOC 优先）。
 12. **`src/shared/icourse163-api.js` 与 SW 内联的 `apiExtractHomework` 是两份拷贝**（SW 无 import，运行时用内联版）。改任何一侧都必须同步另一侧——2026-09 就是因为运行时副本漏了 `courseType` 才让 SPOC 条目无法自证路由类型。settings 已改为 import 消除了同类漂移，这两个 extractor 尚未合并。
+13. **更新通知每个版本只弹一次，且只在真正 create 成功后记账**：`update_status.notifiedVersion` 仅在 `chrome.notifications.create` 成功返回 true 时才推进。免打扰时段内 `notifyUpdateAvailable` 返回 false，因此标志不推进、下一次 tick 会重试——反过来若先记标志再发通知，处于免打扰时段的用户将**永远收不到**更新提醒（与不变量 4「digest 先 create 成功再写日期」同源）。另外 `downloadUrl` 来自远端响应，**必须经 `isSafeReleaseUrl` 只允许 `https://github.com/`** 才交给 `chrome.tabs.create`。
 
 ### 测试结构
 
-- `tests/unit/*.test.mjs` — shared 纯函数（settings/reminder/item-url/items-mutex/calendar/date-utils/homework-model/icourse163-api/manifest）
-- `tests/unit/service-worker.integration.test.mjs` — **stub chrome.* 后 import 真实 SW 模块**，驱动真实 alarm/消息/通知点击路径（通知去重、snooze 重弹、PAGE_OPENED 单标签页分发、digest 重试等）
+- `tests/unit/*.test.mjs` — shared 纯函数（settings/reminder/item-url/items-mutex/calendar/date-utils/homework-model/icourse163-api/update-check/manifest）
+- `tests/unit/service-worker.integration.test.mjs` — **stub chrome.* 后 import 真实 SW 模块**，驱动真实 alarm/消息/通知点击路径（通知去重、snooze 重弹、PAGE_OPENED 单标签页分发、digest 重试、更新检查与去重等）。**该文件的 `globalThis.fetch` 默认抛错**（模拟离线），因为 SW 每个 badge-refresh tick 都会查更新 —— 测试绝不能真的联网
 - `npm run validate` = eslint + 全部 node --test
+
+---
+
+## 更新检查（2026-09）
+
+**能力边界**：本扩展以「开发者模式」侧载，manifest 没有 `update_url`/`key`，**Chrome 永远不会自动更新它**，`chrome.runtime.requestUpdateCheck()` 也是空操作。所以这里只能做到「发现新版 → 通知 + 给出下载直链」，真正的更新由用户重新下载解压完成。若将来要真正的自动更新，只有两条路：上架 Chrome 网上应用店，或自建签名 CRX + `update.xml` 托管。
+
+**版本来源**：仓库最新 GitHub Release（`api.github.com/.../releases/latest`）。Release 由 `.github/workflows/release.yml` 从 `v*` tag 生成，且该 workflow **强制 tag 与 `manifest.json` 的 version 一致**，所以 tag 可以放心当作「用户能下载到的版本」。tag 里非数字的内容（如 `1.0.0-beta`）一律判为「不是更新」，避免一直骚扰用户。
+
+**数据流**：
+
+```
+badge-refresh alarm（12h）→ checkForUpdates()
+  ├─ settings.autoCheckUpdates === false → 直接返回缓存，不发请求
+  ├─ fetch RELEASES_API_URL → evaluateRelease(payload, 本机 version)
+  │    （纯函数在 shared/update-check.js：版本比较 / 解析 / URL 白名单）
+  ├─ 写入 update_status（失败时用 ...previous 兜底，不覆盖成空）
+  └─ 更新可用且该版本没提醒过 → notifyUpdateAvailable()
+       └─ create 成功才记 notifiedVersion（见不变量 13）
+
+设置页「更新」区块 → GET_UPDATE_STATUS（读缓存，零请求）渲染
+  「检查更新」按钮 → CHECK_UPDATES（manual，绕过开关）→ 同上
+  「前往下载」按钮 / 点击系统通知 → 打开 Release 的 ZIP 直链
+```
+
+**设计取舍**
+
+- **搭 12h `badge-refresh` 的便车**，不新增 alarm：更新检查不值得多唤醒 SW（与「降频」决策一致）。
+- **网络失败保留上次成功结果**，只把 `error` 写上：一次离线不应让「有新版本」的提示消失，也不应把 UI 清空。
+- **优先 ZIP 直链而非 Release 页面**：面向小白，少一次点击。
+- **设置开关 `autoCheckUpdates` 默认开、可关**：关掉后后台完全不发请求；但「检查更新」按钮仍可用（用户主动点击不受开关限制）。
+- 通知文案与设置页都写明「只发这一个请求，不含任何作业或账号数据」。
+
+---
 
 ## 数据模型
 
@@ -479,6 +516,7 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 - `scrape_status` — 通用抓取状态（不属于临时代理）
 - `temporary_proxy_job` — 扩展拥有的临时代理页任务；含 tab ID、phase、deadline 和预期课程
 - `dismissed_completed_uids` — 「清理已完成」的 tombstone 列表；reconcile 据此不再复活已清理的已完成作业
+- `update_status` — 最近一次更新检查的结果缓存（当前/最新版本、下载链接、检查时间、错误、已提醒过的版本）；设置页只读它，不额外发请求
 - `popup_ui_state` — popup UI 状态
 
 ### HomeworkItem 关键字段
@@ -524,6 +562,8 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 - SPOC 页面 `getOpenHomeworkInfo.rpc` 不可用，缺少 submitStatus 补充字段
 - **同一 `courseId` 的 SPOC 与普通 MOOC 无法并存**：`courses` 以 `courseId` 为唯一键，两者会碰撞，目前规则是 SPOC 优先（不变量 11）。若用户同时选修同名 MOOC 与 SPOC，只能看到一个课程分组
 - **SPOC 课程需要至少打开过一次学习页**，才能把真实路由 URL 冻结进 `course.pageUrl`；否则旧的 SPOC 条目只能退回用 `courseType` + 抓取 termId 拼 URL（前缀对，`?tid=` 是 API id）。从旧版本升级后请打开一次 SPOC 课程页
+- **无法自动更新**：开发者模式侧载的扩展 Chrome 不会更新，只能提醒用户去 Release 下载（见「更新检查」）。且更新检查依赖仓库里存在 Release —— 只打 tag 不发 Release 会让检查一直失败
+- **更新检查需要 `https://api.github.com/*` 的 host 权限**，用户在扩展详情页能看到这一条；未认证请求有 60 次/小时限流（12h 一次检查远够）。关闭 `autoCheckUpdates` 后后台不再发任何请求
 
 ---
 

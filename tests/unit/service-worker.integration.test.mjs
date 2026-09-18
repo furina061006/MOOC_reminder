@@ -55,7 +55,8 @@ function makeChromeStub() {
       onInstalled: { addListener: fn => listeners.onInstalled.push(fn) },
       onStartup: { addListener: fn => listeners.onStartup.push(fn) },
       onMessage: { addListener: fn => listeners.onMessage.push(fn) },
-      getURL(path) { return 'chrome-extension://test/' + path; }
+      getURL(path) { return 'chrome-extension://test/' + path; },
+      getManifest() { return { version: '1.0.0' }; }
     },
     alarms: {
       onAlarm: { addListener: fn => listeners.onAlarm.push(fn) },
@@ -115,6 +116,17 @@ function makeChromeStub() {
 const h = makeChromeStub();
 const fireAlarm = name => h.listeners.onAlarm[0]({ name });
 const fireClick = id => h.listeners.onClicked[0](id);
+
+// The SW asks GitHub for a newer release on every badge-refresh tick, so tests
+// must never reach the network. fetch fails by default — which the SW treats as
+// "keep the last known answer" — and individual tests install a responder.
+const fetchCalls = [];
+let fetchResponder = async () => { throw new Error('offline (test stub)'); };
+globalThis.fetch = async (url, options) => {
+  fetchCalls.push({ url: String(url), options });
+  return await fetchResponder(String(url), options);
+};
+function setFetchResponder(fn) { fetchResponder = fn; }
 async function fireTabRemoved(tabId) {
   for (const listener of h.listeners.onRemoved) await listener(tabId, { isWindowClosing: false });
 }
@@ -861,4 +873,181 @@ test('COURSE_UPDATE rejects a non-learn routeUrl instead of storing it', async (
   // untrusted URL is persisted: isIcCourseLearnUrl gates the origin.
   assert.equal(spocCourseRecord().courseType, 'spoc');
   assert.equal(spocCourseRecord().pageUrl, undefined);
+});
+
+// ── update check (backlog: 客户端插件提醒有更新) ──────────────────────────
+//
+// The running version in the harness stub is 1.0.0 (chrome.runtime.getManifest).
+
+function releasePayload(version, extra) {
+  return {
+    tag_name: 'v' + version,
+    html_url: 'https://github.com/furina061006/MOOC_reminder/releases/tag/v' + version,
+    body: 'notes for ' + version,
+    published_at: '2026-09-18T00:00:00Z',
+    assets: [{
+      name: 'mooc-reminder-v' + version + '.zip',
+      browser_download_url: 'https://github.com/furina061006/MOOC_reminder/releases/download/v' +
+        version + '/mooc-reminder-v' + version + '.zip'
+    }],
+    ...(extra || {})
+  };
+}
+const jsonResponder = payload => async () => ({ ok: true, status: 200, json: async () => payload });
+
+/** Reset everything the update check touches, with no homework in the way. */
+function arrangeUpdateCheck(settings) {
+  h.notificationsCreated.clear();
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('update_status');
+  h.storageData.set('user_settings', Object.assign(
+    { notificationsEnabled: true, quietHoursEnabled: false }, settings || {}
+  ));
+  fetchCalls.length = 0;
+}
+
+test('badge-refresh notices a newer release and notifies once per version', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(jsonResponder(releasePayload('1.2.0')));
+
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.equal(status.currentVersion, '1.0.0');
+  assert.equal(status.latestVersion, '1.2.0');
+  assert.equal(status.updateAvailable, true);
+  assert.equal(status.notifiedVersion, '1.2.0');
+  assert.equal(status.error, null);
+  assert.equal(h.notificationsCreated.size, 1);
+  assert.ok(h.notificationsCreated.has('mooc-reminder:update:1.2.0'));
+  assert.match(h.notificationsCreated.get('mooc-reminder:update:1.2.0').message, /1\.0\.0 → v1\.2\.0/);
+
+  // The same version on the next tick must not nag again.
+  h.notificationsCreated.clear();
+  await fireAlarm('badge-refresh');
+  assert.equal(h.notificationsCreated.size, 0);
+  assert.equal(h.storageData.get('update_status').notifiedVersion, '1.2.0');
+
+  // A genuinely newer release re-arms the announcement.
+  setFetchResponder(jsonResponder(releasePayload('1.3.0')));
+  await fireAlarm('badge-refresh');
+  assert.ok(h.notificationsCreated.has('mooc-reminder:update:1.3.0'));
+});
+
+test('an up-to-date release reports no update and notifies nobody', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(jsonResponder(releasePayload('1.0.0')));
+
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.equal(status.updateAvailable, false);
+  assert.equal(status.notifiedVersion, null);
+  assert.equal(h.notificationsCreated.size, 0);
+});
+
+test('a failed check keeps the last known answer instead of clearing it', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(jsonResponder(releasePayload('1.2.0')));
+  await fireAlarm('badge-refresh');
+
+  h.notificationsCreated.clear();
+  setFetchResponder(async () => { throw new Error('offline'); });
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.equal(status.latestVersion, '1.2.0', 'a network hiccup must not blank the version');
+  assert.equal(status.updateAvailable, true, 'the indicator must stay truthful');
+  assert.match(status.error, /offline/);
+  assert.equal(h.notificationsCreated.size, 0, 'a failed check re-announces nothing');
+});
+
+test('a non-OK HTTP response is treated as a failed check', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(async () => ({ ok: false, status: 403, json: async () => ({}) }));
+
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.match(status.error, /403/);
+  assert.equal(status.updateAvailable, false);
+});
+
+test('autoCheckUpdates=false skips the automatic check entirely', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: false });
+  setFetchResponder(jsonResponder(releasePayload('9.9.9')));
+
+  await fireAlarm('badge-refresh');
+
+  assert.equal(fetchCalls.length, 0, 'turning the switch off must stop all network traffic');
+  assert.equal(h.storageData.get('update_status'), undefined);
+});
+
+test('a prerelease is never advertised', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(jsonResponder(releasePayload('2.0.0', { prerelease: true })));
+
+  await fireAlarm('badge-refresh');
+
+  assert.equal(h.storageData.get('update_status').updateAvailable, false);
+  assert.equal(h.notificationsCreated.size, 0);
+});
+
+test('quiet hours defer the update notification without burning the once-per-version flag', async () => {
+  const hour = new Date().getHours();
+  // Build a quiet window that contains the current hour.
+  arrangeUpdateCheck({ autoCheckUpdates: true, quietHoursEnabled: true, quietStart: hour, quietEnd: (hour + 1) % 24 });
+  setFetchResponder(jsonResponder(releasePayload('1.2.0')));
+
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.equal(status.updateAvailable, true);
+  assert.equal(h.notificationsCreated.size, 0, 'quiet hours must suppress it');
+  assert.equal(status.notifiedVersion, null, 'and must not consume the one-shot flag');
+
+  // Outside quiet hours the very next tick delivers it.
+  h.storageData.set('user_settings', { autoCheckUpdates: true, quietHoursEnabled: false });
+  await fireAlarm('badge-refresh');
+  assert.ok(h.notificationsCreated.has('mooc-reminder:update:1.2.0'));
+});
+
+test('CHECK_UPDATES bypasses the toggle, and the notification click opens the ZIP', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: false });
+  setFetchResponder(jsonResponder(releasePayload('1.2.0')));
+
+  const resp = await sendMessage({ type: 'CHECK_UPDATES' });
+  assert.equal(resp.success, true);
+  assert.equal(resp.status.updateAvailable, true);
+  assert.equal(fetchCalls.length, 1);
+
+  h.tabsCreated.length = 0;
+  await fireClick('mooc-reminder:update:1.2.0');
+  assert.equal(h.tabsCreated.length, 1);
+  assert.equal(
+    h.tabsCreated[0].url,
+    'https://github.com/furina061006/MOOC_reminder/releases/download/v1.2.0/mooc-reminder-v1.2.0.zip'
+  );
+});
+
+test('the update notification click never opens a non-github URL', async () => {
+  arrangeUpdateCheck({});
+  h.storageData.set('update_status', {
+    currentVersion: '1.0.0', latestVersion: '1.2.0', updateAvailable: true,
+    downloadUrl: 'https://evil.example.com/payload.zip', releaseUrl: 'https://evil.example.com/'
+  });
+
+  h.tabsCreated.length = 0;
+  await fireClick('mooc-reminder:update:1.2.0');
+
+  assert.equal(h.tabsCreated.length, 1);
+  assert.equal(h.tabsCreated[0].url, 'https://github.com/furina061006/MOOC_reminder/releases');
+});
+
+test('GET_UPDATE_STATUS reports the running version without a network call', async () => {
+  arrangeUpdateCheck({});
+  const resp = await sendMessage({ type: 'GET_UPDATE_STATUS' });
+  assert.equal(resp.success, true);
+  assert.equal(resp.currentVersion, '1.0.0');
+  assert.equal(fetchCalls.length, 0, 'rendering the options page must not hit the network');
 });

@@ -24,7 +24,8 @@ const KEYS = {
   API_STATUS: 'api_status',
   USER_SETTINGS: 'user_settings',
   POPUP_UI_STATE: 'popup_ui_state',
-  LAST_DIGEST_DATE: 'last_digest_date'
+  LAST_DIGEST_DATE: 'last_digest_date',
+  UPDATE_STATUS: 'update_status'
 };
 
 function getNotificationIconUrl() {
@@ -55,6 +56,12 @@ import {
 } from '../shared/reminder.js';
 import { resolveItemUrl } from '../shared/item-url.js';
 import { createSerializedStore } from '../shared/items-mutex.js';
+import {
+  RELEASES_API_URL,
+  RELEASES_PAGE_URL,
+  evaluateRelease,
+  resolveDownloadTarget
+} from '../shared/update-check.js';
 
 // homework_items has many concurrent read-modify-write writers (reconcile,
 // notification bookkeeping, popup actions). All RMW mutations must go through
@@ -201,6 +208,121 @@ async function setupAlarms() {
   console.log(`[MOOC Reminder] Alarms configured: scrape=${scrapeMinutes}m badge=${badgeMinutes}m digest=${digestSettings.dailyDigestEnabled ? digestSettings.dailyDigestHour + ':00' : 'off'}`);
 }
 
+// ─── Update check ───────────────────────────────────────
+//
+// This extension is side-loaded, so Chrome never updates it (no update_url/key).
+// We can only tell the user a newer release exists and hand them the download
+// link. Pure version logic lives in shared/update-check.js.
+
+const UPDATE_NOTIFICATION_PREFIX = 'mooc-reminder:update:';
+
+async function getUpdateStatus() {
+  const result = await chrome.storage.local.get(KEYS.UPDATE_STATUS);
+  const raw = result[KEYS.UPDATE_STATUS];
+  return (raw && typeof raw === 'object') ? raw : null;
+}
+
+// chrome.runtime.getManifest() exists in every real extension, but reading it
+// must never be the thing that breaks an alarm tick (test stubs, odd runtimes).
+function getRunningVersion() {
+  try {
+    return String(chrome.runtime.getManifest().version || '');
+  } catch {
+    return '';
+  }
+}
+
+/** Returns true only when a notification was actually created. */
+async function notifyUpdateAvailable(status) {
+  if (!chrome.notifications || !chrome.notifications.create) return false;
+  // An update is not urgent — never wake the user during quiet hours. The next
+  // tick will retry, because lastNotifiedVersion is only advanced on success.
+  const settings = normalizeSettings(await getUserSettings());
+  if (isWithinQuietHours(settings, new Date())) return false;
+  try {
+    await chrome.notifications.create(UPDATE_NOTIFICATION_PREFIX + status.latestVersion, {
+      type: 'basic',
+      iconUrl: getNotificationIconUrl(),
+      title: 'MOOC Reminder 有新版本',
+      message: `v${status.currentVersion} → v${status.latestVersion}，点击前往下载`,
+      priority: 1
+    });
+    return true;
+  } catch (e) {
+    console.warn('[MOOC Reminder] Update notification failed:', e.message);
+    return false;
+  }
+}
+
+/**
+ * Ask GitHub for the newest release and remember the answer.
+ *
+ * Rides the existing 12h `badge-refresh` tick rather than adding an alarm: an
+ * update check is not worth extra service-worker wake-ups. The result is cached
+ * in `update_status` so the options page renders without a network call.
+ *
+ * Never throws — the status object carries an `error` field instead.
+ */
+async function checkForUpdates({ manual = false } = {}) {
+  const settings = normalizeSettings(await getUserSettings());
+  if (!manual && !settings.autoCheckUpdates) return await getUpdateStatus();
+
+  const previous = (await getUpdateStatus()) || {};
+  const currentVersion = getRunningVersion();
+  let result;
+  let error = null;
+
+  try {
+    const response = await fetch(RELEASES_API_URL, {
+      headers: { Accept: 'application/vnd.github+json' },
+      cache: 'no-store'
+    });
+    if (!response || !response.ok) throw new Error('HTTP ' + (response ? response.status : '?'));
+    const evaluated = evaluateRelease(await response.json(), currentVersion);
+    if (!evaluated) throw new Error('无法解析 Release 信息');
+    result = {
+      currentVersion,
+      latestVersion: evaluated.version,
+      updateAvailable: evaluated.updateAvailable,
+      downloadUrl: evaluated.downloadUrl,
+      releaseUrl: evaluated.releaseUrl,
+      notes: evaluated.notes,
+      publishedAt: evaluated.publishedAt
+    };
+  } catch (e) {
+    // Offline / rate-limited / API drift. Keep the last known good answer so a
+    // transient failure neither blanks the UI nor makes an existing "update
+    // available" indicator flip back to "up to date".
+    console.warn('[MOOC Reminder] Update check failed:', e.message);
+    error = String(e && e.message ? e.message : e);
+    result = {
+      currentVersion,
+      latestVersion: previous.latestVersion || '',
+      updateAvailable: !!(previous.latestVersion && previous.updateAvailable),
+      downloadUrl: previous.downloadUrl || '',
+      releaseUrl: previous.releaseUrl || '',
+      notes: previous.notes || '',
+      publishedAt: previous.publishedAt || ''
+    };
+  }
+
+  const next = {
+    ...result,
+    checkedAt: new Date().toISOString(),
+    error,
+    // Persisted so the 12h tick does not re-announce the same version.
+    notifiedVersion: previous.notifiedVersion || null
+  };
+
+  if (!error && next.updateAvailable && next.latestVersion &&
+      next.latestVersion !== next.notifiedVersion) {
+    if (await notifyUpdateAvailable(next)) next.notifiedVersion = next.latestVersion;
+  }
+
+  await chrome.storage.local.set({ [KEYS.UPDATE_STATUS]: next });
+  return next;
+}
+
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   console.log('[MOOC Reminder] Alarm fired:', alarm.name);
 
@@ -212,8 +334,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       break;
     case 'badge-refresh':
       await updateBadgeFromStorage();
-      break;
-    case 'daily-digest':
+      // 更新检查搭 12h 周期的便车，不额外增加 SW 唤醒（见 CLAUDE.md 调度策略）
+      await checkForUpdates();
+      break;    case 'daily-digest':
       await sendDailyDigestNotification();
       break;
     case 'daily-digest-retry':
@@ -602,6 +725,21 @@ const MESSAGE_HANDLERS = {
         dailyDigestRetry: alarms[3] || null
       }
     };
+  },
+
+  // Options page: cached update state (no network — renders instantly).
+  async GET_UPDATE_STATUS() {
+    return {
+      success: true,
+      status: await getUpdateStatus(),
+      currentVersion: chrome.runtime.getManifest().version
+    };
+  },
+
+  // Options page: explicit "check now" button. Bypasses the autoCheckUpdates
+  // switch on purpose — that switch governs the background tick, not a click.
+  async CHECK_UPDATES() {
+    return { success: true, status: await checkForUpdates({ manual: true }) };
   },
 
   // Clear sync errors from storage
@@ -1024,6 +1162,20 @@ async function maybeNotifyDeadlines(unfinishedItems) {
 
 chrome.notifications?.onClicked?.addListener(async (notificationId) => {
   if (!notificationId || notificationId.indexOf('mooc-reminder:') !== 0) return;
+
+  // Update announcement: open the download page instead of a homework item.
+  if (notificationId.indexOf(UPDATE_NOTIFICATION_PREFIX) === 0) {
+    try {
+      const status = await getUpdateStatus();
+      const url = resolveDownloadTarget(status) || RELEASES_PAGE_URL;
+      await chrome.tabs.create({ url });
+      await chrome.notifications.clear(notificationId);
+    } catch (e) {
+      console.debug('[MOOC Reminder] Update notification click failed:', e.message);
+    }
+    return;
+  }
+
   const parts = notificationId.split(':');
   const uid = parts.length >= 2 ? decodeURIComponent(parts[1]) : '';
   if (!uid) return;

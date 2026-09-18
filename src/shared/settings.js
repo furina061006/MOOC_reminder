@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS = {
   autoDismissErrors: true,    // auto-clear sync errors from the UI
   showSnoozeButton: true,       // show snooze button in popup
   showCourseMute: true,         // show course mute button
+  autoCheckUpdates: true,       // periodically ask GitHub whether a newer release exists
 };
 
 export function clampInt(value, min, max, fallback) {
@@ -67,6 +68,8 @@ export function normalizeSettings(stored) {
     autoDismissErrors: s.autoDismissErrors === true,
     showSnoozeButton: s.showSnoozeButton !== false,
     showCourseMute: s.showCourseMute !== false,
+    // Default-on: opt out is possible, opt in is not required.
+    autoCheckUpdates: s.autoCheckUpdates !== false,
   };
 }
 

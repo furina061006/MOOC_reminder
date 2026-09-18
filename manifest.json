@@ -12,7 +12,8 @@
     "cookies"
   ],
   "host_permissions": [
-    "https://www.icourse163.org/*"
+    "https://www.icourse163.org/*",
+    "https://api.github.com/*"
   ],
   "web_accessible_resources": [
     {
