@@ -9,6 +9,7 @@
 |---|---|---|
 | `dump-extension-state.js` | **扩展的** Service Worker Console（`chrome://extensions` → MOOC Reminder → 「Service Worker」） | 扩展现在到底存了什么？那些条目在不在？用的是哪个 `termId`？ |
 | `dump-page-dto.js` | 课程页面的 Console（F12） | API 数据里到底有没有那些条目？有的话为什么被门槛拦下？ |
+| `find-dto-in-har.mjs` | 终端：`node tools/diagnostics/find-dto-in-har.mjs network.har` | 那些条目**到底在哪个请求 / 哪个 termId 下**？（`dump-page-dto.js` 拿不到 DTO 时用这个） |
 
 ## 典型顺序
 
@@ -20,8 +21,14 @@
    ```
    有 → 提取门槛过滤掉了它们，日志里直接给出 `contentType`。
 3. 都没有 → 跑 `dump-page-dto.js`。若它报告 `foundDtoIn: null`（页面不暴露 DTO），
-   改用 DevTools → Network → 筛 `rpc` → 刷新页面 → 找响应最大的请求 → 右键
-   → Copy → **Copy response**，把响应存成文件交回来分析。
+   改用 DevTools → Network → 刷新页面 → 右键任意请求 → **Export HAR (sanitized)**，
+   然后跑 `find-dto-in-har.mjs`。它会逐个请求报出 `termId` 与命中的关键词，
+   从而确定条目挂在哪个 term 下（SPOC 常见「老师加的内容」与「源课程内容」分属两个 term）。
+
+> [!IMPORTANT]
+> 这里所有抓取产物（原始 DOM、HAR、DTO 报告）都含你本人的课程与账号数据，且本仓库是公开的。
+> 它们已被 `.gitignore` 排除，**不要**用 `git add -f` 加进来。
+
 
 ## 注意
 

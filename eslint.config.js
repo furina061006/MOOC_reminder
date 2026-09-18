@@ -66,13 +66,14 @@ export default [
     rules: projectRules
   },
   {
-    files: ['eslint.config.js', 'tests/**/*.mjs'],
+    files: ['eslint.config.js', 'tests/**/*.mjs', 'tools/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
       globals: {
         console: 'readonly',
         process: 'readonly',
+        Buffer: 'readonly',
         URL: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly'

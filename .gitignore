@@ -39,3 +39,4 @@ element.txt
 mooc-dto-report.json
 dto*.json
 *-report.json
+*.har
