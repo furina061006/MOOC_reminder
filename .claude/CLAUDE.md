@@ -536,8 +536,33 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 # Lint
 npx eslint src/
 
-# 打包（发布包应排除开发资料、测试和参考工程）
-zip -r mooc-reminder.zip . -x ".*" "node_modules/*" "tests/*" "logs/*" "reference_projects/*"
+# 校验（lint + 全部单测）
+npm run validate
+```
+
+### 发版流程（.github/workflows/release.yml）
+
+推一个 `v*` tag 即自动完成「校验 → 打包 → 建 Release」，产物 `mooc-reminder-v{version}.zip`
+解压后是 `MOOC_reminder/` 文件夹，小白可直接「加载已解压的扩展」。
+
+```bash
+# 1. 改 manifest.json 的 version（例如 1.0.0 → 1.0.1）
+# 2. 合并 dsh → main（需用户许可，见文首约定）
+# 3. 在 main 上打同版本 tag 并推送
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+**tag 版本必须与 `manifest.json` 的 version 严格一致**，否则 workflow 会直接失败。
+用户在浏览器里看到的版本来自 `manifest.json`，而插件检查更新读的是 Release tag，两者一旦
+漂移，用户装了新包却会被反复提示「有新版本」。workflow 里那道校验就是为此存在的。
+
+**发版打成包用显式文件清单而不是 `zip -x` 通配**（`.claude/logs/` 也会被 `logs/*` 之类的
+通配误伤或漏掉）；本地想手动打包可以复用同一套动作：
+
+```bash
+stage=dist/MOOC_reminder
+mkdir -p "$stage" && cp manifest.json README.md LICENSE "$stage/" && cp -r src "$stage/"
+(cd dist && zip -r "../mooc-reminder-v$(node -p "require('./manifest.json').version").zip" MOOC_reminder)
 ```
 
 ## 相关文档

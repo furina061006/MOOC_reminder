@@ -1,0 +1,73 @@
+# 推一个 v* tag 即自动发版：
+#   git tag v1.0.1 && git push origin v1.0.1
+#
+# 产物是一个「解压即可加载」的 ZIP：内层是 MOOC_reminder/ 文件夹，
+# 里面有 manifest.json —— 小白解压后在 chrome://extensions 里选中该文件夹即可。
+#
+# 关键约束：tag 版本必须与 manifest.json 的 version 一致。用户在浏览器里看到的
+# 版本号来自 manifest.json，而插件检查更新时读的是 Release 的 tag，两者一旦漂移，
+# 用户装了新包却仍被反复提示「有新版本」。所以这里直接让不一致的发布失败。
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # 绝不发布 lint 或测试不过的版本
+      - run: npm run validate
+
+      - name: Verify tag matches manifest version
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          manifest_version="$(node -p "require('./manifest.json').version")"
+          echo "tag=$GITHUB_REF_NAME tag_version=$tag_version manifest_version=$manifest_version"
+          if [ "$tag_version" != "$manifest_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 manifest.json 的 version ($manifest_version) 不一致。请先把 manifest.json 的 version 改成 $tag_version，再重新打 tag。"
+            exit 1
+          fi
+
+      # 显式列出运行期需要的文件，避免把 tests/.claude/.github 等开发资料
+      # 打进发布包（比 zip -x 的通配更可控）。
+      - name: Package extension
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./manifest.json').version")"
+          stage="dist/MOOC_reminder"
+          mkdir -p "$stage"
+          cp manifest.json README.md LICENSE "$stage/"
+          cp -r src "$stage/"
+          # 防御：确认入口文件真的在包内
+          test -f "$stage/manifest.json"
+          test -f "$stage/src/background/service-worker.js"
+          test -f "$stage/src/popup/popup.html"
+          (cd dist && zip -r "../mooc-reminder-v${version}.zip" MOOC_reminder)
+          ls -lh "mooc-reminder-v${version}.zip"
+          echo "ASSET=mooc-reminder-v${version}.zip" >> "$GITHUB_ENV"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" "$ASSET" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
