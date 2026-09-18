@@ -525,11 +525,13 @@ function sortItemsByDeadline(items) {
 }
 
 // Where clicking an item should take you: its own page, else a reconstructed
-// course learn URL (API-discovered items may not carry a pageUrl).
-function resolveItemUrl(item) {
+// course learn URL (API-discovered items may not carry a pageUrl). SPOC courses
+// live under /spoc/learn/, so the course type must be supplied by the caller.
+function resolveItemUrl(item, courseType) {
   if (!item) return null;
+  var type = courseType || item.courseType || '';
   var base = item.courseId && item.termId
-    ? 'https://www.icourse163.org/learn/' + item.courseId + '?tid=' + item.termId
+    ? (type === 'spoc' ? 'https://www.icourse163.org/spoc/learn/' : 'https://www.icourse163.org/learn/') + item.courseId + '?tid=' + item.termId
     : null;
   // pageUrl 可能有错误的 hash（如 /learn/content），按类型修正
   var route = item.type === 'exam' ? '/learn/examlist' : '/learn/testlist';
@@ -541,6 +543,14 @@ function resolveItemUrl(item) {
   }
   if (base) return base + '#' + route;
   return null;
+}
+
+// Course metadata lookup so items stored before courseType was persisted still
+// resolve to the right (SPOC vs normal) route prefix.
+function courseTypeFor(courseId) {
+  if (!courseId || !Array.isArray(state.courses)) return '';
+  var course = state.courses.find(function (c) { return c && c.courseId === courseId; });
+  return (course && course.courseType) || '';
 }
 
 function openUrl(url) {
@@ -696,7 +706,7 @@ function createHomeworkItem(item) {
   content.appendChild(meta);
 
   // Clicking the item (anywhere but the checkbox) opens its page.
-  const url = resolveItemUrl(item);
+  const url = resolveItemUrl(item, courseTypeFor(item.courseId));
   if (url) {
     content.classList.add('clickable');
     content.setAttribute('role', 'button');

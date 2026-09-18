@@ -130,7 +130,7 @@ popup 左上角可筛选：
 - **低频后台检查**：后台检查和徽章刷新默认间隔均为 12 小时。
 - **每日摘要补发**：每天定时发送摘要，并在当天首次启动浏览器时补发临期摘要。
 
-完整更新记录请参阅 [CHANGELOG.md](CHANGELOG.md)。
+完整更新记录请参阅 [.claude/logs/changelog.md](.claude/logs/changelog.md)。
 
 ## 贡献者
 

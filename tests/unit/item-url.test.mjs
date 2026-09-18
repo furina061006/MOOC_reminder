@@ -39,3 +39,37 @@ test('resolveItemUrl returns null when it cannot build any URL', () => {
   assert.equal(resolveItemUrl({}), null);
   assert.equal(resolveItemUrl({ type: 'quiz' }), null);
 });
+
+test('resolveItemUrl uses the SPOC route when the course type is spoc', () => {
+  // SPOC courses live under /spoc/learn/; the /learn/ prefix opens a page that
+  // cannot resolve the course (same-named MOOC term does not exist).
+  const item = { courseId: 'NEU-1474956162', termId: '1476735472', type: 'homework' };
+  assert.equal(
+    resolveItemUrl(item, 'spoc'),
+    'https://www.icourse163.org/spoc/learn/NEU-1474956162?tid=1476735472#/learn/testlist'
+  );
+});
+
+test('resolveItemUrl falls back to item.courseType for stored SPOC items', () => {
+  const item = { courseId: 'NEU-1002713003', termId: '55', type: 'exam', courseType: 'spoc' };
+  assert.equal(
+    resolveItemUrl(item),
+    'https://www.icourse163.org/spoc/learn/NEU-1002713003?tid=55#/learn/examlist'
+  );
+});
+
+test('explicit courseType wins over a stale item.courseType', () => {
+  const item = { courseId: 'BIT-1', termId: '2', type: 'homework', courseType: 'mooc' };
+  assert.match(resolveItemUrl(item, 'spoc'), /^https:\/\/www\.icourse163\.org\/spoc\/learn\//);
+});
+
+test('resolveItemUrl keeps a SPOC pageUrl prefix and only fixes its hash route', () => {
+  const item = {
+    courseId: 'NEU-1', termId: '9', type: 'exam', courseType: 'spoc',
+    pageUrl: 'https://www.icourse163.org/spoc/learn/NEU-1?tid=9#/learn/content'
+  };
+  assert.equal(
+    resolveItemUrl(item),
+    'https://www.icourse163.org/spoc/learn/NEU-1?tid=9#/learn/examlist'
+  );
+});

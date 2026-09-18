@@ -6,12 +6,12 @@ Chrome/Edge Manifest V3 浏览器扩展，自动追踪中国大学MOOC (icourse1
 
 - **CLAUDE.md（本文件）** — 项目唯一事实来源。所有核心技术结论写在这里，任何开发者打开项目即能理解全貌
 - **README.md** — 面向用户的项目说明：安装、使用、功能、限制和当前能力；保持精简，不放完整更新日志
-- **CHANGELOG.md** — 面向用户的完整版本更新记录，按日期或版本记录可感知的新增、变更和修复
+- **`.claude/logs/changelog.md`** — 面向用户的完整版本更新记录，按日期记录可感知的新增、变更和修复
 - **`.claude/logs/`** — 面向开发者的过程记录。写「踩过什么坑、试过哪些死路、为什么选方案 A 不选 B」以及实现细节，供想深挖的人追溯
 - **Memory** — 仅用于快速回忆。不再重复存储 CLAUDE.md 已有的技术知识，只保留偏好、习惯等个人上下文
-- **每次重大技术变化后**：先更新本文件，再写开发日志；涉及用户可感知变化时同步更新 `CHANGELOG.md`，最后更新 memory 索引
+- **每次重大技术变化后**：先更新本文件，再写开发日志；涉及用户可感知变化时同步更新 `.claude/logs/changelog.md`，最后更新 memory 索引
 
-文档职责保持清晰：README 面向使用者，CHANGELOG 面向版本回顾，`.claude/logs/` 面向技术追溯。详细开发日志见 `.claude/logs/` 目录。
+文档职责保持清晰：README 面向使用者，`.claude/logs/changelog.md` 面向版本回顾，其余 `.claude/logs/` 文件面向技术追溯。更新日志并入 `.claude/logs/` 是为了避免同一类信息分散在两个目录、产生职权冲突。
 
 ---
 
@@ -412,11 +412,13 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 ### 关键不变量（改代码前必读）
 
 1. **`homework_items` 的所有读-改-写必须走 `mutateHomeworkItems`**（shared/items-mutex.js 的串行锁）。直接 `get→改→set` 会与并发的 reconcile/通知写回互相覆盖（症状：通知重复弹、已完成项被复活）。
-2. **SNOOZE 必须同时清 `lastNotificationLevel`**，否则 snooze 到期后同档位永不再提醒（对已过期条目致命）。
-3. **digest 先 create 成功再写 `last_digest_date`**；免打扰命中时创建一次性 `daily-digest-retry` alarm 而不是静默丢弃。
-4. 点击通知用 `resolveItemUrl`（shared/item-url.js）兜底重建 URL——API 条目没有 pageUrl。
-5. `notifyLeadHours: []`（显式空数组）= 用户关闭所有提前档位，normalizeSettings 不得回退默认值；仅字段缺失才用默认。
-6. **临时代理任务只能写 `temporary_proxy_job`，不能借用 `scrape_status`**。先落盘再 `tabs.update()` 导航；只可清理由该持久化 job ID 认领的 tab，现有用户标签页永不关闭。
+2. **`courses` 的所有读-改-写必须走 `mutateCourses`**（同一串行锁工厂）。`COURSE_LINKS` 循环注册、`COURSE_UPDATE`（SPOC 真实 termId）和每个 `COURSE_API_DATA` 的 reconcile 都会并发写课程；裸读-改-写会丢课或把 `activeTermId` 回退。`upsertCourse()` 是唯一入口，`RESET_DATA` 也用 `mutateCourses(() => [])` 清空。
+3. **SNOOZE 必须同时清 `lastNotificationLevel`**，否则 snooze 到期后同档位永不再提醒（对已过期条目致命）。
+4. **digest 先 create 成功再写 `last_digest_date`**；免打扰命中时创建一次性 `daily-digest-retry` alarm 而不是静默丢弃。
+5. 点击通知用 `resolveItemUrl(item, courseType)`（shared/item-url.js）兜底重建 URL——API 条目没有 pageUrl。**必须传入课程类型**（或条目自带 `courseType`）：SPOC 在 `/spoc/learn/`，普通课程在 `/learn/`。popup.js 保留一份必须同步的镜像实现。
+6. `notifyLeadHours: []`（显式空数组）= 用户关闭所有提前档位，normalizeSettings 不得回退默认值；仅字段缺失才用默认。
+7. **临时代理任务只能写 `temporary_proxy_job`，不能借用 `scrape_status`**。先落盘再 `tabs.update()` 导航；只可清理由该持久化 job ID 认领的 tab，现有用户标签页永不关闭。
+8. **「清理已完成」依赖 tombstone**：`CLEAR_COMPLETED` 删除条目的同时把 UID 记入 `dismissed_completed_uids`；reconcile 遇到同 UID 的**已完成**新条目时跳过，遇到**未完成**时删除 tombstone 并放行。没有这层过滤，下一次同步会把清理掉的作业重新写回。
 
 ### 测试结构
 
@@ -440,7 +442,16 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 - `user_settings` — 用户偏好
 - `scrape_status` — 通用抓取状态（不属于临时代理）
 - `temporary_proxy_job` — 扩展拥有的临时代理页任务；含 tab ID、phase、deadline 和预期课程
+- `dismissed_completed_uids` — 「清理已完成」的 tombstone 列表；reconcile 据此不再复活已清理的已完成作业
 - `popup_ui_state` — popup UI 状态
+
+### HomeworkItem 关键字段
+```
+{ uid, identityKey, courseId, termId, courseType, title, type, status,
+  checkedOff, manuallyCheckedOff, autoDetectedCompleted, completionReason,
+  hwPhase, deadline, score, totalScore, source, pageUrl }
+```
+- `courseType`: 'mooc' | 'spoc' | 'manual'；API 条目从 course 记录带出，用于点击跳转时选择 `/learn/` 或 `/spoc/learn/`。旧条目可能没有该字段，因此 `resolveItemUrl(item, courseType)` 支持调用方显式传入课程类型兜底。
 
 ### Course 结构
 ```
@@ -489,7 +500,7 @@ zip -r mooc-reminder.zip . -x ".*" "node_modules/*" "tests/*" "logs/*" "referenc
 
 ## 相关文档
 
-- `CHANGELOG.md` — 面向用户的完整更新记录
+- `.claude/logs/changelog.md` — 面向用户的完整更新记录
 - `.claude/logs/architecture.md` — 完整架构文档
 - `.claude/logs/2026-06-27-development.md` — 最近开发日志（API 字段分析、互评判定、SPOC 支持）
 - `.claude/logs/2026-06-26-development.md` — 背景 API 代理、完成检测重写
