@@ -73,3 +73,20 @@ test('resolveItemUrl keeps a SPOC pageUrl prefix and only fixes its hash route',
     'https://www.icourse163.org/spoc/learn/NEU-1?tid=9#/learn/examlist'
   );
 });
+
+test('a stored SPOC route URL outranks a demoted courseType', () => {
+  // Regression: a SPOC course shares its courseId with the plain MOOC course of
+  // the same name, and the /learn/ discovery harvest labels every non-/spoc/ href
+  // as 'mooc'. The record's courseType can therefore be demoted. The route URL
+  // captured from the page the user actually opened is frozen evidence and must
+  // still win, so the click never lands on the plain MOOC page. Note the route
+  // `tid` (1476735472) is the route shell id, NOT the API id in item.termId.
+  const item = {
+    courseId: 'NEU-1474956162', termId: '1476504498', type: 'homework', courseType: 'spoc',
+    pageUrl: 'https://www.icourse163.org/spoc/learn/NEU-1474956162?tid=1476735472#/learn/content'
+  };
+  assert.equal(
+    resolveItemUrl(item, 'mooc'),
+    'https://www.icourse163.org/spoc/learn/NEU-1474956162?tid=1476735472#/learn/testlist'
+  );
+});

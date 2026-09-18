@@ -732,3 +732,133 @@ test('RESET_DATA clears the dismissed tombstone list', async () => {
   assert.deepEqual(h.storageData.get('dismissed_completed_uids'), []);
   assert.deepEqual(h.storageData.get('courses'), []);
 });
+
+// ── SPOC click-target regression (backlog: popup opens the plain MOOC page) ──
+//
+// A SPOC course shares its courseId with the plain MOOC course of the same name,
+// and `courses` holds one record per courseId — so a /learn/ link harvest of the
+// same courseId used to demote the record's courseType to 'mooc', which sent the
+// popup click to /learn/. These tests pin the three defences: the frozen route
+// URL, the sticky SPOC classification, and the extractor's courseType.
+
+const SPOC_ROUTE_URL = 'https://www.icourse163.org/spoc/learn/NEU-1474956162?tid=1476735472#/learn/content';
+const SPOC_API_TERM_ID = '1476504498';
+const spocCourseRecord = () => (h.storageData.get('courses') || []).find(c => c && c.courseId === 'NEU-1474956162');
+
+test('SPOC route URL survives a MOOC link harvest and drives the click target', async () => {
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('dismissed_completed_uids');
+  seedCourses([{
+    courseId: 'NEU-1474956162', termId: '1476735472', courseName: '大学物理（SPOC）', courseType: 'spoc'
+  }]);
+
+  // 1) The SPOC page reports the real API termId plus the route URL it loaded.
+  const upd = await sendMessage({
+    type: 'COURSE_UPDATE',
+    courseId: 'NEU-1474956162',
+    activeTermId: SPOC_API_TERM_ID,
+    courseName: '大学物理（SPOC）',
+    courseType: 'spoc',
+    routeUrl: SPOC_ROUTE_URL
+  });
+  assert.equal(upd.success, true);
+  assert.equal(spocCourseRecord().pageUrl, SPOC_ROUTE_URL);
+  assert.equal(spocCourseRecord().activeTermId, SPOC_API_TERM_ID);
+
+  // 2) A plain /learn/ harvest of the SAME courseId must not demote the record:
+  //    not its courseType, name, route termId, or frozen route URL.
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'NEU-1474956162', termId: '999999', courseName: '大学物理', courseType: 'mooc' }]
+  });
+  assert.equal(spocCourseRecord().courseType, 'spoc');
+  assert.equal(spocCourseRecord().courseName, '大学物理（SPOC）');
+  assert.equal(spocCourseRecord().termId, '1476735472');
+  assert.equal(spocCourseRecord().pageUrl, SPOC_ROUTE_URL);
+
+  // 3) A full API sync: items self-describe their type and inherit the route URL.
+  const payload = {
+    result: {
+      mocTermDto: {
+        chapters: [{
+          id: 1, name: '第1章', type: 'chapter',
+          lessons: [{
+            id: 2, name: '1.1', type: 'lesson',
+            units: [{
+              id: 77, name: '第一章作业', contentType: 3,
+              test: { deadline: Date.now() + 86400000, usedTryCount: 0 }
+            }]
+          }]
+        }]
+      }
+    }
+  };
+  const sync = await sendMessage({
+    type: 'COURSE_API_DATA',
+    course: {
+      courseId: 'NEU-1474956162', termId: SPOC_API_TERM_ID,
+      courseName: '大学物理（SPOC）', schoolName: '', courseType: 'spoc'
+    },
+    rawData: payload
+  });
+  assert.equal(sync.success, true);
+  assert.equal(storedItems().length, 1);
+  const item = storedItems()[0];
+  assert.equal(item.courseType, 'spoc');   // runtime extractor no longer drops courseType
+  assert.equal(item.pageUrl, SPOC_ROUTE_URL);
+  assert.equal(item.termId, SPOC_API_TERM_ID); // uid stays keyed on the API termId
+  // The API payload's termId is the API id, not a route id — it must NOT clobber
+  // the route termId harvested from the learn link, otherwise the /spoc/learn/
+  // URL would be rebuilt with the wrong `tid`.
+  assert.equal(spocCourseRecord().termId, '1476735472');
+
+  // 4) Clicking opens the SPOC route with the ROUTE termId, not the API one.
+  h.tabsCreated.length = 0;
+  await fireClick(`mooc-reminder:${encodeURIComponent(item.uid)}:due_24h`);
+  assert.equal(h.tabsCreated.length, 1);
+  assert.equal(
+    h.tabsCreated[0].url,
+    'https://www.icourse163.org/spoc/learn/NEU-1474956162?tid=1476735472#/learn/testlist'
+  );
+});
+
+test('BATCH_API_FETCH derives SPOC from activeTermId when courseType was demoted', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 33, lastAccessed: 5000 }]);
+  // activeTermId is only ever written from a real SPOC page, so it must outrank
+  // the courseType that a weak /learn/ harvest has already demoted to 'mooc'.
+  seedCourses([{
+    courseId: 'NEU-1474956162', termId: '1476735472', activeTermId: SPOC_API_TERM_ID,
+    courseName: '大学物理', courseType: 'mooc'
+  }]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  const res = await sendMessage({ type: 'PAGE_OPENED' });
+  assert.equal(res.refreshTriggered, true);
+  await new Promise(r => setTimeout(r, 1500));
+
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch, 'expected a BATCH_API_FETCH to be dispatched');
+  const course = batch.msg.courses.find(c => c.courseId === 'NEU-1474956162');
+  assert.equal(course.courseType, 'spoc');
+  assert.equal(course.termId, SPOC_API_TERM_ID);
+});
+
+test('COURSE_UPDATE rejects a non-learn routeUrl instead of storing it', async () => {
+  seedCourses([]);
+  await sendMessage({
+    type: 'COURSE_UPDATE',
+    courseId: 'NEU-1474956162',
+    activeTermId: SPOC_API_TERM_ID,
+    courseName: '大学物理（SPOC）',
+    courseType: 'spoc',
+    routeUrl: 'https://evil.example.com/spoc/learn/NEU-1474956162?tid=1'
+  });
+  // The record is still created (courseType/activeTermId are valid), but no
+  // untrusted URL is persisted: isIcCourseLearnUrl gates the origin.
+  assert.equal(spocCourseRecord().courseType, 'spoc');
+  assert.equal(spocCourseRecord().pageUrl, undefined);
+});

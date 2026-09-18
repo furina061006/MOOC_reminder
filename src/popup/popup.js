@@ -550,7 +550,12 @@ function resolveItemUrl(item, courseType) {
 function courseTypeFor(courseId) {
   if (!courseId || !Array.isArray(state.courses)) return '';
   var course = state.courses.find(function (c) { return c && c.courseId === courseId; });
-  return (course && course.courseType) || '';
+  if (!course) return '';
+  // activeTermId is written only from a genuine SPOC page (COURSE_UPDATE), so it
+  // outranks courseType: course-discovery labels every href without /spoc/ as
+  // 'mooc', which would otherwise demote a SPOC course and send clicks to /learn/.
+  if (course.activeTermId) return 'spoc';
+  return course.courseType || '';
 }
 
 function openUrl(url) {

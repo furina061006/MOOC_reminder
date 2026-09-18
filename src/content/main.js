@@ -93,7 +93,12 @@
             courseId: spocMeta.courseId,
             activeTermId: realTid,
             courseName: spocPageName,
-            courseType: 'spoc'
+            courseType: 'spoc',
+            // The URL the browser actually opened. It is the only source that
+            // pairs the /spoc/learn/ prefix with the route shell `tid` — the
+            // API termId differs from the route termId and must not be used to
+            // rebuild a clickable URL (see CLAUDE.md「两者不可混用」).
+            routeUrl: window.location.href
           }).catch(function(){});
           console.log('[MOOC Reminder] SPOC real termId persisted for', spocMeta.courseId, 'name:', spocPageName);
         }
@@ -155,7 +160,7 @@
                   var sendTid = (realTid && realTid !== urlTid) ? realTid : (entryTid || pageMeta.termId);
                   var swResp = await chrome.runtime.sendMessage({
                     type: 'COURSE_API_DATA',
-                    course: { courseId: pageMeta.courseId, termId: sendTid, courseName: '', schoolName: '' },
+                    course: { courseId: pageMeta.courseId, termId: sendTid, courseName: '', schoolName: '', courseType: pageMeta.isSpoc ? 'spoc' : 'mooc', pageUrl: window.location.href },
                     rawData: entry.resp
                   });
                   console.log('[MOOC Reminder] Page-hook COURSE_API_DATA response:', JSON.stringify(swResp));
@@ -330,7 +335,7 @@
         }
 
         results.push({
-          course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' },
+          course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '', courseType: c.courseType || '' },
           rawData: text
         });
       } catch(e) {

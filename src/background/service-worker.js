@@ -265,18 +265,19 @@ const MESSAGE_HANDLERS = {
   async COURSE_API_DATA(msg) {
     if (!msg.course || !msg.rawData) return { success: false, error: 'Invalid payload' };
     try {
-      const items = apiExtractHomework(msg.rawData, msg.course);
+      const course = await resolveCourseForExtraction(msg.course);
+      const items = apiExtractHomework(msg.rawData, course);
       if (items.length === 0) {
         // A successful API response can legitimately contain no assessable items.
         // It still proves the batch completed and must advance the sync timestamp.
         await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
-        console.log('[MOOC Reminder] COURSE_API_DATA: 0 items extracted for', msg.course.courseId, '(courseName:', msg.course.courseName || '?', 'rawData len:', (msg.rawData||'').length, ')');
+        console.log('[MOOC Reminder] COURSE_API_DATA: 0 items extracted for', course.courseId, '(courseName:', course.courseName || '?', 'rawData len:', (msg.rawData||'').length, ')');
         return { success: true, itemCount: 0 };
       }
-      const result = await reconcileHomeworkData(msg.course, items);
+      const result = await reconcileHomeworkData(course, items);
       await updateBadgeFromStorage();
       await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
-      console.log(`[MOOC Reminder] Course API data: ${items.length} items from ${msg.course.courseId} (${msg.course.courseName || ''})`);
+      console.log(`[MOOC Reminder] Course API data: ${items.length} items from ${course.courseId} (${course.courseName || ''})`);
       return { success: true, added: result.added, updated: result.updated, itemCount: items.length };
     } catch (e) {
       console.warn('[MOOC Reminder] COURSE_API_DATA error:', e.message, 'courseId:', msg.course?.courseId);
@@ -314,12 +315,20 @@ const MESSAGE_HANDLERS = {
   // work without re-opening the SPOC course page.
   async COURSE_UPDATE(msg) {
     if (!msg.courseId || !msg.activeTermId) return { success: false, error: 'Invalid payload' };
-    await upsertCourse({
+    const patch = {
       courseId: msg.courseId,
       activeTermId: msg.activeTermId,
       courseName: msg.courseName || '',
       courseType: msg.courseType || 'spoc'
-    });
+    };
+    // Persist the route URL the user's browser actually loaded. It is the only
+    // thing that pairs the correct /spoc/learn/ prefix with the route shell
+    // `tid`, and it is frozen here so later weak /learn/ discovery harvests of
+    // the same courseId cannot rewrite it. API items inherit it via
+    // `pageUrl: course.pageUrl`, which resolveItemUrl() already prefers over any
+    // courseType guess.
+    if (isIcCourseLearnUrl(msg.routeUrl)) patch.pageUrl = msg.routeUrl;
+    await upsertCourse(patch);
     console.log('[MOOC Reminder] COURSE_UPDATE:', msg.courseId, 'activeTermId=', msg.activeTermId, 'name=', msg.courseName);
     return { success: true };
   },
@@ -775,10 +784,18 @@ async function reconcileHomeworkData(course, newItems) {
   }
 
   // Update course metadata — 不覆写已有的课程名称（checkPageHookData 发来的可能为空）
+  // 也不写 pageUrl/termId：
+  //   - pageUrl 只由 COURSE_UPDATE（真实页面）冻结写入，API payload 的空值会把它抹掉；
+  //   - Course.termId 全项目都当作「路由 termId」用（getProxyRouteTermId、
+  //     buildTemporaryProxyUrl、点击跳转），而这里的 course.termId 是抓取用的
+  //     termId —— SPOC 下等于 activeTermId（API id），写进去就把路由壳 id 毁掉了。
+  // 这门课必然已在 courses 里（buildApiCourseList / apiRefreshAllKnownCourses 都
+  // 从已存储课程派生），所以不同步这两个字段不会丢数据。
   if (course && course.courseId) {
     var courseMeta = {};
     for (var key in course) {
-      if (Object.prototype.hasOwnProperty.call(course, key) && key !== 'courseName' && key !== 'schoolName') {
+      if (Object.prototype.hasOwnProperty.call(course, key) &&
+          key !== 'courseName' && key !== 'schoolName' && key !== 'pageUrl' && key !== 'termId') {
         courseMeta[key] = course[key];
       }
     }
@@ -1021,7 +1038,10 @@ chrome.notifications?.onClicked?.addListener(async (notificationId) => {
     if (item) {
       const courses = await getCourses();
       const course = courses.find(c => c && c.courseId === item.courseId);
-      if (course && course.courseType) courseType = course.courseType;
+      if (course) {
+        // activeTermId outranks courseType — see isProvenSpocCourse.
+        courseType = isProvenSpocCourse(course) ? 'spoc' : (course.courseType || courseType);
+      }
     }
     const url = item ? resolveItemUrl(item, courseType) : null;
     if (url) {
@@ -1077,15 +1097,35 @@ function buildApiCourseList(courses) {
       termId: course.activeTermId || course.termId || '',
       courseName: course.courseName || '',
       schoolName: course.schoolName || '',
-      courseType: course.courseType || ''
+      // activeTermId is written ONLY by COURSE_UPDATE, which main.js sends ONLY
+      // from a genuine SPOC page. So its presence proves SPOC regardless of what
+      // courseType says — a /learn/ discovery harvest of the same courseId may
+      // have demoted courseType to 'mooc'. Deriving the effective type here keeps
+      // SPOC items correctly labelled all the way to the popup click target.
+      courseType: course.activeTermId ? 'spoc' : (course.courseType || '')
     }));
 }
 
 function getProxyRouteTermId(course) {
   if (!course) return '';
   if (course.termId && course.termId !== 'manual') return String(course.termId);
-  // A SPOC activeTermId is an API ID and can differ from the route shell ID.
-  return course.courseType === 'spoc' ? '' : String(course.activeTermId || '');
+  // A SPOC activeTermId is an API ID and can differ from the route shell ID, so
+  // it must never be used as the route `tid`. See isProvenSpocCourse.
+  return isProvenSpocCourse(course) ? '' : String(course.activeTermId || '');
+}
+
+// A usable icourse163 learn route: right origin, /learn/ or /spoc/learn/ path, and
+// a `tid`. Anything else (homepage links, user-typed junk) must never be stored as
+// a course route, because it would be handed straight to chrome.tabs.create.
+function isIcCourseLearnUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.origin === ICOURSE_ORIGIN &&
+      /\/(?:spoc\/)?learn\//.test(url.pathname) &&
+      !!url.searchParams.get('tid');
+  } catch {
+    return false;
+  }
 }
 
 function buildTemporaryProxyUrl(course) {
@@ -1093,13 +1133,11 @@ function buildTemporaryProxyUrl(course) {
   if (!course || !course.courseId || !routeTermId) return null;
 
   const storedUrl = course.pageUrl || course.courseUrl || '';
-  try {
+  if (isIcCourseLearnUrl(storedUrl)) {
     const url = new URL(storedUrl);
-    if (url.origin === 'https://www.icourse163.org' && /\/(?:spoc\/)?learn\//.test(url.pathname) && url.searchParams.get('tid')) {
-      url.hash = '/learn/testlist';
-      return url.toString();
-    }
-  } catch {}
+    url.hash = '/learn/testlist';
+    return url.toString();
+  }
 
   const path = course.courseType === 'spoc' ? '/spoc/learn/' : '/learn/';
   return 'https://www.icourse163.org' + path + encodeURIComponent(course.courseId) +
@@ -1487,6 +1525,25 @@ async function setDismissedCompletedUids(uids) {
   });
 }
 
+// A courseId can carry BOTH a MOOC and a SPOC offering (a SPOC course shares its
+// {school}-{id} with the plain course of the same name). `courses` holds one
+// record per courseId, so the two offerings collide on every write.
+//
+// SPOC evidence is considered proven when activeTermId is present — it is written
+// only by COURSE_UPDATE, which main.js sends only from a genuine SPOC page — or
+// when the recorded courseType is already 'spoc' (a /spoc/learn/ link harvest).
+// A 'mooc' patch without that proof is a weak signal: course-discovery.js labels
+// every href lacking /spoc/ as 'mooc', so the same course's plain /learn/ link
+// would otherwise demote the record (popup title flips to the MOOC name and the
+// item's click target becomes /learn/).
+function isProvenSpocCourse(course) {
+  return !!(course && (course.activeTermId || course.courseType === 'spoc'));
+}
+
+function isWeakMoocPatch(course) {
+  return !!(course && course.courseType === 'mooc');
+}
+
 // Serialized read-modify-write: see mutateCourses above. Every course write
 // must go through here so concurrent COURSE_LINKS / COURSE_UPDATE /
 // COURSE_API_DATA updates cannot drop each other's courses.
@@ -1496,7 +1553,16 @@ async function upsertCourse(course) {
     const idx = courses.findIndex(c => c && c.courseId === course.courseId);
     const lastSeen = new Date().toISOString();
     if (idx >= 0) {
-      courses[idx] = { ...courses[idx], ...course, lastSeen };
+      const existing = courses[idx];
+      if (isProvenSpocCourse(existing) && isWeakMoocPatch(course)) {
+        // Drop the patch whole, not just courseType: the weak patch also carries
+        // a MOOC termId, and overwriting the SPOC route termId would break the
+        // temporary-proxy route. lastSeen still advances so proxy picking sees
+        // the course as recently active.
+        courses[idx] = { ...existing, lastSeen };
+        return courses;
+      }
+      courses[idx] = { ...existing, ...course, lastSeen };
     } else {
       courses.push({ ...course, firstSeen: course.firstSeen || lastSeen, lastSeen });
     }
@@ -1654,6 +1720,31 @@ function apiCoerceJson(input) {
   return null;
 }
 
+// The content script reports only what it fetched. The click target and the
+// collision-proof SPOC evidence live on the stored Course record, which the SW
+// owns, so resolve them here rather than trusting a round-tripped echo:
+//   - pageUrl      — the route URL frozen by COURSE_UPDATE from the page the user
+//                    actually opened. API items must inherit it, because their own
+//                    termId is the API id, which is the wrong `tid` for a route.
+//   - activeTermId — proves SPOC even when courseType was demoted (see above).
+// A page-supplied pageUrl still wins when present: the page-hook path captured
+// its response from that exact URL.
+async function resolveCourseForExtraction(course) {
+  if (!course || !course.courseId) return course;
+  try {
+    const courses = await getCourses();
+    const stored = courses.find(c => c && c.courseId === course.courseId);
+    if (!stored) return course;
+    return {
+      ...course,
+      courseType: isProvenSpocCourse(stored) ? 'spoc' : (course.courseType || stored.courseType || ''),
+      pageUrl: course.pageUrl || stored.pageUrl || ''
+    };
+  } catch {
+    return course;
+  }
+}
+
 function apiExtractHomework(input, course) {
   const data = apiCoerceJson(input);
   if (!data || !course) return [];
@@ -1703,6 +1794,10 @@ function apiExtractHomework(input, course) {
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
           title: name.trim(), type: apiClassifyType(name, node.contentType || nt2.type || null),
           courseName: course.courseName || '', schoolName: course.schoolName || '',
+          // Kept in sync with src/shared/icourse163-api.js extractHomeworkFromTermDto:
+          // items must self-describe their route type, otherwise a demoted Course
+          // record is the only thing deciding /learn/ vs /spoc/learn/.
+          courseType: course.courseType || '',
           status: done ? 'completed' : 'unfinished',
           checkedOff: done, manuallyCheckedOff: false,
           autoDetectedCompleted: done, completionReason: done ? 'auto' : null,

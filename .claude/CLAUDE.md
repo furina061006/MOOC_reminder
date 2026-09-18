@@ -57,8 +57,10 @@ src/
 
 ### 消息协议
 
-- `BATCH_API_FETCH {courses, proxyJobId?}` — SW → CS，触发批量 API 抓取；正常路径发给最近活跃学习页，临时路径附带持久化任务 ID
-- `COURSE_API_DATA {course, rawData}` — CS → SW，API 原始响应
+- `BATCH_API_FETCH {courses, proxyJobId?}` — SW → CS，触发批量 API 抓取；正常路径发给最近活跃学习页，临时路径附带持久化任务 ID。`courses[]` 的 `termId` 是抓取用的 termId（SPOC 下为 `activeTermId`）、`courseType` 由 `activeTermId` 推导（见关键不变量 9），**不含路由 URL**
+- `COURSE_API_DATA {course, rawData}` — CS → SW，API 原始响应。`course` 只声明「抓到了什么」（courseId / 抓取 termId / courseType / 来源页 URL）；点击目标与 SPOC 证据由 SW 从存储的 Course 记录解析（`resolveCourseForExtraction`）
+- `COURSE_UPDATE {courseId, activeTermId, courseName, courseType, routeUrl}` — CS(main.js，**仅在真实 SPOC 页发起**) → SW；持久化 SPOC 真实 termId，并把 `routeUrl`（`window.location.href`）冻结为 `course.pageUrl`
+- `COURSE_LINKS {courses[]}` — CS(course-discovery) → SW；上报从 icourse163 各页采集到的课程链接，`courseType` 仅按 href 是否含 `/spoc/` 判定，属**弱信号**
 - `TEMPORARY_PROXY_BATCH_COMPLETE {proxyJobId, resultCount}` — CS → SW，临时批量中的所有 `COURSE_API_DATA` 已发出；支持 Service Worker 被回收后恢复清理
 - `PAGE_OPENED` — CS(main.js init) → SW；匹配临时 tab ID 时立即开始该任务，否则按 30 分钟节流触发常规全课程刷新
 - `TRIGGER_SCRAPE` — Popup → SW，手动刷新
@@ -242,6 +244,29 @@ var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
 3. **确认真实 termId**：打开 Network 标签过滤 `rpc`，刷新页面看页面自身 API 请求中的 `termId` 参数值
 4. **更新 bridge**：在 `spoc-tid-bridge.js` 和 `xhr-hook.js` 中加入新变量名
 
+### 点击跳转目标（SPOC 路由 URL）
+
+**症状**：popup 里点 SPOC 作业，打开的是同名普通 MOOC 课程页；过一会儿课程标题也从 SPOC 名变成 MOOC 名。
+
+**根因（三层叠加，2026-09 修复）**：
+
+1. `course.pageUrl` 曾有读取点（`buildTemporaryProxyUrl`、extractor）却**零写入点**，所以 `resolveItemUrl` 的 pageUrl 分支是死的，永远退回按 `courseType` 拼 URL
+2. SW 内联的 `apiExtractHomework` 漏了 `courseType` 字段（shared 副本有），条目无法自证路由类型，只能依赖课程记录
+3. `upsertCourse` 只按 `courseId` 建索引，而 **SPOC 与同名 MOOC 共享同一个 `courseId`**；`course-discovery.js` 把任何不含 `/spoc/` 的 href 判为 `'mooc'`，于是普通 `/learn/` 链接会把 SPOC 记录浅合并覆盖掉
+
+**修复规则**：
+
+| 规则 | 位置 |
+|---|---|
+| SPOC 页把 `window.location.href` 作为 `routeUrl` 上报 → 冻结为 `course.pageUrl` | `main.js` → `COURSE_UPDATE` |
+| `activeTermId` 存在即证明是 SPOC（只由真实 SPOC 页写入） | `isProvenSpocCourse()` |
+| 已证明 SPOC 的课程**整条拒绝**弱 `'mooc'` patch（含 termId/name） | `upsertCourse` |
+| 抓取时用存储记录补 `pageUrl` 与有效 `courseType` | `resolveCourseForExtraction()` |
+| 条目继承 `pageUrl`，`resolveItemUrl` 优先用它（前缀与 `tid` 都来自真实 URL） | `apiExtractHomework` / `item-url.js` |
+| reconcile **不写** `pageUrl` 和 `termId`（见不变量 10） | `reconcileHomeworkData` |
+
+**为什么必须用真实 URL 而不是拼**：SPOC 的 `item.termId` 是 **API id**（如 1476504498），而路由 `?tid=` 需要 **路由壳 id**（如 1476735472）。前缀与 `tid` 只有用户浏览器真实打开过的那个 URL 能同时给对，所以 `resolveItemUrl` 的 pageUrl 优先级最高。**旧数据恢复**：升级后打开一次 SPOC 课程页即可冻结正确的 `pageUrl`。
+
 ### 涉及文件
 
 - `src/content/spoc-tid-bridge.js` — WAR 脚本，页面上下文读 window.moocTermDto.id
@@ -422,10 +447,14 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 2. **`courses` 的所有读-改-写必须走 `mutateCourses`**（同一串行锁工厂）。`COURSE_LINKS` 循环注册、`COURSE_UPDATE`（SPOC 真实 termId）和每个 `COURSE_API_DATA` 的 reconcile 都会并发写课程；裸读-改-写会丢课或把 `activeTermId` 回退。`upsertCourse()` 是唯一入口，`RESET_DATA` 也用 `mutateCourses(() => [])` 清空。
 3. **SNOOZE 必须同时清 `lastNotificationLevel`**，否则 snooze 到期后同档位永不再提醒（对已过期条目致命）。
 4. **digest 先 create 成功再写 `last_digest_date`**；免打扰命中时创建一次性 `daily-digest-retry` alarm 而不是静默丢弃。
-5. 点击通知用 `resolveItemUrl(item, courseType)`（shared/item-url.js）兜底重建 URL——API 条目没有 pageUrl。**必须传入课程类型**（或条目自带 `courseType`）：SPOC 在 `/spoc/learn/`，普通课程在 `/learn/`。popup.js 保留一份必须同步的镜像实现。
+5. 点击通知/popup 行用 `resolveItemUrl(item, courseType)`（shared/item-url.js）兜底重建 URL。**`item.pageUrl` 优先级最高**：它一旦存在（SPOC 条目从 `course.pageUrl` 继承真实路由 URL），路径前缀与 `?tid=` 都取自真实 URL，比任何 `courseType` 猜测都可靠。没有 pageUrl 时才按课程类型拼：SPOC 在 `/spoc/learn/`，普通课程在 `/learn/`。**必须传入课程类型**（或条目自带 `courseType`）。popup.js 保留一份必须同步的镜像实现（含 `courseTypeFor`）。
 6. `notifyLeadHours: []`（显式空数组）= 用户关闭所有提前档位，normalizeSettings 不得回退默认值；仅字段缺失才用默认。
 7. **临时代理任务只能写 `temporary_proxy_job`，不能借用 `scrape_status`**。先落盘再 `tabs.update()` 导航；只可清理由该持久化 job ID 认领的 tab，现有用户标签页永不关闭。
 8. **「清理已完成」依赖 tombstone**：`CLEAR_COMPLETED` 删除条目的同时把 UID 记入 `dismissed_completed_uids`；reconcile 遇到同 UID 的**已完成**新条目时跳过，遇到**未完成**时删除 tombstone 并放行。没有这层过滤，下一次同步会把清理掉的作业重新写回。
+9. **`activeTermId` 是 SPOC 的唯一可靠证据**：它只由 `COURSE_UPDATE` 写入，而 `main.js` 只在真实 `/spoc/learn/` 页面发送 `COURSE_UPDATE`。因此凡是要判断「这门课是不是 SPOC」，先看 `activeTermId`（`isProvenSpocCourse()`），再看 `courseType`；`buildApiCourseList`、`courseTypeFor`（popup）、通知点击、`getProxyRouteTermId` 都必须遵守这个优先级。反过来，`COURSE_LINKS` 的 `courseType` 只是「href 里有没有 `/spoc/`」，属弱信号。
+10. **Course 的 `pageUrl` 和 `termId` 只由真实页面写入**：`pageUrl` 只能由 `COURSE_UPDATE` 冻结（`isIcCourseLearnUrl()` 校验 origin/路径/`tid`），`termId` 只能由 `COURSE_LINKS`/`COURSE_UPDATE` 写入。`reconcileHomeworkData` **必须排除这两个字段**：API payload 的 `termId` 是抓取用的 termId（SPOC 下等于 `activeTermId`，是 API id 而非路由壳 id），写进去会毁掉 `?tid=`；`pageUrl` 的空值会抹掉已冻结的 SPOC 路由 URL。
+11. **`courses` 一门课只存一条记录（键 = `courseId`）**，而 SPOC 与同名 MOOC **共享 `courseId`**。因此已证明 SPOC 的课程必须整条拒绝弱 `'mooc'` patch（`upsertCourse` 内的 `isProvenSpocCourse` + `isWeakMoocPatch`），否则标题会变成 MOOC 名、点击目标会变成 `/learn/`。**已知代价**：同一 `courseId` 的 MOOC 与 SPOC 无法作为两条记录并存（SPOC 优先）。
+12. **`src/shared/icourse163-api.js` 与 SW 内联的 `apiExtractHomework` 是两份拷贝**（SW 无 import，运行时用内联版）。改任何一侧都必须同步另一侧——2026-09 就是因为运行时副本漏了 `courseType` 才让 SPOC 条目无法自证路由类型。settings 已改为 import 消除了同类漂移，这两个 extractor 尚未合并。
 
 ### 测试结构
 
@@ -458,14 +487,18 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
   checkedOff, manuallyCheckedOff, autoDetectedCompleted, completionReason,
   hwPhase, deadline, score, totalScore, source, pageUrl }
 ```
-- `courseType`: 'mooc' | 'spoc' | 'manual'；API 条目从 course 记录带出，用于点击跳转时选择 `/learn/` 或 `/spoc/learn/`。旧条目可能没有该字段，因此 `resolveItemUrl(item, courseType)` 支持调用方显式传入课程类型兜底。
+- `courseType`: 'mooc' | 'spoc' | 'manual'；由 `apiExtractHomework` 写入（两份拷贝必须一致，见不变量 12），用于点击跳转时选择 `/learn/` 或 `/spoc/learn/`。旧条目可能没有该字段，因此 `resolveItemUrl(item, courseType)` 支持调用方显式传入课程类型兜底。
+- `pageUrl`: API 条目由 `resolveCourseForExtraction()` 从 `course.pageUrl` 继承——即 SPOC 的真实路由 URL。**它一旦存在，`resolveItemUrl` 完全不看 `courseType`**（不变量 5）。
 
 ### Course 结构
 ```
 { courseId, termId, activeTermId, courseName, schoolName, courseType, pageUrl }
 ```
-- `courseType`: 'mooc' | 'spoc' | 'manual'
-- `courseId`: `{school}-{numericId}` 格式
+- `courseType`: 'mooc' | 'spoc' | 'manual'（弱信号，可能被链接采集降级）
+- `courseId`: `{school}-{numericId}` 格式；**一门课只有一条记录（唯一键）**，SPOC 与同名 MOOC 会碰撞，SPOC 优先（不变量 11）
+- `termId`: **路由 termId**（learn URL 的 `?tid=`），来自链接采集/真实页面。**绝不能被 API 抓取用的 termId 覆盖**（不变量 10）
+- `activeTermId`: SPOC 真实 termId（API id）。只由真实 SPOC 页写入，是「这门课是 SPOC」的唯一可靠证据（不变量 9）
+- `pageUrl`: 真实 SPOC 路由 URL，由 `COURSE_UPDATE` 冻结；点击跳转的首选来源
 
 ---
 
@@ -489,6 +522,8 @@ badge-refresh tick（或任何 updateBadgeFromStorage 调用）
 - `NTESSTUDYSI` 是 HttpOnly cookie，需 chrome.cookies API 读取
 - SW 的 `fetch()` 无法通过 icourse163.org CSRF 认证（origin 不匹配），必须由 content script 发起同源 XHR
 - SPOC 页面 `getOpenHomeworkInfo.rpc` 不可用，缺少 submitStatus 补充字段
+- **同一 `courseId` 的 SPOC 与普通 MOOC 无法并存**：`courses` 以 `courseId` 为唯一键，两者会碰撞，目前规则是 SPOC 优先（不变量 11）。若用户同时选修同名 MOOC 与 SPOC，只能看到一个课程分组
+- **SPOC 课程需要至少打开过一次学习页**，才能把真实路由 URL 冻结进 `course.pageUrl`；否则旧的 SPOC 条目只能退回用 `courseType` + 抓取 termId 拼 URL（前缀对，`?tid=` 是 API id）。从旧版本升级后请打开一次 SPOC 课程页
 
 ---
 
