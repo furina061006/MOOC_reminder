@@ -1691,7 +1691,19 @@ async function performPeriodicScrape(source) {
       const ignoredCourseIds = normalizeSettings(await getUserSettings()).ignoredCourseIds || [];
       const apiCourses = buildApiCourseList(courses, ignoredCourseIds);
       if (apiCourses.length === 0) {
-        return { success: false, error: '没有可抓取的已载入课程', tabsScanned: 0 };
+        // This used to return in TOTAL silence, which made 「popup 一点都抓不到」
+        // almost undiagnosable: the empty popup blamed the login and neither the
+        // console nor 错误报告 said anything. Say which of the two reasons it is,
+        // and record it so the popup/设置页 can show it too.
+        const trackable = courses.filter(c => c && c.courseType !== 'manual' && c.courseId);
+        const reason = courses.length === 0
+          ? '还没有任何已载入的课程：请先打开一次 icourse163 的课程学习页'
+          : trackable.length === 0
+            ? '没有可抓取的已载入课程（已知的只有手动提醒条目）'
+            : '所有课程都被跳过（共 ' + courses.length + ' 门；已忽略 ' + ignoredCourseIds.length + ' 门）';
+        console.warn('[MOOC Reminder] Periodic scrape skipped:', reason);
+        await addSyncError('抓取跳过：' + reason);
+        return { success: false, error: reason, tabsScanned: 0 };
       }
 
       const tabs = await chrome.tabs.query({

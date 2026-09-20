@@ -543,6 +543,44 @@ test('manual closure of a temporary proxy clears its job without closing another
   assert.equal(h.alarmsCreated.has('temporary-proxy-timeout'), false);
 });
 
+test('an empty course list reports itself instead of failing silently', async () => {
+  // Regression: performPeriodicScrape used to bail out here without logging and
+  // without recording an error, so an empty popup had no explanation anywhere —
+  // neither 错误报告 nor the Service Worker console.
+  h.storageData.set('courses', []);
+  h.storageData.set('sync_errors', []);
+  h.tabsCreated.length = 0;
+
+  const logs = [];
+  const original = console.warn;
+  console.warn = (...args) => logs.push(args.map(String).join(' '));
+  let result;
+  try {
+    result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+  } finally {
+    console.warn = original;
+  }
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /还没有任何已载入的课程/);
+  assert.ok(logs.some(l => l.includes('Periodic scrape skipped')), 'the bail must be logged');
+  const errors = h.storageData.get('sync_errors') || [];
+  assert.ok(errors.some(e => /抓取跳过/.test(e.error)), 'and must reach 错误报告');
+  assert.equal(h.tabsCreated.length, 0);
+});
+
+test('a fully-ignored course list says so rather than blaming the login', async () => {
+  seedCourses([{ courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' }]);
+  h.storageData.set('user_settings', { ignoredCourseIds: ['BIT-1'] });
+  h.storageData.set('sync_errors', []);
+
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /都被跳过/, result.error);
+  assert.match(result.error, /已忽略 1 门/);
+});
+
 test('manual refresh reports no proxy when only manual courses are known', async () => {
   h.tabsCreated.length = 0;
   h.tabsRemoved.length = 0;

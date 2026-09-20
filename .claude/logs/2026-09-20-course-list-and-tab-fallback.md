@@ -94,3 +94,32 @@ term 列表的**唯一所有者是 SW**，DOM 属性只剩 `init()` 里持久化
 - **删除的语义可能需按用户反馈调整**（见上）。
 - `main.js` 的 `checkPageHookData` 仍丢弃路由 term 的钩子数据；本次只删了 termId 覆盖，未动
   `sendTid`。批量抓取已覆盖两个 term，所以只是「首次打开页面时的即时性」问题。已在 backlog。
+
+## 三、后续：用户报「还是抓取不到一点」
+
+用户给的 Service Worker 日志是关键证据：
+
+```
+[MOOC Reminder] Manual scrape triggered
+[MOOC Reminder] Periodic scrape started      ← 之后什么都没有
+```
+
+`Periodic scrape started` 之后**再无任何输出**。把 `performPeriodicScrape` 的每条出口逐一对照后，
+只有一条路是**完全静默**的：
+
+```js
+const apiCourses = buildApiCourseList(courses, ignoredCourseIds);
+if (apiCourses.length === 0) {
+  return { success: false, error: '没有可抓取的已载入课程', tabsScanned: 0 };  // 无日志、无 sync_error
+}
+```
+
+即**课程列表为空**，抓取在第一步就退出 —— 与「一点都抓不到」完全吻合。`periodicScrapeInFlight`
+每次都是 null（否则不会打印 "started"），所以不是卡住。
+
+**这行静默 return 本身就是缺陷**：它让「popup 空白」既不在 Console 留痕、也不进 `sync_errors`，
+于是用户只看到「请先登录 MOOC」这类误导提示。已改为按三种情况分别报告（无课程 / 只有手动条目 /
+全部被忽略或跳过滤），并写入 `sync_errors` 让设置页与 popup 都能显示。
+
+**教训（与近失日志同源）**：**任何提前 return 都必须留下可被用户看到的痕迹**，
+否则排查只能靠读代码猜出口。
