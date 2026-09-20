@@ -312,9 +312,13 @@ test('manual refresh creates one temporary proxy, waits for its PAGE_OPENED, the
 
   assert.equal(pageOpened.temporaryProxy, true);
   assert.equal(batches.length, 1);
+  // NEU-200 is SPOC with distinct route (202) and active (303) terms, so the batch
+  // carries one entry per term: the teacher's own additions live in the route term
+  // while the source course lives in the active one. Fetching only 303 is the bug
+  // that hid the 线上学习任务 group.
   assert.deepEqual(
     batches[0].msg.courses.map(course => [course.courseId, course.termId]),
-    [['BIT-100', '101'], ['NEU-200', '303']]
+    [['BIT-100', '101'], ['NEU-200', '303'], ['NEU-200', '202']]
   );
   assert.equal(result.success, true);
   assert.equal(result.temporaryProxy, true);
@@ -1099,4 +1103,138 @@ test('GET_UPDATE_STATUS reports the running version without a network call', asy
   assert.equal(resp.success, true);
   assert.equal(resp.currentVersion, '1.0.0');
   assert.equal(fetchCalls.length, 0, 'rendering the options page must not hit the network');
+});
+
+// ── SPOC split across two terms (backlog: 老师新增的「线上学习任务」抓不到) ──
+//
+// Real data captured 2026-09 from 模拟电子技术基础 (NEU-1486374162):
+//   route term 1488279445 → 2 chapters: 线上学习任务 (3 quizs) + 翻转课堂 (1 homework)
+//   active/source term 1488001444 → the 10 source chapters (第一章 测验 …)
+// The page renders both groups side by side; the extension fetched only the active
+// term, so the teacher's additions never arrived.
+
+const SOURCE_TERM = '1488001444';
+const ROUTE_TERM = '1488279445';
+const MODE_SPOC = {
+  courseId: 'NEU-1486374162',
+  termId: ROUTE_TERM,
+  activeTermId: SOURCE_TERM,
+  courseName: '模拟电子技术基础',
+  courseType: 'spoc',
+  pageUrl: 'https://www.icourse163.org/spoc/learn/NEU-1486374162?tid=' + ROUTE_TERM + '#/learn/quiz'
+};
+
+const chapterDto = (chapters) => ({ result: { mocTermDto: { chapters } } });
+const sourceChapters = [{
+  id: 1252590041, name: '第一章 半导体二极管、三极管和场效应管(第二部分)', type: 'chapter',
+  lessons: [{ id: 11, name: '1.1', type: 'lesson', units: [
+    { id: 1278666208, name: '第一章 测验', contentType: 2, test: { deadline: 1797502200000, totalScore: 35 } }
+  ] }]
+}];
+const teacherChapters = [
+  {
+    id: 9001, name: '线上学习任务', type: 'chapter',
+    quizs: [
+      { id: 1279275088, name: '“关于Multisim和场效应管的学习” 对应的测试（做这个）', contentType: 2, test: { deadline: 1795966200000, totalScore: 12 } },
+      { id: 1279274323, name: '“图解分析法和计算分析法1”对应测试', contentType: 2, test: { deadline: 1795966200000 } },
+      { id: 1279271405, name: '“关于Multisim和场效应管的学习” 对应的测试', contentType: 2, test: { deadline: 1795966200000 } }
+    ]
+  },
+  {
+    id: 9002, name: '二极管应用仿真设计（翻转课堂）', type: 'chapter',
+    homeworks: [
+      { id: 1278916499, name: '二极管应用仿真设计', contentType: 3, test: { deadline: 1792942200000, type: 3 } }
+    ]
+  }
+];
+
+test('a SPOC course is refreshed for BOTH its route and active terms', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 77, lastAccessed: 5000 }]);
+  seedCourses([MODE_SPOC]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await new Promise(r => setTimeout(r, 1500));
+
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch, 'expected a BATCH_API_FETCH');
+  const mine = batch.msg.courses.filter(c => c.courseId === 'NEU-1486374162');
+  assert.deepEqual(mine.map(c => c.termId).sort(), [SOURCE_TERM, ROUTE_TERM].sort(),
+    'both the source term and the teacher-content route term must be fetched');
+  for (const c of mine) assert.equal(c.courseType, 'spoc');
+});
+
+test('a non-SPOC course still yields exactly one batch entry', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 78, lastAccessed: 5000 }]);
+  seedCourses([{ courseId: 'BIT-268001', termId: '1460270441', courseName: '数据结构', courseType: 'mooc' }]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await new Promise(r => setTimeout(r, 1500));
+
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch);
+  assert.equal(batch.msg.courses.filter(c => c.courseId === 'BIT-268001').length, 1);
+});
+
+test('a clobbered course.termId is recovered from the frozen pageUrl tid', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 79, lastAccessed: 5000 }]);
+  // Older builds overwrote course.termId with the API id; pageUrl still knows the
+  // route term the user actually opened.
+  seedCourses([Object.assign({}, MODE_SPOC, { termId: SOURCE_TERM })]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await new Promise(r => setTimeout(r, 1500));
+
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch);
+  const terms = batch.msg.courses.filter(c => c.courseId === 'NEU-1486374162').map(c => c.termId).sort();
+  assert.deepEqual(terms, [SOURCE_TERM, ROUTE_TERM].sort());
+});
+
+test('teacher content from the route term lands beside the source content', async () => {
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('dismissed_completed_uids');
+  seedCourses([MODE_SPOC]);
+
+  const source = await sendMessage({
+    type: 'COURSE_API_DATA',
+    course: { courseId: 'NEU-1486374162', termId: SOURCE_TERM, courseName: '模拟电子技术基础', schoolName: '', courseType: 'spoc' },
+    rawData: chapterDto(sourceChapters)
+  });
+  const teacher = await sendMessage({
+    type: 'COURSE_API_DATA',
+    course: { courseId: 'NEU-1486374162', termId: ROUTE_TERM, courseName: '模拟电子技术基础', schoolName: '', courseType: 'spoc' },
+    rawData: chapterDto(teacherChapters)
+  });
+
+  assert.equal(source.itemCount, 1);
+  assert.equal(teacher.itemCount, 4);
+
+  const items = storedItems();
+  assert.equal(items.length, 5, 'no item from either term may be dropped or duplicated');
+  assert.deepEqual(items.map(i => i.title).sort(), [
+    '“关于Multisim和场效应管的学习” 对应的测试',
+    '“关于Multisim和场效应管的学习” 对应的测试（做这个）',
+    '“图解分析法和计算分析法1”对应测试',
+    '二极管应用仿真设计',
+    '第一章 测验'
+  ].sort());
+
+  // Teacher items are keyed by the ROUTE term, so their UIDs cannot collide with
+  // the source term's items.
+  const teacherItem = items.find(i => i.title === '二极管应用仿真设计');
+  assert.equal(teacherItem.termId, ROUTE_TERM);
+  assert.ok(teacherItem.uid.includes('tid' + ROUTE_TERM));
 });

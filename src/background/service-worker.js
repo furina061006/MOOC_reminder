@@ -1241,21 +1241,58 @@ function pickApiProxyTab(tabs) {
   return sorted[0];
 }
 
+// A SPOC course can be split across TWO terms, and the page renders both side by
+// side:
+//   - the ROUTE term — the `?tid=` the user actually opens. Carries the teacher's
+//     own additions (verified 2026-09 on 模拟电子技术基础: term 1488279445 held
+//     only the 线上学习任务 / 翻转课堂 chapters).
+//   - the ACTIVE/source term — `window.moocTermDto.id`, the source MOOC course the
+//     SPOC was cloned from (same course: term 1488001444 held the 10 source
+//     chapters).
+// They are disjoint, and `isSameHomeworkCandidate` refuses to merge across
+// termIds, so fetching only one silently loses half the course — which is exactly
+// how the teacher's 线上学习任务 group went missing. Emit one entry per term.
 function buildApiCourseList(courses) {
-  return (Array.isArray(courses) ? courses : [])
-    .filter(course => course && course.courseType !== 'manual' && course.courseId && (course.activeTermId || course.termId))
-    .map(course => ({
-      courseId: course.courseId,
-      termId: course.activeTermId || course.termId || '',
-      courseName: course.courseName || '',
-      schoolName: course.schoolName || '',
-      // activeTermId is written ONLY by COURSE_UPDATE, which main.js sends ONLY
-      // from a genuine SPOC page. So its presence proves SPOC regardless of what
-      // courseType says — a /learn/ discovery harvest of the same courseId may
-      // have demoted courseType to 'mooc'. Deriving the effective type here keeps
-      // SPOC items correctly labelled all the way to the popup click target.
-      courseType: course.activeTermId ? 'spoc' : (course.courseType || '')
-    }));
+  const out = [];
+  for (const course of (Array.isArray(courses) ? courses : [])) {
+    if (!course || course.courseType === 'manual' || !course.courseId) continue;
+    // activeTermId is written ONLY by COURSE_UPDATE, which main.js sends ONLY
+    // from a genuine SPOC page. So its presence proves SPOC regardless of what
+    // courseType says — a /learn/ discovery harvest of the same courseId may have
+    // demoted courseType to 'mooc'. Deriving the effective type here keeps SPOC
+    // items correctly labelled all the way to the popup click target.
+    const provenSpoc = isProvenSpocCourse(course);
+    const courseType = provenSpoc ? 'spoc' : (course.courseType || '');
+
+    const terms = [];
+    const active = String(course.activeTermId || course.termId || '');
+    if (active) terms.push(active);
+    if (provenSpoc) {
+      // 路由 term：老师自己加的内容在这里。非 SPOC 不扩展 —— MOOC 的 active 与路由
+      // 本来就是同一个 id，扩展了也只会重复。
+      // pageUrl 是 COURSE_UPDATE 冻结的「用户真实打开过的 URL」，它的 ?tid= 比
+      // course.termId 更可靠：旧版本曾把 termId 覆盖成 API id（不变量 10），
+      // 那些历史记录要靠这里救回来。
+      const routeCandidates = [String(course.termId || '')];
+      const fromPage = /[?&]tid=(\d+)/.exec(String(course.pageUrl || ''));
+      if (fromPage) routeCandidates.push(fromPage[1]);
+      for (const route of routeCandidates) {
+        if (route && route !== 'manual' && !terms.includes(route)) terms.push(route);
+      }
+    }
+    if (terms.length === 0) continue;
+
+    for (const termId of terms) {
+      out.push({
+        courseId: course.courseId,
+        termId,
+        courseName: course.courseName || '',
+        schoolName: course.schoolName || '',
+        courseType
+      });
+    }
+  }
+  return out;
 }
 
 function getProxyRouteTermId(course) {
@@ -1463,7 +1500,9 @@ async function createTemporaryProxyJob(courses, source) {
       proxyUrl,
       createdAt,
       deadlineAt: createdAt + TEMPORARY_PROXY_TIMEOUT_MS,
-      expectedCourseIds: buildApiCourseList(courses).map(course => course.courseId)
+      // A SPOC course now contributes one batch entry per term, so dedupe: this is
+      // a set of course ids to wait for, not a per-request count.
+      expectedCourseIds: [...new Set(buildApiCourseList(courses).map(course => course.courseId))]
     };
     activeTemporaryProxyJob = job;
     const completion = createTemporaryProxyWaiter(job);
@@ -1983,6 +2022,12 @@ function apiExtractHomework(input, course) {
     const nextChapter = node.chapterId || (looksLikeChapter(node) ? node.id : chapterId);
     const nextLesson = node.lessonId || (looksLikeLesson(node) ? node.id : lessonId);
     for (const key of Object.keys(node)) {
+      // `test` 是节点自身的元数据，不是子作业 —— 它自带 name/type/deadline，
+      // 访问它会以 test.id 为 homeworkId 再生成一条重复条目（2026-09 在真实 DTO
+      // 上实测：「第一章 测验」和三条 Multisim 测验都中招，只因为末尾的同名去重
+      // 才没露出）。所需字段都通过 node.test 显式读取，故跳过该子树。
+      // 与 src/shared/icourse163-api.js 保持一致（不变量 12）。
+      if (key === 'test') continue;
       const v = node[key];
       if (v && typeof v === 'object') {
         visit(v, nextChapter, nextLesson);

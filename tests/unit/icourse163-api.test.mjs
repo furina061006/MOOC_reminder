@@ -168,3 +168,26 @@ test('the near-miss report is capped so a large DTO cannot flood the console', (
   assert.equal(reported.length, 6, '5 real entries plus an ellipsis marker');
   assert.equal(reported[5], '…');
 });
+
+test('a node.test sub-object never becomes a second item', () => {
+  // Real shape (2026-09): the assessment node and its `test` metadata BOTH carry a
+  // name that matches the keyword regex, but with different ids — parent id vs
+  // test.id. Recursing into `test` used to mint a duplicate item keyed by test.id.
+  const deadline = Date.now() + 86400000;
+  const dto = dtoWithUnits([
+    {
+      id: 1278666208, name: '第一章 测验', contentType: 2,
+      test: { id: 1258634750, name: '第一章 测验', type: 2, deadline, totalScore: 35 }
+    }
+  ]);
+
+  const items = extractHomeworkFromTermDto(dto, { courseId: 'NEU-1', termId: '1488001444' });
+
+  assert.equal(items.length, 1, 'the test sub-object must not be extracted separately');
+  assert.ok(items[0].uid.includes('hw1278666208'), 'kept item is keyed by the parent id');
+
+  // The duplicate used to be hidden by the name-prefix dedup; that safety net is
+  // name-based and fragile, so assert it is not needed in the first place.
+  assert.deepEqual(items.map((i) => i.title), ['第一章 测验']);
+});
+

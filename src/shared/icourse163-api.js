@@ -325,6 +325,13 @@ export function extractHomeworkFromTermDto(input, course) {
     const nextChapter = node.chapterId || (looksLikeChapter(node) ? node.id : chapterId);
     const nextLesson = node.lessonId || (looksLikeLesson(node) ? node.id : lessonId);
     for (const key of Object.keys(node)) {
+      // `test` is this node's own metadata, not a child assessment — and it carries
+      // its own `name`/`type`/`deadline`. Visiting it minted a SECOND item keyed by
+      // test.id (verified 2026-09 on real DTOs: "第一章 测验" plus all three
+      // Multisim quizs). Those only disappeared because the name-prefix dedup below
+      // happens to collapse identical titles. Everything we need is read through
+      // `node.test` explicitly, so skip the sub-tree.
+      if (key === 'test') continue;
       const v = node[key];
       if (v && typeof v === 'object') {
         visit(v, nextChapter, nextLesson);
