@@ -1681,15 +1681,56 @@ async function runTemporaryProxyBatch(job) {
   return outcome;
 }
 
+const LEARN_TAB_URLS = [
+  'https://www.icourse163.org/learn/*',
+  'https://www.icourse163.org/spoc/learn/*'
+];
+
+/**
+ * Ask already-open learn pages to re-scan their course links.
+ *
+ * course-discovery reports each course once per page load, so a course list that was
+ * emptied (清除数据 / 删除课程) stays empty while those pages keep sitting there —
+ * the user would have to reload a page by hand. Returns true when at least one page
+ * was asked to re-scan.
+ */
+async function requestCourseRediscovery(tabs) {
+  let asked = 0;
+  for (const tab of (Array.isArray(tabs) ? tabs : [])) {
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_COURSE_LINKS' });
+      asked++;
+    } catch {
+      // No content script in that tab (page predates the extension reload) — skip.
+    }
+  }
+  if (asked === 0) return false;
+  // Give the pages a moment to harvest and send COURSE_LINKS back.
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  return true;
+}
+
 async function performPeriodicScrape(source) {
   if (periodicScrapeInFlight) return periodicScrapeInFlight;
 
   const run = (async function() {
     console.log('[MOOC Reminder] Periodic scrape started');
     try {
-      const courses = await getCourses();
+      let courses = await getCourses();
       const ignoredCourseIds = normalizeSettings(await getUserSettings()).ignoredCourseIds || [];
-      const apiCourses = buildApiCourseList(courses, ignoredCourseIds);
+      let apiCourses = buildApiCourseList(courses, ignoredCourseIds);
+
+      if (apiCourses.length === 0) {
+        // Normal right after 清除数据 / 删除课程 — but the open learn pages will not
+        // re-report on their own (course-discovery dedupes per page load), so without
+        // this nudge the list stays empty until the user reloads the page by hand.
+        const openedTabs = await chrome.tabs.query({ url: LEARN_TAB_URLS });
+        if (await requestCourseRediscovery(openedTabs)) {
+          courses = await getCourses();
+          apiCourses = buildApiCourseList(courses, ignoredCourseIds);
+        }
+      }
+
       if (apiCourses.length === 0) {
         // This used to return in TOTAL silence, which made 「popup 一点都抓不到」
         // almost undiagnosable: the empty popup blamed the login and neither the
@@ -1706,12 +1747,7 @@ async function performPeriodicScrape(source) {
         return { success: false, error: reason, tabsScanned: 0 };
       }
 
-      const tabs = await chrome.tabs.query({
-        url: [
-          'https://www.icourse163.org/learn/*',
-          'https://www.icourse163.org/spoc/learn/*'
-        ]
-      });
+      const tabs = await chrome.tabs.query({ url: LEARN_TAB_URLS });
       const candidates = (Array.isArray(tabs) ? tabs : [])
         .slice()
         .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));

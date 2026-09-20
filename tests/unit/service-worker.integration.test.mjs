@@ -543,6 +543,36 @@ test('manual closure of a temporary proxy clears its job without closing another
   assert.equal(h.alarmsCreated.has('temporary-proxy-timeout'), false);
 });
 
+test('an emptied course list is recovered from the open learn pages', async () => {
+  h.tabMessages.length = 0;
+  h.tabsCreated.length = 0;
+  h.storageData.set('courses', []);
+  h.storageData.set('sync_errors', []);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+  h.setTabsQuery([{ id: 95, lastAccessed: 5000 }]);
+  // course-discovery reports each course only once per page load, so the SW has to
+  // ask. Here the content script re-registers the course when asked.
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'REQUEST_COURSE_LINKS') {
+      seedCourses([{ courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' }]);
+      return { success: true };
+    }
+    if (msg && msg.type === 'BATCH_API_FETCH') return [{ courseId: 'BIT-1' }];
+    return true;
+  });
+
+  const res = await sendMessage({ type: 'PAGE_OPENED' });
+  assert.equal(res.refreshTriggered, true);
+  await new Promise(r => setTimeout(r, 2200));
+
+  const asked = h.tabMessages.filter(t => t.msg && t.msg.type === 'REQUEST_COURSE_LINKS');
+  assert.equal(asked.length, 1, 'the open learn page must be asked to re-report');
+  assert.equal(asked[0].tabId, 95);
+  assert.ok((h.storageData.get('courses') || []).length > 0, 'and the course comes back');
+  assert.ok(h.tabMessages.some(t => t.msg && t.msg.type === 'BATCH_API_FETCH'),
+    'so the refresh can proceed in the same pass');
+});
+
 test('an empty course list reports itself instead of failing silently', async () => {
   // Regression: performPeriodicScrape used to bail out here without logging and
   // without recording an error, so an empty popup had no explanation anywhere —
@@ -550,6 +580,10 @@ test('an empty course list reports itself instead of failing silently', async ()
   h.storageData.set('courses', []);
   h.storageData.set('sync_errors', []);
   h.tabsCreated.length = 0;
+  // Isolate from the rediscovery test above: with no learn tab open there is nobody
+  // to ask, so the empty list must be reported rather than silently ignored.
+  h.setTabMessageResponder(null);
+  h.setTabsQuery([]);
 
   const logs = [];
   const original = console.warn;

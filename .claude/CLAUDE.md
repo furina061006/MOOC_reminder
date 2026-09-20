@@ -430,6 +430,21 @@ hasSignal（有 deadline 或 分数）
    `window.moocTermDto`，2026-09 实测）。改为 DevTools → Network → 筛 `rpc` → 刷新页面 →
    找响应最大的请求 → Copy response，拿原始响应离线分析。
 
+### 两个操作性陷阱（先确认，再怀疑代码）
+
+1. **重载扩展不会给已打开的页面补注入 content script。** 在 `chrome://extensions` 点刷新后，
+   所有已打开的学习页都会失去内容脚本：`PAGE_OPENED` 不再发出、`course-discovery` 不再上报课程、
+   SW 发去的消息也没有接收方。**完整恢复步骤是「重载扩展 → 再刷新页面」**，只做前者会出现
+   「扩展看着是活的，但一点都抓不到」。SW 侧对这种情况会退到临时代理页兜底（见 `performPeriodicScrape`
+   的逐个标签页尝试），但**内容脚本侧只能靠页面刷新恢复**。
+2. **`course-discovery` 对同一个页面只上报一次**（`reported` 去重）。所以「清除数据 / 删除课程」之后，
+   已经打开的课程页不会再上报。为此 SW 在课程列表为空时会发 `REQUEST_COURSE_LINKS` 要求已打开页面
+   重新扫描（`requestCourseRediscovery`），用户不必手动刷新页面。
+
+另外：**任何提前 return 都必须留下用户可见的痕迹。** `performPeriodicScrape` 曾有一条完全静默的
+`apiCourses.length === 0` 出口，导致 popup 空白却查不到任何原因；现已按「无课程 / 只有手动条目 /
+全部被忽略」三种情况分别写日志与 `sync_errors`。
+
 > [!IMPORTANT]
 > **不要靠猜放宽门槛。** 让「有名字 + 有截止/分数」却被拒的节点静默消失，正是 2026-09
 > 「线上学习任务抓不到」排查困难的根因——contentType 成了不可诊断的黑盒。近失日志就是为此加的；
