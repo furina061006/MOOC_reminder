@@ -66,6 +66,15 @@ src/
 - `TRIGGER_SCRAPE` — Popup → SW，手动刷新
 - `GET_UPDATE_STATUS` — Options → SW，读取缓存的更新状态（**不发网络请求**，渲染设置页用）
 - `CHECK_UPDATES` — Options → SW，手动「检查更新」；**故意绕过 `autoCheckUpdates` 开关**（该开关管的是后台 tick，不是用户点击）
+- `GET_COURSE_LIST` — Options → SW，已追踪课程列表（含每门课的条目数 / 未完成数）+ 已忽略的 courseId 列表
+- `TOGGLE_COURSE_IGNORE {courseId, ignored?}` — Options → SW，忽略/恢复追踪；写 `user_settings.ignoredCourseIds`
+- `DELETE_COURSE {courseId}` — Options → SW，删除课程记录 + 它的作业条目 + 它的 tombstone（**不清** ignoredCourseIds，两者语义独立）
+
+> [!NOTE]
+> **「静音」与「忽略」是两件事**：静音只影响提醒与徽章，课程仍会被抓取（`mutedCourseIds`）；
+> 忽略是**停止追踪**，课程不再进入 `buildApiCourseList`，因此**不消耗任何 API 调用**（`ignoredCourseIds`）。
+> 忽略状态存在 settings 而不是 Course 记录上，这样 `course-discovery` 反复重新登记该课程也不会把忽略状态冲掉。
+> 删除则只清数据：若页面里仍有该课链接，它会被重新自动添加（用户想彻底不再见到它时应当用「忽略」）。
 
 ---
 
@@ -442,7 +451,7 @@ MOOC 作业按天更新、提醒阈值是 24h/48h 级，不需要高频轮询：
 | `badge-refresh` alarm | 默认每 12h | 纯本地重算徽章 + 截止提醒检查 |
 | `daily-digest` alarm | 默认关 | 启用后每天定时摘要；当天首次启动浏览器时补发临期摘要 |
 
-SW 唤醒从 ~336 次/天降到 ~102 次/天。`BATCH_API_FETCH` 只发给 `lastAccessed` 最新的一个现有学习页（发给所有标签页 = N 倍重复抓取）；没有现有学习页时最多创建一个扩展拥有的非激活代理页，任务成功、超时或关闭后清理。
+SW 唤醒从 ~336 次/天降到 ~102 次/天。`BATCH_API_FETCH` 按 `lastAccessed` 倒序**逐个**尝试现有学习页，用第一个能响应的（发给所有标签页 = N 倍重复抓取）。只有「对方没有 content script」这种确定性失败才会继续下一个，真超时仍明确失败。**一个学习页都没有、或全部都是扩展重载前打开的（没有 content script）**时，最多创建一个扩展拥有的非激活代理页兜底，任务成功、超时或关闭后清理。
 
 「完全脱离浏览器」（外部 cron/后端）不可行：登录 cookie 绑定浏览器 profile，扩展无法在浏览器外取用（与「无后端」设计决策一致）。
 

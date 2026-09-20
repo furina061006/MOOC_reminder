@@ -605,6 +605,72 @@ const MESSAGE_HANDLERS = {
     return { success: true, muted: settings.mutedCourseIds.indexOf(courseId) >= 0, settings };
   },
 
+  // Settings page: stop tracking a course. Unlike mute this also removes it from
+  // the refresh batch, so an unwanted course costs no API calls. Stored in settings
+  // (not on the Course record) so course-discovery re-registering the course cannot
+  // silently un-ignore it.
+  async TOGGLE_COURSE_IGNORE(msg) {
+    const courseId = String(msg.courseId || '').trim();
+    if (!courseId) return { success: false, error: 'Invalid payload' };
+    const settings = normalizeSettings(await getUserSettings());
+    const ignored = new Set(settings.ignoredCourseIds || []);
+    if (msg.ignored === false) ignored.delete(courseId);
+    else if (msg.ignored === true) ignored.add(courseId);
+    else if (ignored.has(courseId)) ignored.delete(courseId); else ignored.add(courseId);
+    settings.ignoredCourseIds = Array.from(ignored);
+    await chrome.storage.local.set({ [KEYS.USER_SETTINGS]: settings });
+    await updateBadgeFromStorage();
+    return { success: true, ignored: settings.ignoredCourseIds.indexOf(courseId) >= 0, settings };
+  },
+
+  // Settings page: drop a course and everything recorded for it.
+  async DELETE_COURSE(msg) {
+    const courseId = String(msg.courseId || '').trim();
+    if (!courseId) return { success: false, error: 'Invalid payload' };
+    await mutateCourses(courses => courses.filter(c => !c || c.courseId !== courseId));
+    await mutateHomeworkItems(items => items.filter(i => !i || i.courseId !== courseId));
+    // Drop this course's cleared-completed tombstones too. They exist to stop cleared
+    // items from being resurrected, but the items are gone now, and a stale tombstone
+    // would keep hiding items if the course is ever added again.
+    const tombstones = await getDismissedCompletedUids();
+    const kept = new Set(Array.from(tombstones).filter(uid => !String(uid).startsWith(courseId + '_')));
+    if (kept.size !== tombstones.size) await setDismissedCompletedUids(kept);
+    await updateBadgeFromStorage();
+    return { success: true, courseId };
+  },
+
+  // Settings page: the tracked-course list with per-course counts, plus which
+  // courses the user has ignored.
+  async GET_COURSE_LIST() {
+    const courses = await getCourses();
+    const items = await getHomeworkItems();
+    const settings = normalizeSettings(await getUserSettings());
+    const counts = new Map();
+    for (const item of items) {
+      if (!item || !item.courseId) continue;
+      const entry = counts.get(item.courseId) || { total: 0, unfinished: 0 };
+      entry.total++;
+      if (!item.checkedOff) entry.unfinished++;
+      counts.set(item.courseId, entry);
+    }
+    const list = courses
+      .filter(c => c && c.courseId && c.courseType !== 'manual')
+      .map(c => {
+        const count = counts.get(c.courseId) || { total: 0, unfinished: 0 };
+        return {
+          courseId: c.courseId,
+          courseName: c.courseName || '',
+          schoolName: c.schoolName || '',
+          courseType: isProvenSpocCourse(c) ? 'spoc' : (c.courseType || ''),
+          termId: c.termId || '',
+          activeTermId: c.activeTermId || '',
+          itemCount: count.total,
+          unfinishedCount: count.unfinished
+        };
+      });
+    return { success: true, courses: list, ignoredCourseIds: settings.ignoredCourseIds || [] };
+  },
+
   // Popup UI state persistence (filter + collapsed courses)
   async GET_POPUP_STATE() {
     const raw = await chrome.storage.local.get(KEYS.POPUP_UI_STATE);
@@ -962,7 +1028,11 @@ async function updateBadgeFromStorage() {
     const items = await getHomeworkItems();
     const settings = normalizeSettings(await getUserSettings());
     const mutedIds = new Set(settings.mutedCourseIds || []);
-    const unfinished = items.filter(i => !i.checkedOff && !mutedIds.has(i.courseId));
+    // Ignored courses are not tracked at all, so keep them out of the badge count —
+    // and therefore out of deadline notifications as well.
+    const ignoredIds = new Set(settings.ignoredCourseIds || []);
+    const unfinished = items.filter(i =>
+      !i.checkedOff && !mutedIds.has(i.courseId) && !ignoredIds.has(i.courseId));
     const count = unfinished.length;
 
     if (count === 0) {
@@ -1254,10 +1324,13 @@ function isContentScriptMissingError(error) {
 // They are disjoint, and `isSameHomeworkCandidate` refuses to merge across
 // termIds, so fetching only one silently loses half the course — which is exactly
 // how the teacher's 线上学习任务 group went missing. Emit one entry per term.
-function buildApiCourseList(courses) {
+function buildApiCourseList(courses, ignoredCourseIds) {
+  const ignored = ignoredCourseIds instanceof Set ? ignoredCourseIds : new Set(ignoredCourseIds || []);
   const out = [];
   for (const course of (Array.isArray(courses) ? courses : [])) {
     if (!course || course.courseType === 'manual' || !course.courseId) continue;
+    // 被用户忽略的课程不参与任何抓取（设置页「已追踪课程」）
+    if (ignored.has(course.courseId)) continue;
     // activeTermId is written ONLY by COURSE_UPDATE, which main.js sends ONLY
     // from a genuine SPOC page. So its presence proves SPOC regardless of what
     // courseType says — a /learn/ discovery harvest of the same courseId may have
@@ -1335,9 +1408,10 @@ function buildTemporaryProxyUrl(course) {
     '?tid=' + encodeURIComponent(routeTermId) + '#/learn/testlist';
 }
 
-function pickTemporaryProxyCourse(courses) {
+function pickTemporaryProxyCourse(courses, ignoredCourseIds) {
+  const ignored = ignoredCourseIds instanceof Set ? ignoredCourseIds : new Set(ignoredCourseIds || []);
   return (Array.isArray(courses) ? courses : [])
-    .filter(course => course && course.courseType !== 'manual' && buildTemporaryProxyUrl(course))
+    .filter(course => course && course.courseType !== 'manual' && !ignored.has(course.courseId) && buildTemporaryProxyUrl(course))
     .sort((a, b) => new Date(b.lastSeen || 0) - new Date(a.lastSeen || 0))[0] || null;
 }
 
@@ -1477,7 +1551,8 @@ async function createTemporaryProxyJob(courses, source) {
     return { success: false, pending: true, error: 'Temporary MOOC proxy is already running', temporaryProxy: true };
   }
 
-  const proxyCourse = pickTemporaryProxyCourse(courses);
+  const ignoredCourseIds = normalizeSettings(await getUserSettings()).ignoredCourseIds || [];
+  const proxyCourse = pickTemporaryProxyCourse(courses, ignoredCourseIds);
   const proxyUrl = buildTemporaryProxyUrl(proxyCourse);
   if (!proxyCourse || !proxyUrl) {
     return { success: false, error: '没有可用于后台刷新的已载入 MOOC 课程', temporaryProxy: false };
@@ -1504,7 +1579,7 @@ async function createTemporaryProxyJob(courses, source) {
       deadlineAt: createdAt + TEMPORARY_PROXY_TIMEOUT_MS,
       // A SPOC course now contributes one batch entry per term, so dedupe: this is
       // a set of course ids to wait for, not a per-request count.
-      expectedCourseIds: [...new Set(buildApiCourseList(courses).map(course => course.courseId))]
+      expectedCourseIds: [...new Set(buildApiCourseList(courses, ignoredCourseIds).map(course => course.courseId))]
     };
     activeTemporaryProxyJob = job;
     const completion = createTemporaryProxyWaiter(job);
@@ -1568,7 +1643,8 @@ async function runTemporaryProxyBatch(job) {
   let outcome;
   try {
     await setTemporaryProxyJobPhase(job, 'fetching');
-    const apiCourses = buildApiCourseList(await getCourses());
+    const ignoredCourseIds = normalizeSettings(await getUserSettings()).ignoredCourseIds || [];
+    const apiCourses = buildApiCourseList(await getCourses(), ignoredCourseIds);
     if (apiCourses.length === 0) throw new Error('没有可抓取的已载入课程');
 
     const remainingMs = Math.max(1, job.deadlineAt - Date.now());
@@ -1612,7 +1688,8 @@ async function performPeriodicScrape(source) {
     console.log('[MOOC Reminder] Periodic scrape started');
     try {
       const courses = await getCourses();
-      const apiCourses = buildApiCourseList(courses);
+      const ignoredCourseIds = normalizeSettings(await getUserSettings()).ignoredCourseIds || [];
+      const apiCourses = buildApiCourseList(courses, ignoredCourseIds);
       if (apiCourses.length === 0) {
         return { success: false, error: '没有可抓取的已载入课程', tabsScanned: 0 };
       }

@@ -22,6 +22,7 @@ const DEFAULTS = {
   dailyDigestEnabled: false,
   dailyDigestHour: 8,
   mutedCourseIds: [],
+  ignoredCourseIds: [],
   autoDismissErrors: true,
   showSnoozeButton: true,
   showCourseMute: true,
@@ -121,6 +122,7 @@ function collect() {
     dailyDigestEnabled: safeGetChecked('digest-enabled'),
     dailyDigestHour: safeGetInt('digest-hour', 8),
     mutedCourseIds: currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : [],
+    ignoredCourseIds: currentSettings && Array.isArray(currentSettings.ignoredCourseIds) ? currentSettings.ignoredCourseIds : [],
     autoDismissErrors: safeGetChecked('auto-dismiss-errors'),
     showSnoozeButton: safeGetChecked('show-snooze-btn'),
     showCourseMute: safeGetChecked('show-course-mute'),
@@ -356,6 +358,96 @@ function handleDownloadUpdate() {
   } catch { try { window.open(url, '_blank'); } catch { /* ignore */ } }
 }
 
+// ─── 已追踪课程 ────────────────────────────────────────
+//
+// 列出所有被追踪的课程，并允许「忽略」（停止追踪，保留记录）或「删除」（清掉课程
+// 与它的作业记录）。语义差别在 HTML 的说明里写清楚了：删除后课可能被页面采集重新
+// 加回来，想彻底不再出现要用忽略。
+
+async function loadTrackedCourses() {
+  const body = $('tracked-courses-body');
+  if (!body) return;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_COURSE_LIST' });
+    if (!resp || !resp.success) throw new Error((resp && resp.error) || '无法获取课程列表');
+    const courses = Array.isArray(resp.courses) ? resp.courses : [];
+    const ignored = new Set(resp.ignoredCourseIds || []);
+
+    if (courses.length === 0) {
+      body.innerHTML = '<p class="opt-sub" style="margin:8px 0 0;">还没有追踪任何课程。打开一门课程的学习页即可自动添加。</p>';
+      return;
+    }
+
+    let html = '';
+    for (const c of courses) {
+      const isIgnored = ignored.has(c.courseId);
+      const typeLabel = c.courseType === 'spoc' ? 'SPOC' : '普通';
+      const title = escapeHtml(c.courseName || c.courseId);
+      const sub = escapeHtml(
+        c.courseId + ' · ' + typeLabel +
+        ' · ' + c.unfinishedCount + ' 项未完成 / 共 ' + c.itemCount + ' 项'
+      );
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-soft);' +
+        (isIgnored ? 'opacity:.55;' : '') + '">' +
+        '<div style="min-width:0;">' +
+          '<div style="font-size:13px;word-break:break-all;">' + title +
+            (isIgnored ? ' <span style="font-size:11px;color:var(--text-faint);">（已忽略）</span>' : '') + '</div>' +
+          '<div style="font-size:11px;color:var(--text-faint);word-break:break-all;">' + sub + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+          '<button class="btn btn-sm btn-ghost tracked-ignore-btn" data-course-id="' + escapeHtml(c.courseId) +
+            '" data-ignored="' + (isIgnored ? '1' : '0') + '">' + (isIgnored ? '恢复追踪' : '忽略') + '</button>' +
+          '<button class="btn btn-sm btn-ghost btn-danger tracked-delete-btn" data-course-id="' + escapeHtml(c.courseId) +
+            '"><span class="icon-slot" data-icon="trash" data-icon-size="12"></span>删除</button>' +
+        '</div>' +
+      '</div>';
+    }
+    body.innerHTML = html;
+    // 内联的 data-icon 占位需要水合才会变成 SVG（icons.js 提供）
+    try { if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS(body); } catch {}
+
+    const ignoreBtns = body.querySelectorAll('.tracked-ignore-btn');
+    for (let i = 0; i < ignoreBtns.length; i++) {
+      ignoreBtns[i].addEventListener('click', async function () {
+        const id = this.getAttribute('data-course-id');
+        const nowIgnored = this.getAttribute('data-ignored') === '0';
+        this.disabled = true;
+        try {
+          const r = await chrome.runtime.sendMessage({ type: 'TOGGLE_COURSE_IGNORE', courseId: id, ignored: nowIgnored });
+          if (!r || !r.success) throw new Error((r && r.error) || '操作失败');
+          currentSettings = r.settings || currentSettings;
+          showStatus(nowIgnored ? '已忽略该课程' : '已恢复追踪');
+          loadTrackedCourses();
+        } catch (e) {
+          showStatus('操作失败：' + e.message, true);
+          this.disabled = false;
+        }
+      });
+    }
+
+    const deleteBtns = body.querySelectorAll('.tracked-delete-btn');
+    for (let j = 0; j < deleteBtns.length; j++) {
+      deleteBtns[j].addEventListener('click', async function () {
+        const id = this.getAttribute('data-course-id');
+        if (!window.confirm('删除「' + id + '」及其全部作业记录？\n\n（如果只是不想再追踪，用「忽略」更好 —— 删除后它可能被页面重新自动添加）')) return;
+        this.disabled = true;
+        try {
+          const r = await chrome.runtime.sendMessage({ type: 'DELETE_COURSE', courseId: id });
+          if (!r || !r.success) throw new Error((r && r.error) || '删除失败');
+          showStatus('已删除该课程');
+          loadTrackedCourses();
+          loadMutedCourses();
+        } catch (e) {
+          showStatus('删除失败：' + e.message, true);
+          this.disabled = false;
+        }
+      });
+    }
+  } catch (e) {
+    body.innerHTML = '<p style="color:var(--overdue,#dc3545);font-size:12px;margin:8px 0;">加载失败：' + escapeHtml(String(e.message || e)) + '</p>';
+  }
+}
+
 async function loadErrorReport() {
   var body = $('error-report-body');
   if (!body) return;
@@ -515,6 +607,7 @@ async function init() {
     if (clearErrBtn) clearErrBtn.addEventListener('click', handleClearErrors);
   } catch(e) { console.error('[Options] error report init:', e.message); }
   try { loadMutedCourses(); } catch(e) { console.error('[Options] loadMutedCourses:', e.message); }
+  try { loadTrackedCourses(); } catch(e) { console.error('[Options] loadTrackedCourses:', e.message); }
   try {
     loadNotificationDiagnostics();
   } catch(e) { console.error('[Options] notification diagnostics init:', e.message); }

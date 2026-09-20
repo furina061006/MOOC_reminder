@@ -1332,3 +1332,88 @@ test('a genuine timeout is not masked by trying other tabs', async () => {
   assert.deepEqual(targets, [55], 'only "nobody is listening" advances to the next tab');
   assert.equal(h.storageData.get('temporary_proxy_job'), undefined, 'and no proxy is created for a real error');
 });
+
+// ── tracked-course list: ignore / delete (backlog: 设置页课程列表) ──────────
+
+test('GET_COURSE_LIST reports tracked courses with counts and ignored ids', async () => {
+  seedCourses([
+    { courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' },
+    { courseId: 'NEU-2', termId: '22', activeTermId: '33', courseName: '大学物理', courseType: 'spoc' },
+    { courseId: 'manual', termId: 'manual', courseName: '手动提醒', courseType: 'manual' }
+  ]);
+  h.storageData.set('homework_items', [
+    { uid: 'BIT-1_tid11_ch_le_hw1', courseId: 'BIT-1', termId: '11', title: 'A', checkedOff: false },
+    { uid: 'BIT-1_tid11_ch_le_hw2', courseId: 'BIT-1', termId: '11', title: 'B', checkedOff: true },
+    { uid: 'NEU-2_tid33_ch_le_hw3', courseId: 'NEU-2', termId: '33', title: 'C', checkedOff: false }
+  ]);
+  h.storageData.set('user_settings', { ignoredCourseIds: ['NEU-2'] });
+
+  const resp = await sendMessage({ type: 'GET_COURSE_LIST' });
+
+  assert.equal(resp.success, true);
+  assert.deepEqual(resp.ignoredCourseIds, ['NEU-2']);
+  const byId = new Map(resp.courses.map(c => [c.courseId, c]));
+  assert.ok(!byId.has('manual'), 'the manual pseudo-course is not a tracked course');
+  assert.equal(byId.get('BIT-1').itemCount, 2);
+  assert.equal(byId.get('BIT-1').unfinishedCount, 1);
+  assert.equal(byId.get('NEU-2').courseType, 'spoc', 'activeTermId proves SPOC');
+  assert.equal(byId.get('NEU-2').itemCount, 1);
+});
+
+test('an ignored course is dropped from the refresh batch and the badge', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 91, lastAccessed: 5000 }]);
+  seedCourses([
+    { courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' },
+    { courseId: 'NEU-9', termId: '99', courseName: '不想要的课', courseType: 'mooc' }
+  ]);
+  h.storageData.set('homework_items', [
+    { uid: 'BIT-1_tid11_ch_le_hw1', courseId: 'BIT-1', termId: '11', title: 'A', checkedOff: false, deadline: null },
+    { uid: 'NEU-9_tid99_ch_le_hw1', courseId: 'NEU-9', termId: '99', title: 'B', checkedOff: false, deadline: null }
+  ]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  const toggled = await sendMessage({ type: 'TOGGLE_COURSE_IGNORE', courseId: 'NEU-9', ignored: true });
+  assert.equal(toggled.success, true);
+  assert.equal(toggled.ignored, true);
+
+  await fireAlarm('badge-refresh');
+  assert.equal(h.badge.text, '1', 'an ignored course must not count towards the badge');
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await new Promise(r => setTimeout(r, 1500));
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch);
+  assert.deepEqual(batch.msg.courses.map(c => c.courseId), ['BIT-1'],
+    'an ignored course must not cost an API call');
+});
+
+test('ignoring a course is reversible', async () => {
+  h.storageData.set('user_settings', { ignoredCourseIds: ['BIT-1'] });
+  const off = await sendMessage({ type: 'TOGGLE_COURSE_IGNORE', courseId: 'BIT-1', ignored: false });
+  assert.equal(off.ignored, false);
+  assert.deepEqual(h.storageData.get('user_settings').ignoredCourseIds, []);
+});
+
+test('DELETE_COURSE removes the course, its items and its tombstones', async () => {
+  seedCourses([
+    { courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' },
+    { courseId: 'NEU-9', termId: '99', courseName: '不想要的课', courseType: 'mooc' }
+  ]);
+  h.storageData.set('homework_items', [
+    { uid: 'BIT-1_tid11_ch_le_hw1', courseId: 'BIT-1', termId: '11', title: 'A', checkedOff: false },
+    { uid: 'NEU-9_tid99_ch_le_hw1', courseId: 'NEU-9', termId: '99', title: 'B', checkedOff: true }
+  ]);
+  h.storageData.set('dismissed_completed_uids', ['BIT-1_tid11_ch_le_hwX', 'NEU-9_tid99_ch_le_hw1']);
+
+  const resp = await sendMessage({ type: 'DELETE_COURSE', courseId: 'NEU-9' });
+
+  assert.equal(resp.success, true);
+  assert.deepEqual(h.storageData.get('courses').map(c => c.courseId), ['BIT-1']);
+  assert.deepEqual(storedItems().map(i => i.courseId), ['BIT-1']);
+  assert.deepEqual(h.storageData.get('dismissed_completed_uids'), ['BIT-1_tid11_ch_le_hwX'],
+    'only the deleted course tombstones are dropped');
+});
