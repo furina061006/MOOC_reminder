@@ -138,3 +138,40 @@ if (apiCourses.length === 0) {
 
 **同时确认的一条排除项**：用户早先那次「一点都抓不到」是**登录态失效**导致的 ——
 所以排查抓取问题的第一步永远是**确认登录有效**（设置页「系统反馈」里的 csrf/登录状态正是为此存在的）。
+
+## 五、仍未解决：同一页面只抓取一次（2026-09-20 收工时的状态）
+
+用户实测复现：**对同一个课程页面只抓取一次成功，之后再也不抓，必须重新打开页面才行。**
+
+**已确认/已排除**
+- 内容脚本的消息监听器是**一次性注册、可重复响应**的（`main.js:43-67`：`BATCH_API_FETCH` 分支
+  每次都会调用 `batchApiFetch` 并 `return true`），所以不是内容脚本侧的「只处理一次」。
+- SW 侧 `performPeriodicScrape` 的 `periodicScrapeInFlight` 在 `finally` 里正常清理。
+
+**候选根因（均未证实，禁止据此改代码）**
+1. `periodicScrapeInFlight` 被某个**未 settle 的 await 长期占用**（例如内容脚本返回 `true` 却永不
+   `sendResponse`），于是后续 `TRIGGER_SCRAPE` 全部返回同一个 pending promise。
+2. 遗留的 `temporary_proxy_job`（内存里的 `activeTemporaryProxyJob`）让
+   `createTemporaryProxyJob` 直接返回 `pending: true` 的失败，从此再也不抓。
+3. 某门课的响应为空 → 内容脚本返回 `[]` → SW 抛 `MOOC proxy returned no course data`；
+   该错误**不属于**「没有 content script」，所以既不 fan-out 也不降级到代理页。
+
+**下一步（唯一动作）**：要用户在「第二次失败」那一刻提供 Service Worker Console 的
+`[MOOC Reminder]` 日志，看断点落在哪一步（`Periodic scrape started` → 有无 `Sending BATCH_API_FETCH`
+→ 有无 `Periodic scrape failed:` / 代理相关的行）。同时确认用户的实际操作是「点刷新按钮」还是
+「打开 popup 看」——popup 只在列表为空时自动抓取（`popup.js:150`）。
+
+## 六、本次会话的诚实状态盘点
+
+| 事项 | 代码+单测 | 真实数据/浏览器验证 |
+|---|---|---|
+| SPOC 点击跳转（`/spoc/learn/` + 正确 tid） | ✅ | ❌ 用户未确认 |
+| 插件更新提醒 | ✅ | ⚠️ 仅对真实 GitHub API 验证过解析，浏览器未确认 |
+| SPOC 两 term 并集抓取（老师新增内容） | ✅ | ✅ 用真实 DTO 验证 1 条→5 条；浏览器未确认 |
+| 设置页「已追踪课程」忽略/删除 | ✅ | ⚠️ 用户实测过「删除」确实清空了数据；「忽略」未确认 |
+| 陈旧标签页降级到临时代理页 | ✅ | ❌ 未确认 |
+| 空课程列表不再静默（日志 + sync_errors） | ✅ | ⚠️ 用户日志证实了「静默」这一现象存在；修复后的表现未确认 |
+| 清空数据后主动要求页面重新上报课程 | ✅ | ❌ **未确认，且用户随后报告的「只抓取一次」说明刷新链路仍有问题** |
+
+**结论**：以上全部**只到「代码完成 + 单测通过」为止**，不能当作「已解决」。其中
+「同一页面只抓取一次」是**未解决的活动缺陷**，已列入 backlog 首位。
