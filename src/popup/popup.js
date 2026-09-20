@@ -165,7 +165,16 @@ async function init() {
       render();
       if (dom.refreshBtn) dom.refreshBtn.classList.remove('spinning');
       if (!state.lastSync && state.allItems.length === 0) {
-        try { showToast('请先登录 MOOC 并至少打开过一门课程后重试'); } catch {}
+        // 不要把「登录/打开课程」当成万能解释：真正的失败原因已经记在 sync_errors 里
+        // （例如扩展重载后，旧标签页里没有 content script）。有错误就照实说。
+        var lastErr = '';
+        try {
+          var list = Array.isArray(state.syncErrors) ? state.syncErrors : [];
+          if (list.length) lastErr = String((list[list.length - 1] || {}).error || '');
+        } catch {}
+        try {
+          showToast(lastErr ? '刷新失败：' + lastErr : '请先登录 MOOC 并至少打开过一门课程后重试');
+        } catch {}
       } else {
         var now = Date.now();
         if (now - lastRefreshSuccess > 120000) {

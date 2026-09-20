@@ -242,17 +242,13 @@
       var isCurrentSpocPage = isSpocPage && c.courseId === pageMeta.courseId;
       var courseIsSpoc = (c.courseType === 'spoc') || isCurrentSpocPage;
 
-      // ═══ SPOC: 仅当在本课程页面上时，才用 DOM 属性替换 termId ═══
-      // 在其他页面上用 DOM 属性会拿到别的课程的真实 termId，造成数据串
-      if (isCurrentSpocPage) {
-        try {
-          var realTermId = document.documentElement.getAttribute('data-mooc-real-termid');
-          if (realTermId && realTermId !== c.termId) {
-            console.log('[MOOC Reminder] SPOC: using real termId', realTermId, 'instead of URL termId', c.termId, 'for', c.courseId);
-            c.termId = realTermId;
-          }
-        } catch(e) {}
-      } else if (courseIsSpoc) {
+      // ═══ SPOC: 不再用 DOM 属性覆盖 termId ═══
+      // SW 的 buildApiCourseList 现在对 SPOC 课程**每个 term 各发一条**（路由 term =
+      // 老师新增内容，activeTermId = 源课程内容，见 CLAUDE.md 不变量 14），所以这里的
+      // 列表就是权威的。以前把路由 term 替换成 DOM 的真实 term，会让「老师内容」那一半
+      // 永远抓不到 —— 那正是 2026-09 修复过的问题，别再把它改回来。
+      // DOM 属性的职责只剩「在 init() 里把 activeTermId 持久化」（COURSE_UPDATE）。
+      if (courseIsSpoc && !isCurrentSpocPage) {
         // 在非本页面处理 SPOC 课程——termId 来自 SW 的 activeTermId
         console.debug('[MOOC Reminder] SPOC: cross-page handling', c.courseId, 'termId=' + c.termId);
       }

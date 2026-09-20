@@ -1238,3 +1238,97 @@ test('teacher content from the route term lands beside the source content', asyn
   assert.equal(teacherItem.termId, ROUTE_TERM);
   assert.ok(teacherItem.uid.includes('tid' + ROUTE_TERM));
 });
+
+// ── stale learn tabs (backlog: 开多个课程页面时 popup 抓取不到) ──────────────
+//
+// Reloading an extension never injects content scripts into tabs that are already
+// open, so their chrome.tabs.sendMessage rejects with "Receiving end does not
+// exist". The scrape used to target a single tab and abort on that, which left the
+// popup empty and told the user to log in even though course pages were open.
+
+const NO_RECEIVER = new Error('Could not establish connection. Receiving end does not exist.');
+
+test('a stale learn tab is skipped in favour of one that answers', async () => {
+  h.tabMessages.length = 0;
+  h.tabUpdateResponder = null;
+  h.setTabUpdateResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  seedCourses([{ courseId: 'BIT-100', termId: '101', courseName: '普通课程', courseType: 'mooc' }]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+  // 11 is the most recently used tab but has no content script.
+  h.setTabsQuery([
+    { id: 11, lastAccessed: 9000 },
+    { id: 22, lastAccessed: 1000 }
+  ]);
+  const answered = [];
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'BATCH_API_FETCH') {
+      if (tabId === 11) throw NO_RECEIVER;
+      answered.push(tabId);
+      h.storageData.set('last_sync', new Date().toISOString());
+      return [{ courseId: 'BIT-100' }];
+    }
+    return true;
+  });
+
+  const res = await sendMessage({ type: 'PAGE_OPENED' });
+  assert.equal(res.refreshTriggered, true);
+  await waitFor(() => answered.length > 0);
+
+  const targets = h.tabMessages.filter(t => t.msg && t.msg.type === 'BATCH_API_FETCH').map(t => t.tabId);
+  assert.deepEqual(targets, [11, 22], 'the stale tab is tried first, then the one that can serve');
+  assert.equal(answered[0], 22);
+});
+
+test('when every learn tab is stale the temporary proxy is used instead', async () => {
+  h.tabCreateRequests.length = 0;
+  h.tabsCreated.length = 0;
+  h.tabsUpdated.length = 0;
+  h.tabMessages.length = 0;
+  h.storageData.delete('temporary_proxy_job');
+  h.alarmsCreated.delete('temporary-proxy-timeout');
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  seedCourses([{ courseId: 'BIT-100', termId: '101', courseName: '普通课程', courseType: 'mooc' }]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+  h.setTabsQuery([{ id: 44, lastAccessed: 9000 }]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'BATCH_API_FETCH' && tabId === 44) throw NO_RECEIVER;
+    return true;
+  });
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await waitFor(() => h.tabsCreated.length === 1 && !!h.storageData.get('temporary_proxy_job'));
+
+  // The proxy tab is created fresh, so it always receives the content script.
+  assert.equal(h.tabCreateRequests[0].url, 'about:blank');
+  assert.equal(h.storageData.get('temporary_proxy_job').phase, 'waiting_ready');
+
+  // Clean up: a live job is remembered in the SW, and a later PAGE_OPENED would be
+  // claimed by the proxy path instead of taking the normal refresh route. The
+  // tab-removed listener is fire-and-forget, so wait for its async cleanup.
+  await fireTabRemoved(h.tabsCreated[0].id);
+  await waitFor(() => h.storageData.get('temporary_proxy_job') == null);
+});
+
+test('a genuine timeout is not masked by trying other tabs', async () => {
+  h.tabMessages.length = 0;
+  h.storageData.delete('temporary_proxy_job');
+  seedCourses([{ courseId: 'BIT-100', termId: '101', courseName: '普通课程', courseType: 'mooc' }]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+  h.setTabsQuery([
+    { id: 55, lastAccessed: 9000 },
+    { id: 66, lastAccessed: 1000 }
+  ]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'BATCH_API_FETCH') throw new Error('MOOC proxy returned no course data');
+    return true;
+  });
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await new Promise(r => setTimeout(r, 300));
+
+  const targets = h.tabMessages.filter(t => t.msg && t.msg.type === 'BATCH_API_FETCH').map(t => t.tabId);
+  assert.deepEqual(targets, [55], 'only "nobody is listening" advances to the next tab');
+  assert.equal(h.storageData.get('temporary_proxy_job'), undefined, 'and no proxy is created for a real error');
+});

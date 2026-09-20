@@ -1235,10 +1235,12 @@ let temporaryProxyWaiter = null;
 let temporaryProxyDispatchingJobId = null;
 const temporaryProxyFinalizingJobIds = new Set();
 
-function pickApiProxyTab(tabs) {
-  if (!tabs || tabs.length === 0) return null;
-  const sorted = tabs.slice().sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-  return sorted[0];
+// chrome.tabs.sendMessage rejects like this when the target tab has no listener —
+// typically a learn page that was already open when the extension was reloaded,
+// because reloading never injects content scripts into existing tabs.
+function isContentScriptMissingError(error) {
+  const message = String((error && error.message) || error || '');
+  return /Receiving end does not exist|Could not establish connection/i.test(message);
 }
 
 // A SPOC course can be split across TWO terms, and the page renders both side by
@@ -1621,30 +1623,52 @@ async function performPeriodicScrape(source) {
           'https://www.icourse163.org/spoc/learn/*'
         ]
       });
-      const proxyTab = pickApiProxyTab(tabs);
+      const candidates = (Array.isArray(tabs) ? tabs : [])
+        .slice()
+        .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
 
-      if (!proxyTab) {
+      if (candidates.length === 0) {
         console.log('[MOOC Reminder] No learn tab open, creating a temporary proxy tab');
         return await createTemporaryProxyJob(courses, source || 'periodic');
       }
 
-      console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', apiCourses.length, 'courses to tab', proxyTab.id);
-      const results = await withTimeout(
-        chrome.tabs.sendMessage(proxyTab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }),
-        TEMPORARY_PROXY_TIMEOUT_MS,
-        'MOOC proxy batch timed out'
-      );
-      if (!Array.isArray(results) || results.length === 0) {
-        throw new Error('MOOC proxy returned no course data');
+      // Try the most recently used learn tab first, then the others. A learn tab
+      // that was already open when the extension was reloaded has NO content
+      // script, and chrome.tabs.sendMessage then rejects with "Receiving end does
+      // not exist" — that used to abort the entire scrape even though other tabs
+      // could have served it, leaving the user with an empty popup telling them to
+      // log in. Only that definitive "nobody is listening" failure moves on to the
+      // next candidate; a real timeout still fails loudly.
+      for (const tab of candidates) {
+        console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', apiCourses.length, 'courses to tab', tab.id);
+        try {
+          const results = await withTimeout(
+            chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }),
+            TEMPORARY_PROXY_TIMEOUT_MS,
+            'MOOC proxy batch timed out'
+          );
+          if (!Array.isArray(results) || results.length === 0) {
+            throw new Error('MOOC proxy returned no course data');
+          }
+          await updateBadgeFromStorage();
+          console.log('[MOOC Reminder] Periodic scrape complete');
+          return {
+            success: true,
+            temporaryProxy: false,
+            fetchedCourseCount: results.length,
+            tabsScanned: 1,
+            tabId: tab.id
+          };
+        } catch (e) {
+          if (!isContentScriptMissingError(e)) throw e;
+          console.warn('[MOOC Reminder] Tab', tab.id, 'has no content script (page predates the last extension reload)');
+        }
       }
-      await updateBadgeFromStorage();
-      console.log('[MOOC Reminder] Periodic scrape complete');
-      return {
-        success: true,
-        temporaryProxy: false,
-        fetchedCourseCount: Array.isArray(results) ? results.length : 0,
-        tabsScanned: 1
-      };
+
+      // Every open learn tab is stale. The temporary proxy is created fresh, so it
+      // always gets the content script — use it rather than failing the scrape.
+      console.warn('[MOOC Reminder] No learn tab could serve the batch, falling back to a temporary proxy tab');
+      return await createTemporaryProxyJob(courses, source || 'periodic');
     } catch (e) {
       console.error('[MOOC Reminder] Periodic scrape failed:', e);
       await addSyncError('Periodic scrape: ' + e.message);
