@@ -556,9 +556,27 @@ body {
 .footer-info {
   font-size: 11px;
   color: var(--text-faint);
+  /* 上下排：统计一行、反馈两行。以前是横向 flex 且不换行，窄页脚会把「开发者邮件」从中间挤断。 */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.footer-stats {
   display: flex;
   align-items: center;
   gap: 7px;
+  flex-wrap: wrap; /* 统计文字变长（如条目很多）时整块换行，别撑破页脚 */
+}
+
+.footer-feedback {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .footer-sep { color: #d6d9de; }
