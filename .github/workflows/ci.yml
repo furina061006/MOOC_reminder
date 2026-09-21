@@ -1,18 +1,41 @@
+# 每个 push 和每个 PR 都跑：lint + 单测，并产出一个可直接安装的 zip。
+#
+# 为什么要有 zip：审查浏览器扩展的代码门槛很高，装上试最快。PR 作者和维护者都能在
+# 该 run 页面的 Artifacts 里下载它（名字 mooc-reminder-build）。
+#
+# 打包配方与发布流程共用 tools/package-extension.mjs，不在这里另抄一份文件清单。
+
 name: CI
 
 on:
   push:
   pull_request:
 
+# fork 来的 PR 本来就拿不到 secrets，这里显式声明只读，别给后来人扩权的机会。
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
-      - run: npm run lint
-      - run: npm test
+
+      # 与本地同一条命令（eslint + 全部单测）
+      - run: npm run validate
+
+      - run: npm run package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mooc-reminder-build
+          path: mooc-reminder-v*.zip
+          if-no-files-found: error
+          retention-days: 14

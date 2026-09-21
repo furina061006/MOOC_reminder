@@ -20,6 +20,7 @@ function makeChromeStub() {
   const tabsUpdated = [];
   const tabsRemoved = [];
   const tabMessages = [];
+  const tabQueryCalls = [];
   const alarmsCreated = new Map();
   const badge = { text: null, color: null };
   let tabsQueryResult = [];
@@ -55,7 +56,8 @@ function makeChromeStub() {
       onInstalled: { addListener: fn => listeners.onInstalled.push(fn) },
       onStartup: { addListener: fn => listeners.onStartup.push(fn) },
       onMessage: { addListener: fn => listeners.onMessage.push(fn) },
-      getURL(path) { return 'chrome-extension://test/' + path; }
+      getURL(path) { return 'chrome-extension://test/' + path; },
+      getManifest() { return { version: '1.0.0' }; }
     },
     alarms: {
       onAlarm: { addListener: fn => listeners.onAlarm.push(fn) },
@@ -75,7 +77,7 @@ function makeChromeStub() {
     },
     tabs: {
       onRemoved: { addListener: fn => listeners.onRemoved.push(fn) },
-      async query() { return tabsQueryResult; },
+      async query(filter) { tabQueryCalls.push(filter); return tabsQueryResult; },
       async create(o) {
         tabCreateRequests.push({ ...o });
         const tab = { id: 100 + tabsCreated.length, ...o };
@@ -104,7 +106,7 @@ function makeChromeStub() {
   };
 
   return {
-    storageData, listeners, notificationsCreated, tabCreateRequests, tabsCreated, tabsUpdated, tabsRemoved, tabMessages,
+    storageData, listeners, notificationsCreated, tabCreateRequests, tabsCreated, tabsUpdated, tabsRemoved, tabMessages, tabQueryCalls,
     alarmsCreated, badge,
     setTabsQuery(tabs) { tabsQueryResult = tabs; },
     setTabMessageResponder(fn) { tabMessageResponder = fn; },
@@ -115,6 +117,17 @@ function makeChromeStub() {
 const h = makeChromeStub();
 const fireAlarm = name => h.listeners.onAlarm[0]({ name });
 const fireClick = id => h.listeners.onClicked[0](id);
+
+// The SW asks GitHub for a newer release on every badge-refresh tick, so tests
+// must never reach the network. fetch fails by default — which the SW treats as
+// "keep the last known answer" — and individual tests install a responder.
+const fetchCalls = [];
+let fetchResponder = async () => { throw new Error('offline (test stub)'); };
+globalThis.fetch = async (url, options) => {
+  fetchCalls.push({ url: String(url), options });
+  return await fetchResponder(String(url), options);
+};
+function setFetchResponder(fn) { fetchResponder = fn; }
 async function fireTabRemoved(tabId) {
   for (const listener of h.listeners.onRemoved) await listener(tabId, { isWindowClosing: false });
 }
@@ -138,10 +151,13 @@ function seedItem(overrides) {
 }
 function storedItems() { return h.storageData.get('homework_items') || []; }
 function seedCourses(courses) { h.storageData.set('courses', courses); }
-async function waitFor(predicate, attempts = 20) {
+// Poll with a real delay: a scrape now asks every open page first and waits a short
+// settle window before reading the course list, so a predicate that only becomes
+// true a few hundred ms later must not give up after a handful of microtasks.
+async function waitFor(predicate, attempts = 80) {
   for (let i = 0; i < attempts; i++) {
     if (predicate()) return;
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 25));
   }
   assert.fail('Timed out waiting for expected test state');
 }
@@ -300,9 +316,13 @@ test('manual refresh creates one temporary proxy, waits for its PAGE_OPENED, the
 
   assert.equal(pageOpened.temporaryProxy, true);
   assert.equal(batches.length, 1);
+  // NEU-200 is SPOC with distinct route (202) and active (303) terms, so the batch
+  // carries one entry per term: the teacher's own additions live in the route term
+  // while the source course lives in the active one. Fetching only 303 is the bug
+  // that hid the 线上学习任务 group.
   assert.deepEqual(
     batches[0].msg.courses.map(course => [course.courseId, course.termId]),
-    [['BIT-100', '101'], ['NEU-200', '303']]
+    [['BIT-100', '101'], ['NEU-200', '303'], ['NEU-200', '202']]
   );
   assert.equal(result.success, true);
   assert.equal(result.temporaryProxy, true);
@@ -527,6 +547,195 @@ test('manual closure of a temporary proxy clears its job without closing another
   assert.equal(h.alarmsCreated.has('temporary-proxy-timeout'), false);
 });
 
+test('an emptied course list is recovered from the open learn pages', async () => {
+  h.tabMessages.length = 0;
+  h.tabsCreated.length = 0;
+  h.storageData.set('courses', []);
+  h.storageData.set('sync_errors', []);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+  h.setTabsQuery([{ id: 95, lastAccessed: 5000 }]);
+  // course-discovery reports each course only once per page load, so the SW has to
+  // ask. Here the content script re-registers the course when asked.
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'REQUEST_COURSE_LINKS') {
+      seedCourses([{ courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' }]);
+      return { success: true };
+    }
+    if (msg && msg.type === 'BATCH_API_FETCH') return [{ courseId: 'BIT-1' }];
+    return true;
+  });
+
+  const res = await sendMessage({ type: 'PAGE_OPENED' });
+  assert.equal(res.refreshTriggered, true);
+  await new Promise(r => setTimeout(r, 2200));
+
+  const asked = h.tabMessages.filter(t => t.msg && t.msg.type === 'REQUEST_COURSE_LINKS');
+  assert.equal(asked.length, 1, 'the open learn page must be asked to re-report');
+  assert.equal(asked[0].tabId, 95);
+  assert.ok((h.storageData.get('courses') || []).length > 0, 'and the course comes back');
+  assert.ok(h.tabMessages.some(t => t.msg && t.msg.type === 'BATCH_API_FETCH'),
+    'so the refresh can proceed in the same pass');
+});
+
+test('course rediscovery asks every open icourse163 page, not only the learn tabs', async () => {
+  h.tabQueryCalls.length = 0;
+  h.storageData.set('courses', []);
+  h.tabsCreated.length = 0;
+  // Nobody is open, so the pass can only be observed through the query it makes.
+  h.setTabsQuery([]);
+  h.setTabMessageResponder(null);
+
+  await sendMessage({ type: 'TRIGGER_SCRAPE' });
+
+  assert.ok(
+    h.tabQueryCalls.some(f => JSON.stringify(f).includes('https://www.icourse163.org/*')),
+    'the rediscovery pass must consider every icourse163 page (我的课程 included)'
+  );
+});
+
+test('a page that never answers cannot hang the rediscovery pass', async () => {
+  // Regression: the SW's course rediscovery awaited chrome.tabs.sendMessage with no
+  // timeout. A frozen background renderer never settles that promise, so the whole
+  // scrape vanished without one log line and the popup spun until it gave up.
+  h.tabMessages.length = 0;
+  h.tabsCreated.length = 0;
+  h.storageData.set('courses', []);
+  h.storageData.set('sync_errors', []);
+  h.setTabsQuery([{ id: 96, lastAccessed: 6000 }, { id: 97, lastAccessed: 5000 }]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'REQUEST_COURSE_LINKS') {
+      if (tabId === 96) return new Promise(() => {}); // frozen renderer: never settles
+      seedCourses([{ courseId: 'BIT-2', termId: '22', courseName: '操作系统', courseType: 'mooc' }]);
+      return { success: true };
+    }
+    if (msg && msg.type === 'BATCH_API_FETCH') return [{ courseId: 'BIT-2' }];
+    return true;
+  });
+
+  const warns = [];
+  const original = console.warn;
+  const startedAt = Date.now();
+  let result;
+  let elapsed;
+  console.warn = (...args) => warns.push(args.map(String).join(' '));
+  try {
+    result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+    elapsed = Date.now() - startedAt;
+  } finally {
+    console.warn = original;
+  }
+
+  assert.equal(result.success, true, 'the page that answers must still serve the scrape');
+  assert.ok(elapsed < 8000, 'the silent page must not stall the pass (took ' + elapsed + 'ms)');
+  assert.ok((h.storageData.get('courses') || []).some(c => c.courseId === 'BIT-2'), 'and its course comes back');
+  assert.ok(warns.some(l => /did not answer/.test(l) && l.includes('96')), 'the silent page must be reported');
+  const asked = h.tabMessages.filter(t => t.msg && t.msg.type === 'REQUEST_COURSE_LINKS').map(t => t.tabId);
+  assert.deepEqual(asked.slice().sort(), [96, 97], 'both pages are asked in the same pass');
+  const batched = h.tabMessages.filter(t => t.msg && t.msg.type === 'BATCH_API_FETCH').map(t => t.tabId);
+  assert.deepEqual(batched, [97],
+    'the heavy batch must only go to a page that just answered, never to the silent one');
+});
+
+test('a course reported during the probe is scraped in the same pass', async () => {
+  // User report (2026-09-21): 复变函数与积分变换 was only ever scraped after being
+  // brought to the foreground. Registration used to be one-shot at page load and the
+  // SW only asked open pages to re-report when the whole course list was empty, so a
+  // course whose page had been sitting in the background (until the browser froze or
+  // unloaded it) stayed unknown forever while other courses kept the list non-empty.
+  h.tabMessages.length = 0;
+  h.tabsCreated.length = 0;
+  seedCourses([{ courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' }]);
+  h.setTabsQuery([{ id: 71, lastAccessed: 7000 }, { id: 72, lastAccessed: 6000 }]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'REQUEST_COURSE_LINKS') {
+      // Only the second page knows the course the user is missing.
+      if (tabId === 72) {
+        const known = h.storageData.get('courses') || [];
+        seedCourses(known.concat([{ courseId: 'NEU-9', termId: '99', courseName: '复变函数与积分变换', courseType: 'mooc' }]));
+      }
+      return { success: true };
+    }
+    if (msg && msg.type === 'BATCH_API_FETCH') return [{ courseId: 'ok' }];
+    return true;
+  });
+
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+
+  assert.equal(result.success, true);
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch, 'the scrape must still run');
+  const ids = (batch.msg.courses || []).map(c => c.courseId);
+  assert.ok(ids.includes('NEU-9'), 'the course reported during the probe must be fetched in this pass: ' + JSON.stringify(ids));
+  assert.ok(ids.includes('BIT-1'), 'along with the courses that were already known');
+});
+
+test('when no open page can answer, the skip reason says what to do', async () => {
+  // The stale-content-script case: reloading the extension leaves pages that were
+  // already open without one, so every ask rejects immediately.
+  h.tabsCreated.length = 0;
+  h.storageData.set('courses', []);
+  h.storageData.set('sync_errors', []);
+  h.setTabsQuery([{ id: 98, lastAccessed: 1000 }]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'REQUEST_COURSE_LINKS') {
+      throw new Error('Could not establish connection. Receiving end does not exist.');
+    }
+    return true;
+  });
+
+  const startedAt = Date.now();
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+  const elapsed = Date.now() - startedAt;
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /还没有任何已载入的课程/);
+  assert.match(result.error, /刷新已打开的页面/);
+  assert.ok(elapsed < 3000, 'a rejected ask must not wait for the settle window (took ' + elapsed + 'ms)');
+  assert.equal(h.tabsCreated.length, 0, 'and must not spawn a proxy tab it cannot use');
+});
+
+test('an empty course list reports itself instead of failing silently', async () => {
+  // Regression: performPeriodicScrape used to bail out here without logging and
+  // without recording an error, so an empty popup had no explanation anywhere —
+  // neither 错误报告 nor the Service Worker console.
+  h.storageData.set('courses', []);
+  h.storageData.set('sync_errors', []);
+  h.tabsCreated.length = 0;
+  // Isolate from the rediscovery test above: with no learn tab open there is nobody
+  // to ask, so the empty list must be reported rather than silently ignored.
+  h.setTabMessageResponder(null);
+  h.setTabsQuery([]);
+
+  const logs = [];
+  const original = console.warn;
+  console.warn = (...args) => logs.push(args.map(String).join(' '));
+  let result;
+  try {
+    result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+  } finally {
+    console.warn = original;
+  }
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /还没有任何已载入的课程/);
+  assert.ok(logs.some(l => l.includes('Periodic scrape skipped')), 'the bail must be logged');
+  const errors = h.storageData.get('sync_errors') || [];
+  assert.ok(errors.some(e => /抓取跳过/.test(e.error)), 'and must reach 错误报告');
+  assert.equal(h.tabsCreated.length, 0);
+});
+
+test('a fully-ignored course list says so rather than blaming the login', async () => {
+  seedCourses([{ courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' }]);
+  h.storageData.set('user_settings', { ignoredCourseIds: ['BIT-1'] });
+  h.storageData.set('sync_errors', []);
+
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /都被跳过/, result.error);
+  assert.match(result.error, /已忽略 1 门/);
+});
+
 test('manual refresh reports no proxy when only manual courses are known', async () => {
   h.tabsCreated.length = 0;
   h.tabsRemoved.length = 0;
@@ -731,4 +940,676 @@ test('RESET_DATA clears the dismissed tombstone list', async () => {
   assert.equal(result.success, true);
   assert.deepEqual(h.storageData.get('dismissed_completed_uids'), []);
   assert.deepEqual(h.storageData.get('courses'), []);
+});
+
+// ── SPOC click-target regression (backlog: popup opens the plain MOOC page) ──
+//
+// A SPOC course shares its courseId with the plain MOOC course of the same name,
+// and `courses` holds one record per courseId — so a /learn/ link harvest of the
+// same courseId used to demote the record's courseType to 'mooc', which sent the
+// popup click to /learn/. These tests pin the three defences: the frozen route
+// URL, the sticky SPOC classification, and the extractor's courseType.
+
+const SPOC_ROUTE_URL = 'https://www.icourse163.org/spoc/learn/NEU-1474956162?tid=1476735472#/learn/content';
+const SPOC_API_TERM_ID = '1476504498';
+const spocCourseRecord = () => (h.storageData.get('courses') || []).find(c => c && c.courseId === 'NEU-1474956162');
+
+test('SPOC route URL survives a MOOC link harvest and drives the click target', async () => {
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('dismissed_completed_uids');
+  seedCourses([{
+    courseId: 'NEU-1474956162', termId: '1476735472', courseName: '大学物理（SPOC）', courseType: 'spoc'
+  }]);
+
+  // 1) The SPOC page reports the real API termId plus the route URL it loaded.
+  const upd = await sendMessage({
+    type: 'COURSE_UPDATE',
+    courseId: 'NEU-1474956162',
+    activeTermId: SPOC_API_TERM_ID,
+    courseName: '大学物理（SPOC）',
+    courseType: 'spoc',
+    routeUrl: SPOC_ROUTE_URL
+  });
+  assert.equal(upd.success, true);
+  assert.equal(spocCourseRecord().pageUrl, SPOC_ROUTE_URL);
+  assert.equal(spocCourseRecord().activeTermId, SPOC_API_TERM_ID);
+
+  // 2) A plain /learn/ harvest of the SAME courseId must not demote the record:
+  //    not its courseType, name, route termId, or frozen route URL.
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'NEU-1474956162', termId: '999999', courseName: '大学物理', courseType: 'mooc' }]
+  });
+  assert.equal(spocCourseRecord().courseType, 'spoc');
+  assert.equal(spocCourseRecord().courseName, '大学物理（SPOC）');
+  assert.equal(spocCourseRecord().termId, '1476735472');
+  assert.equal(spocCourseRecord().pageUrl, SPOC_ROUTE_URL);
+
+  // 3) A full API sync: items self-describe their type and inherit the route URL.
+  const payload = {
+    result: {
+      mocTermDto: {
+        chapters: [{
+          id: 1, name: '第1章', type: 'chapter',
+          lessons: [{
+            id: 2, name: '1.1', type: 'lesson',
+            units: [{
+              id: 77, name: '第一章作业', contentType: 3,
+              test: { deadline: Date.now() + 86400000, usedTryCount: 0 }
+            }]
+          }]
+        }]
+      }
+    }
+  };
+  const sync = await sendMessage({
+    type: 'COURSE_API_DATA',
+    course: {
+      courseId: 'NEU-1474956162', termId: SPOC_API_TERM_ID,
+      courseName: '大学物理（SPOC）', schoolName: '', courseType: 'spoc'
+    },
+    rawData: payload
+  });
+  assert.equal(sync.success, true);
+  assert.equal(storedItems().length, 1);
+  const item = storedItems()[0];
+  assert.equal(item.courseType, 'spoc');   // runtime extractor no longer drops courseType
+  assert.equal(item.pageUrl, SPOC_ROUTE_URL);
+  assert.equal(item.termId, SPOC_API_TERM_ID); // uid stays keyed on the API termId
+  // The API payload's termId is the API id, not a route id — it must NOT clobber
+  // the route termId harvested from the learn link, otherwise the /spoc/learn/
+  // URL would be rebuilt with the wrong `tid`.
+  assert.equal(spocCourseRecord().termId, '1476735472');
+
+  // 4) Clicking opens the SPOC route with the ROUTE termId, not the API one.
+  h.tabsCreated.length = 0;
+  await fireClick(`mooc-reminder:${encodeURIComponent(item.uid)}:due_24h`);
+  assert.equal(h.tabsCreated.length, 1);
+  assert.equal(
+    h.tabsCreated[0].url,
+    'https://www.icourse163.org/spoc/learn/NEU-1474956162?tid=1476735472#/learn/testlist'
+  );
+});
+
+test('BATCH_API_FETCH derives SPOC from activeTermId when courseType was demoted', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 33, lastAccessed: 5000 }]);
+  // activeTermId is only ever written from a real SPOC page, so it must outrank
+  // the courseType that a weak /learn/ harvest has already demoted to 'mooc'.
+  seedCourses([{
+    courseId: 'NEU-1474956162', termId: '1476735472', activeTermId: SPOC_API_TERM_ID,
+    courseName: '大学物理', courseType: 'mooc'
+  }]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  const res = await sendMessage({ type: 'PAGE_OPENED' });
+  assert.equal(res.refreshTriggered, true);
+  await new Promise(r => setTimeout(r, 1500));
+
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch, 'expected a BATCH_API_FETCH to be dispatched');
+  const course = batch.msg.courses.find(c => c.courseId === 'NEU-1474956162');
+  assert.equal(course.courseType, 'spoc');
+  assert.equal(course.termId, SPOC_API_TERM_ID);
+});
+
+test('COURSE_UPDATE rejects a non-learn routeUrl instead of storing it', async () => {
+  seedCourses([]);
+  await sendMessage({
+    type: 'COURSE_UPDATE',
+    courseId: 'NEU-1474956162',
+    activeTermId: SPOC_API_TERM_ID,
+    courseName: '大学物理（SPOC）',
+    courseType: 'spoc',
+    routeUrl: 'https://evil.example.com/spoc/learn/NEU-1474956162?tid=1'
+  });
+  // The record is still created (courseType/activeTermId are valid), but no
+  // untrusted URL is persisted: isIcCourseLearnUrl gates the origin.
+  assert.equal(spocCourseRecord().courseType, 'spoc');
+  assert.equal(spocCourseRecord().pageUrl, undefined);
+});
+
+// ── near-miss diagnostics in the RUNTIME copy ────────────────────────────
+// The SPOC bug happened because the inlined runtime extractor had drifted from
+// the tested shared copy. This pins the near-miss reporting on the copy that
+// actually runs, so the two cannot silently diverge again on this behaviour.
+
+test('the runtime extractor reports content-type near misses (copies stay in sync)', async () => {
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('dismissed_completed_uids');
+  seedCourses([{ courseId: 'NEU-1', termId: '1', courseName: '模拟电子技术', courseType: 'mooc' }]);
+
+  const deadline = Date.now() + 86400000;
+  const payload = {
+    result: {
+      mocTermDto: {
+        chapters: [{
+          id: 1, name: '第1章', type: 'chapter',
+          lessons: [{
+            id: 11, name: '1.1', type: 'lesson',
+            units: [
+              { id: 101, name: '第一章 测验', contentType: 2, test: { deadline } },
+              { id: 102, name: '“Multisim” 对应的测试', contentType: 9, test: { deadline } }
+            ]
+          }]
+        }]
+      }
+    }
+  };
+
+  const logs = [];
+  const original = console.log;
+  console.log = (...args) => logs.push(args.map(String).join(' '));
+  let res;
+  try {
+    res = await sendMessage({
+      type: 'COURSE_API_DATA',
+      course: { courseId: 'NEU-1', termId: '1', courseName: '模拟电子技术', schoolName: '', courseType: 'mooc' },
+      rawData: payload
+    });
+  } finally {
+    console.log = original;
+  }
+
+  assert.equal(res.success, true);
+  assert.equal(res.itemCount, 1, 'only the recognised contentType is extracted');
+  const line = logs.find((l) => l.includes('被类型门槛拦下'));
+  assert.ok(line, 'the inlined runtime copy must report near misses like the shared one');
+  assert.match(line, /"contentType":"9"/);
+});
+
+// ── update check (backlog: 客户端插件提醒有更新) ──────────────────────────
+//
+// The running version in the harness stub is 1.0.0 (chrome.runtime.getManifest).
+
+function releasePayload(version, extra) {
+  return {
+    tag_name: 'v' + version,
+    html_url: 'https://github.com/furina061006/MOOC_reminder/releases/tag/v' + version,
+    body: 'notes for ' + version,
+    published_at: '2026-09-18T00:00:00Z',
+    assets: [{
+      name: 'mooc-reminder-v' + version + '.zip',
+      browser_download_url: 'https://github.com/furina061006/MOOC_reminder/releases/download/v' +
+        version + '/mooc-reminder-v' + version + '.zip'
+    }],
+    ...(extra || {})
+  };
+}
+const jsonResponder = payload => async () => ({ ok: true, status: 200, json: async () => payload });
+
+/** Reset everything the update check touches, with no homework in the way. */
+function arrangeUpdateCheck(settings) {
+  h.notificationsCreated.clear();
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('update_status');
+  h.storageData.set('user_settings', Object.assign(
+    { notificationsEnabled: true, quietHoursEnabled: false }, settings || {}
+  ));
+  fetchCalls.length = 0;
+}
+
+test('badge-refresh notices a newer release and notifies once per version', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(jsonResponder(releasePayload('1.2.0')));
+
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.equal(status.currentVersion, '1.0.0');
+  assert.equal(status.latestVersion, '1.2.0');
+  assert.equal(status.updateAvailable, true);
+  assert.equal(status.notifiedVersion, '1.2.0');
+  assert.equal(status.error, null);
+  assert.equal(h.notificationsCreated.size, 1);
+  assert.ok(h.notificationsCreated.has('mooc-reminder:update:1.2.0'));
+  assert.match(h.notificationsCreated.get('mooc-reminder:update:1.2.0').message, /1\.0\.0 → v1\.2\.0/);
+
+  // The same version on the next tick must not nag again.
+  h.notificationsCreated.clear();
+  await fireAlarm('badge-refresh');
+  assert.equal(h.notificationsCreated.size, 0);
+  assert.equal(h.storageData.get('update_status').notifiedVersion, '1.2.0');
+
+  // A genuinely newer release re-arms the announcement.
+  setFetchResponder(jsonResponder(releasePayload('1.3.0')));
+  await fireAlarm('badge-refresh');
+  assert.ok(h.notificationsCreated.has('mooc-reminder:update:1.3.0'));
+});
+
+test('an up-to-date release reports no update and notifies nobody', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(jsonResponder(releasePayload('1.0.0')));
+
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.equal(status.updateAvailable, false);
+  assert.equal(status.notifiedVersion, null);
+  assert.equal(h.notificationsCreated.size, 0);
+});
+
+test('a failed check keeps the last known answer instead of clearing it', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(jsonResponder(releasePayload('1.2.0')));
+  await fireAlarm('badge-refresh');
+
+  h.notificationsCreated.clear();
+  setFetchResponder(async () => { throw new Error('offline'); });
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.equal(status.latestVersion, '1.2.0', 'a network hiccup must not blank the version');
+  assert.equal(status.updateAvailable, true, 'the indicator must stay truthful');
+  assert.match(status.error, /offline/);
+  assert.equal(h.notificationsCreated.size, 0, 'a failed check re-announces nothing');
+});
+
+test('a non-OK HTTP response is treated as a failed check', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(async () => ({ ok: false, status: 403, json: async () => ({}) }));
+
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.match(status.error, /403/);
+  assert.equal(status.updateAvailable, false);
+});
+
+test('autoCheckUpdates=false skips the automatic check entirely', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: false });
+  setFetchResponder(jsonResponder(releasePayload('9.9.9')));
+
+  await fireAlarm('badge-refresh');
+
+  assert.equal(fetchCalls.length, 0, 'turning the switch off must stop all network traffic');
+  assert.equal(h.storageData.get('update_status'), undefined);
+});
+
+test('a prerelease is never advertised', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(jsonResponder(releasePayload('2.0.0', { prerelease: true })));
+
+  await fireAlarm('badge-refresh');
+
+  assert.equal(h.storageData.get('update_status').updateAvailable, false);
+  assert.equal(h.notificationsCreated.size, 0);
+});
+
+test('quiet hours defer the update notification without burning the once-per-version flag', async () => {
+  const hour = new Date().getHours();
+  // Build a quiet window that contains the current hour.
+  arrangeUpdateCheck({ autoCheckUpdates: true, quietHoursEnabled: true, quietStart: hour, quietEnd: (hour + 1) % 24 });
+  setFetchResponder(jsonResponder(releasePayload('1.2.0')));
+
+  await fireAlarm('badge-refresh');
+
+  const status = h.storageData.get('update_status');
+  assert.equal(status.updateAvailable, true);
+  assert.equal(h.notificationsCreated.size, 0, 'quiet hours must suppress it');
+  assert.equal(status.notifiedVersion, null, 'and must not consume the one-shot flag');
+
+  // Outside quiet hours the very next tick delivers it.
+  h.storageData.set('user_settings', { autoCheckUpdates: true, quietHoursEnabled: false });
+  await fireAlarm('badge-refresh');
+  assert.ok(h.notificationsCreated.has('mooc-reminder:update:1.2.0'));
+});
+
+test('CHECK_UPDATES bypasses the toggle, and the notification click opens the ZIP', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: false });
+  setFetchResponder(jsonResponder(releasePayload('1.2.0')));
+
+  const resp = await sendMessage({ type: 'CHECK_UPDATES' });
+  assert.equal(resp.success, true);
+  assert.equal(resp.status.updateAvailable, true);
+  assert.equal(fetchCalls.length, 1);
+
+  h.tabsCreated.length = 0;
+  await fireClick('mooc-reminder:update:1.2.0');
+  assert.equal(h.tabsCreated.length, 1);
+  assert.equal(
+    h.tabsCreated[0].url,
+    'https://github.com/furina061006/MOOC_reminder/releases/download/v1.2.0/mooc-reminder-v1.2.0.zip'
+  );
+});
+
+test('the update notification click never opens a non-github URL', async () => {
+  arrangeUpdateCheck({});
+  h.storageData.set('update_status', {
+    currentVersion: '1.0.0', latestVersion: '1.2.0', updateAvailable: true,
+    downloadUrl: 'https://evil.example.com/payload.zip', releaseUrl: 'https://evil.example.com/'
+  });
+
+  h.tabsCreated.length = 0;
+  await fireClick('mooc-reminder:update:1.2.0');
+
+  assert.equal(h.tabsCreated.length, 1);
+  assert.equal(h.tabsCreated[0].url, 'https://github.com/furina061006/MOOC_reminder/releases');
+});
+
+test('GET_UPDATE_STATUS reports the running version without a network call', async () => {
+  arrangeUpdateCheck({});
+  const resp = await sendMessage({ type: 'GET_UPDATE_STATUS' });
+  assert.equal(resp.success, true);
+  assert.equal(resp.currentVersion, '1.0.0');
+  assert.equal(fetchCalls.length, 0, 'rendering the options page must not hit the network');
+});
+
+// ── SPOC split across two terms (backlog: 老师新增的「线上学习任务」抓不到) ──
+//
+// Real data captured 2026-09 from 模拟电子技术基础 (NEU-1486374162):
+//   route term 1488279445 → 2 chapters: 线上学习任务 (3 quizs) + 翻转课堂 (1 homework)
+//   active/source term 1488001444 → the 10 source chapters (第一章 测验 …)
+// The page renders both groups side by side; the extension fetched only the active
+// term, so the teacher's additions never arrived.
+
+const SOURCE_TERM = '1488001444';
+const ROUTE_TERM = '1488279445';
+const MODE_SPOC = {
+  courseId: 'NEU-1486374162',
+  termId: ROUTE_TERM,
+  activeTermId: SOURCE_TERM,
+  courseName: '模拟电子技术基础',
+  courseType: 'spoc',
+  pageUrl: 'https://www.icourse163.org/spoc/learn/NEU-1486374162?tid=' + ROUTE_TERM + '#/learn/quiz'
+};
+
+const chapterDto = (chapters) => ({ result: { mocTermDto: { chapters } } });
+const sourceChapters = [{
+  id: 1252590041, name: '第一章 半导体二极管、三极管和场效应管(第二部分)', type: 'chapter',
+  lessons: [{ id: 11, name: '1.1', type: 'lesson', units: [
+    { id: 1278666208, name: '第一章 测验', contentType: 2, test: { deadline: 1797502200000, totalScore: 35 } }
+  ] }]
+}];
+const teacherChapters = [
+  {
+    id: 9001, name: '线上学习任务', type: 'chapter',
+    quizs: [
+      { id: 1279275088, name: '“关于Multisim和场效应管的学习” 对应的测试（做这个）', contentType: 2, test: { deadline: 1795966200000, totalScore: 12 } },
+      { id: 1279274323, name: '“图解分析法和计算分析法1”对应测试', contentType: 2, test: { deadline: 1795966200000 } },
+      { id: 1279271405, name: '“关于Multisim和场效应管的学习” 对应的测试', contentType: 2, test: { deadline: 1795966200000 } }
+    ]
+  },
+  {
+    id: 9002, name: '二极管应用仿真设计（翻转课堂）', type: 'chapter',
+    homeworks: [
+      { id: 1278916499, name: '二极管应用仿真设计', contentType: 3, test: { deadline: 1792942200000, type: 3 } }
+    ]
+  }
+];
+
+test('a SPOC course is refreshed for BOTH its route and active terms', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 77, lastAccessed: 5000 }]);
+  seedCourses([MODE_SPOC]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await new Promise(r => setTimeout(r, 1500));
+
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch, 'expected a BATCH_API_FETCH');
+  const mine = batch.msg.courses.filter(c => c.courseId === 'NEU-1486374162');
+  assert.deepEqual(mine.map(c => c.termId).sort(), [SOURCE_TERM, ROUTE_TERM].sort(),
+    'both the source term and the teacher-content route term must be fetched');
+  for (const c of mine) assert.equal(c.courseType, 'spoc');
+});
+
+test('a non-SPOC course still yields exactly one batch entry', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 78, lastAccessed: 5000 }]);
+  seedCourses([{ courseId: 'BIT-268001', termId: '1460270441', courseName: '数据结构', courseType: 'mooc' }]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await new Promise(r => setTimeout(r, 1500));
+
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch);
+  assert.equal(batch.msg.courses.filter(c => c.courseId === 'BIT-268001').length, 1);
+});
+
+test('a clobbered course.termId is recovered from the frozen pageUrl tid', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 79, lastAccessed: 5000 }]);
+  // Older builds overwrote course.termId with the API id; pageUrl still knows the
+  // route term the user actually opened.
+  seedCourses([Object.assign({}, MODE_SPOC, { termId: SOURCE_TERM })]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await new Promise(r => setTimeout(r, 1500));
+
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch);
+  const terms = batch.msg.courses.filter(c => c.courseId === 'NEU-1486374162').map(c => c.termId).sort();
+  assert.deepEqual(terms, [SOURCE_TERM, ROUTE_TERM].sort());
+});
+
+test('teacher content from the route term lands beside the source content', async () => {
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('dismissed_completed_uids');
+  seedCourses([MODE_SPOC]);
+
+  const source = await sendMessage({
+    type: 'COURSE_API_DATA',
+    course: { courseId: 'NEU-1486374162', termId: SOURCE_TERM, courseName: '模拟电子技术基础', schoolName: '', courseType: 'spoc' },
+    rawData: chapterDto(sourceChapters)
+  });
+  const teacher = await sendMessage({
+    type: 'COURSE_API_DATA',
+    course: { courseId: 'NEU-1486374162', termId: ROUTE_TERM, courseName: '模拟电子技术基础', schoolName: '', courseType: 'spoc' },
+    rawData: chapterDto(teacherChapters)
+  });
+
+  assert.equal(source.itemCount, 1);
+  assert.equal(teacher.itemCount, 4);
+
+  const items = storedItems();
+  assert.equal(items.length, 5, 'no item from either term may be dropped or duplicated');
+  assert.deepEqual(items.map(i => i.title).sort(), [
+    '“关于Multisim和场效应管的学习” 对应的测试',
+    '“关于Multisim和场效应管的学习” 对应的测试（做这个）',
+    '“图解分析法和计算分析法1”对应测试',
+    '二极管应用仿真设计',
+    '第一章 测验'
+  ].sort());
+
+  // Teacher items are keyed by the ROUTE term, so their UIDs cannot collide with
+  // the source term's items.
+  const teacherItem = items.find(i => i.title === '二极管应用仿真设计');
+  assert.equal(teacherItem.termId, ROUTE_TERM);
+  assert.ok(teacherItem.uid.includes('tid' + ROUTE_TERM));
+});
+
+// ── stale learn tabs (backlog: 开多个课程页面时 popup 抓取不到) ──────────────
+//
+// Reloading an extension never injects content scripts into tabs that are already
+// open, so their chrome.tabs.sendMessage rejects with "Receiving end does not
+// exist". The scrape used to target a single tab and abort on that, which left the
+// popup empty and told the user to log in even though course pages were open.
+
+const NO_RECEIVER = new Error('Could not establish connection. Receiving end does not exist.');
+
+test('a stale learn tab is skipped in favour of one that answers', async () => {
+  h.tabMessages.length = 0;
+  h.tabUpdateResponder = null;
+  h.setTabUpdateResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  seedCourses([{ courseId: 'BIT-100', termId: '101', courseName: '普通课程', courseType: 'mooc' }]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+  // 11 is the most recently used tab but has no content script.
+  h.setTabsQuery([
+    { id: 11, lastAccessed: 9000 },
+    { id: 22, lastAccessed: 1000 }
+  ]);
+  const answered = [];
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'BATCH_API_FETCH') {
+      if (tabId === 11) throw NO_RECEIVER;
+      answered.push(tabId);
+      h.storageData.set('last_sync', new Date().toISOString());
+      return [{ courseId: 'BIT-100' }];
+    }
+    return true;
+  });
+
+  const res = await sendMessage({ type: 'PAGE_OPENED' });
+  assert.equal(res.refreshTriggered, true);
+  await waitFor(() => answered.length > 0);
+
+  const targets = h.tabMessages.filter(t => t.msg && t.msg.type === 'BATCH_API_FETCH').map(t => t.tabId);
+  assert.deepEqual(targets, [11, 22], 'the stale tab is tried first, then the one that can serve');
+  assert.equal(answered[0], 22);
+});
+
+test('when every learn tab is stale the temporary proxy is used instead', async () => {
+  h.tabCreateRequests.length = 0;
+  h.tabsCreated.length = 0;
+  h.tabsUpdated.length = 0;
+  h.tabMessages.length = 0;
+  h.storageData.delete('temporary_proxy_job');
+  h.alarmsCreated.delete('temporary-proxy-timeout');
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  seedCourses([{ courseId: 'BIT-100', termId: '101', courseName: '普通课程', courseType: 'mooc' }]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+  h.setTabsQuery([{ id: 44, lastAccessed: 9000 }]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'BATCH_API_FETCH' && tabId === 44) throw NO_RECEIVER;
+    return true;
+  });
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await waitFor(() => h.tabsCreated.length === 1 && !!h.storageData.get('temporary_proxy_job'));
+
+  // The proxy tab is created fresh, so it always receives the content script.
+  assert.equal(h.tabCreateRequests[0].url, 'about:blank');
+  assert.equal(h.storageData.get('temporary_proxy_job').phase, 'waiting_ready');
+
+  // Clean up: a live job is remembered in the SW, and a later PAGE_OPENED would be
+  // claimed by the proxy path instead of taking the normal refresh route. The
+  // tab-removed listener is fire-and-forget, so wait for its async cleanup.
+  await fireTabRemoved(h.tabsCreated[0].id);
+  await waitFor(() => h.storageData.get('temporary_proxy_job') == null);
+});
+
+test('a genuine batch failure is not masked by trying other tabs', async () => {
+  // The flip side of the liveness probe: once a page HAS answered, a failure while
+  // serving the batch is a real error and must surface instead of being retried on
+  // every other tab (which would multiply the same failing API calls).
+  h.tabMessages.length = 0;
+  h.storageData.delete('temporary_proxy_job');
+  seedCourses([{ courseId: 'BIT-100', termId: '101', courseName: '普通课程', courseType: 'mooc' }]);
+  h.setTabsQuery([
+    { id: 55, lastAccessed: 9000 },
+    { id: 66, lastAccessed: 1000 }
+  ]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'BATCH_API_FETCH') throw new Error('MOOC proxy returned no course data');
+    return true;
+  });
+
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /returned no course data/);
+  const targets = h.tabMessages.filter(t => t.msg && t.msg.type === 'BATCH_API_FETCH').map(t => t.tabId);
+  assert.deepEqual(targets, [55], 'a real error does not advance to the next tab');
+  assert.equal(h.storageData.get('temporary_proxy_job'), undefined, 'and no proxy is created for a real error');
+});
+
+// ── tracked-course list: ignore / delete (backlog: 设置页课程列表) ──────────
+
+test('GET_COURSE_LIST reports tracked courses with counts and ignored ids', async () => {
+  seedCourses([
+    { courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' },
+    { courseId: 'NEU-2', termId: '22', activeTermId: '33', courseName: '大学物理', courseType: 'spoc' },
+    { courseId: 'manual', termId: 'manual', courseName: '手动提醒', courseType: 'manual' }
+  ]);
+  h.storageData.set('homework_items', [
+    { uid: 'BIT-1_tid11_ch_le_hw1', courseId: 'BIT-1', termId: '11', title: 'A', checkedOff: false },
+    { uid: 'BIT-1_tid11_ch_le_hw2', courseId: 'BIT-1', termId: '11', title: 'B', checkedOff: true },
+    { uid: 'NEU-2_tid33_ch_le_hw3', courseId: 'NEU-2', termId: '33', title: 'C', checkedOff: false }
+  ]);
+  h.storageData.set('user_settings', { ignoredCourseIds: ['NEU-2'] });
+
+  const resp = await sendMessage({ type: 'GET_COURSE_LIST' });
+
+  assert.equal(resp.success, true);
+  assert.deepEqual(resp.ignoredCourseIds, ['NEU-2']);
+  const byId = new Map(resp.courses.map(c => [c.courseId, c]));
+  assert.ok(!byId.has('manual'), 'the manual pseudo-course is not a tracked course');
+  assert.equal(byId.get('BIT-1').itemCount, 2);
+  assert.equal(byId.get('BIT-1').unfinishedCount, 1);
+  assert.equal(byId.get('NEU-2').courseType, 'spoc', 'activeTermId proves SPOC');
+  assert.equal(byId.get('NEU-2').itemCount, 1);
+});
+
+test('an ignored course is dropped from the refresh batch and the badge', async () => {
+  h.tabMessages.length = 0;
+  h.setTabMessageResponder(null);
+  h.setTabUpdateResponder(null);
+  h.storageData.delete('temporary_proxy_job');
+  h.setTabsQuery([{ id: 91, lastAccessed: 5000 }]);
+  seedCourses([
+    { courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' },
+    { courseId: 'NEU-9', termId: '99', courseName: '不想要的课', courseType: 'mooc' }
+  ]);
+  h.storageData.set('homework_items', [
+    { uid: 'BIT-1_tid11_ch_le_hw1', courseId: 'BIT-1', termId: '11', title: 'A', checkedOff: false, deadline: null },
+    { uid: 'NEU-9_tid99_ch_le_hw1', courseId: 'NEU-9', termId: '99', title: 'B', checkedOff: false, deadline: null }
+  ]);
+  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+  const toggled = await sendMessage({ type: 'TOGGLE_COURSE_IGNORE', courseId: 'NEU-9', ignored: true });
+  assert.equal(toggled.success, true);
+  assert.equal(toggled.ignored, true);
+
+  await fireAlarm('badge-refresh');
+  assert.equal(h.badge.text, '1', 'an ignored course must not count towards the badge');
+
+  await sendMessage({ type: 'PAGE_OPENED' });
+  await waitFor(() => h.tabMessages.some(t => t.msg && t.msg.type === 'BATCH_API_FETCH'));
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch);
+  assert.deepEqual(batch.msg.courses.map(c => c.courseId), ['BIT-1'],
+    'an ignored course must not cost an API call');
+});
+
+test('ignoring a course is reversible', async () => {
+  h.storageData.set('user_settings', { ignoredCourseIds: ['BIT-1'] });
+  const off = await sendMessage({ type: 'TOGGLE_COURSE_IGNORE', courseId: 'BIT-1', ignored: false });
+  assert.equal(off.ignored, false);
+  assert.deepEqual(h.storageData.get('user_settings').ignoredCourseIds, []);
+});
+
+test('DELETE_COURSE removes the course, its items and its tombstones', async () => {
+  seedCourses([
+    { courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' },
+    { courseId: 'NEU-9', termId: '99', courseName: '不想要的课', courseType: 'mooc' }
+  ]);
+  h.storageData.set('homework_items', [
+    { uid: 'BIT-1_tid11_ch_le_hw1', courseId: 'BIT-1', termId: '11', title: 'A', checkedOff: false },
+    { uid: 'NEU-9_tid99_ch_le_hw1', courseId: 'NEU-9', termId: '99', title: 'B', checkedOff: true }
+  ]);
+  h.storageData.set('dismissed_completed_uids', ['BIT-1_tid11_ch_le_hwX', 'NEU-9_tid99_ch_le_hw1']);
+
+  const resp = await sendMessage({ type: 'DELETE_COURSE', courseId: 'NEU-9' });
+
+  assert.equal(resp.success, true);
+  assert.deepEqual(h.storageData.get('courses').map(c => c.courseId), ['BIT-1']);
+  assert.deepEqual(storedItems().map(i => i.courseId), ['BIT-1']);
+  assert.deepEqual(h.storageData.get('dismissed_completed_uids'), ['BIT-1_tid11_ch_le_hwX'],
+    'only the deleted course tombstones are dropped');
 });

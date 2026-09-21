@@ -22,9 +22,11 @@ const DEFAULTS = {
   dailyDigestEnabled: false,
   dailyDigestHour: 8,
   mutedCourseIds: [],
+  ignoredCourseIds: [],
   autoDismissErrors: true,
   showSnoozeButton: true,
   showCourseMute: true,
+  autoCheckUpdates: true,
 };
 
 function $(id) { return document.getElementById(id); }
@@ -81,6 +83,7 @@ function populate(settings) {
   safeSetChecked('auto-dismiss-errors', s.autoDismissErrors === true);
   safeSetChecked('show-snooze-btn', s.showSnoozeButton !== false);
   safeSetChecked('show-course-mute', s.showCourseMute !== false);
+  safeSetChecked('auto-check-updates', s.autoCheckUpdates !== false);
   safeSetChecked('digest-enabled', s.dailyDigestEnabled === true);
   safeSetValue('digest-hour', s.dailyDigestHour);
   const leads = Array.isArray(s.notifyLeadHours) ? s.notifyLeadHours : DEFAULTS.notifyLeadHours;
@@ -119,9 +122,11 @@ function collect() {
     dailyDigestEnabled: safeGetChecked('digest-enabled'),
     dailyDigestHour: safeGetInt('digest-hour', 8),
     mutedCourseIds: currentSettings && Array.isArray(currentSettings.mutedCourseIds) ? currentSettings.mutedCourseIds : [],
+    ignoredCourseIds: currentSettings && Array.isArray(currentSettings.ignoredCourseIds) ? currentSettings.ignoredCourseIds : [],
     autoDismissErrors: safeGetChecked('auto-dismiss-errors'),
     showSnoozeButton: safeGetChecked('show-snooze-btn'),
-    showCourseMute: safeGetChecked('show-course-mute')
+    showCourseMute: safeGetChecked('show-course-mute'),
+    autoCheckUpdates: safeGetChecked('auto-check-updates')
   };
 }
 
@@ -260,6 +265,184 @@ async function loadNotificationDiagnostics() {
       html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">当前没有跨过提醒阈值的新作业。</p>';
     }
     body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<p style="color:var(--overdue,#dc3545);font-size:12px;margin:8px 0;">加载失败：' + escapeHtml(String(e.message || e)) + '</p>';
+  }
+}
+
+// ─── 更新 ──────────────────────────────────────────────
+//
+// 本扩展是开发者模式加载的，Chrome 不会自动更新它；这里只负责「告诉你有没有新版」
+// 并给出下载入口。版本判定在 shared/update-check.js（有单测），SW 负责网络请求。
+
+const SAFE_RELEASE_URL = /^https:\/\/github\.com\//;
+
+function formatCheckTime(iso) {
+  if (!iso) return '尚未检查';
+  try { return new Date(iso).toLocaleString('zh-CN'); } catch { return '时间不可用'; }
+}
+
+function renderUpdateStatus(payload) {
+  const body = $('update-status-body');
+  if (!body) return;
+  const status = (payload && payload.status) || null;
+  const current = (status && status.currentVersion) || (payload && payload.currentVersion) || '未知';
+
+  const rows = [['当前版本', 'v' + current]];
+  if (status && status.latestVersion) rows.push(['最新版本', 'v' + status.latestVersion]);
+  rows.push(['上次检查', formatCheckTime(status && status.checkedAt)]);
+
+  let html = '<div style="font-size:12px;margin:8px 0;">';
+  for (const row of rows) {
+    html += '<div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px solid var(--border-soft);">'
+      + '<span style="color:var(--text-faint);">' + escapeHtml(row[0]) + '</span>'
+      + '<span>' + escapeHtml(row[1]) + '</span></div>';
+  }
+  html += '</div>';
+
+  if (status && status.updateAvailable) {
+    html += '<p style="font-size:12px;color:var(--accent,#2f6fed);margin:8px 0;">发现新版本 v'
+      + escapeHtml(status.latestVersion) + '，点击「前往下载」获取。</p>';
+  } else if (status && status.error) {
+    // 网络失败时保留上次成功的结果，只提示这次没查成
+    html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">本次检查失败：'
+      + escapeHtml(status.error) + '（上方显示的是上次成功的结果）</p>';
+  } else if (status) {
+    html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">已是最新版本。</p>';
+  } else {
+    html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">尚未检查过更新。</p>';
+  }
+  body.innerHTML = html;
+
+  const btn = $('download-update-btn');
+  if (!btn) return;
+  const url = (status && (status.downloadUrl || status.releaseUrl)) || '';
+  const ok = !!(status && status.updateAvailable && SAFE_RELEASE_URL.test(url));
+  btn.style.display = ok ? '' : 'none';
+  btn.dataset.url = ok ? url : '';
+}
+
+async function loadUpdateStatus() {
+  try {
+    renderUpdateStatus(await chrome.runtime.sendMessage({ type: 'GET_UPDATE_STATUS' }));
+  } catch (e) {
+    console.error('[Options] GET_UPDATE_STATUS failed:', e.message);
+    renderUpdateStatus(null);
+  }
+}
+
+async function handleCheckUpdates() {
+  const btn = $('check-updates-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'CHECK_UPDATES' });
+    if (!resp || !resp.success) throw new Error((resp && resp.error) || '无法获取更新状态');
+    renderUpdateStatus({ status: resp.status });
+    showStatus(resp.status && resp.status.updateAvailable
+      ? '发现新版本 v' + resp.status.latestVersion
+      : '已是最新版本');
+  } catch (e) {
+    showStatus('检查更新失败：' + e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function handleDownloadUpdate() {
+  const btn = $('download-update-btn');
+  const url = (btn && btn.dataset && btn.dataset.url) || '';
+  if (!SAFE_RELEASE_URL.test(url)) return;
+  try {
+    if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: url });
+    else window.open(url, '_blank');
+  } catch { try { window.open(url, '_blank'); } catch { /* ignore */ } }
+}
+
+// ─── 已追踪课程 ────────────────────────────────────────
+//
+// 列出所有被追踪的课程，并允许「忽略」（停止追踪，保留记录）或「删除」（清掉课程
+// 与它的作业记录）。语义差别在 HTML 的说明里写清楚了：删除后课可能被页面采集重新
+// 加回来，想彻底不再出现要用忽略。
+
+async function loadTrackedCourses() {
+  const body = $('tracked-courses-body');
+  if (!body) return;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_COURSE_LIST' });
+    if (!resp || !resp.success) throw new Error((resp && resp.error) || '无法获取课程列表');
+    const courses = Array.isArray(resp.courses) ? resp.courses : [];
+    const ignored = new Set(resp.ignoredCourseIds || []);
+
+    if (courses.length === 0) {
+      body.innerHTML = '<p class="opt-sub" style="margin:8px 0 0;">还没有追踪任何课程。打开一门课程的学习页即可自动添加。</p>';
+      return;
+    }
+
+    let html = '';
+    for (const c of courses) {
+      const isIgnored = ignored.has(c.courseId);
+      const typeLabel = c.courseType === 'spoc' ? 'SPOC' : '普通';
+      const title = escapeHtml(c.courseName || c.courseId);
+      const sub = escapeHtml(
+        c.courseId + ' · ' + typeLabel +
+        ' · ' + c.unfinishedCount + ' 项未完成 / 共 ' + c.itemCount + ' 项'
+      );
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-soft);' +
+        (isIgnored ? 'opacity:.55;' : '') + '">' +
+        '<div style="min-width:0;">' +
+          '<div style="font-size:13px;word-break:break-all;">' + title +
+            (isIgnored ? ' <span style="font-size:11px;color:var(--text-faint);">（已忽略）</span>' : '') + '</div>' +
+          '<div style="font-size:11px;color:var(--text-faint);word-break:break-all;">' + sub + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+          '<button class="btn btn-sm btn-ghost tracked-ignore-btn" data-course-id="' + escapeHtml(c.courseId) +
+            '" data-ignored="' + (isIgnored ? '1' : '0') + '">' + (isIgnored ? '恢复追踪' : '忽略') + '</button>' +
+          '<button class="btn btn-sm btn-ghost btn-danger tracked-delete-btn" data-course-id="' + escapeHtml(c.courseId) +
+            '"><span class="icon-slot" data-icon="trash" data-icon-size="12"></span>删除</button>' +
+        '</div>' +
+      '</div>';
+    }
+    body.innerHTML = html;
+    // 内联的 data-icon 占位需要水合才会变成 SVG（icons.js 提供）
+    try { if (window.MOOC_HYDRATE_ICONS) window.MOOC_HYDRATE_ICONS(body); } catch {}
+
+    const ignoreBtns = body.querySelectorAll('.tracked-ignore-btn');
+    for (let i = 0; i < ignoreBtns.length; i++) {
+      ignoreBtns[i].addEventListener('click', async function () {
+        const id = this.getAttribute('data-course-id');
+        const nowIgnored = this.getAttribute('data-ignored') === '0';
+        this.disabled = true;
+        try {
+          const r = await chrome.runtime.sendMessage({ type: 'TOGGLE_COURSE_IGNORE', courseId: id, ignored: nowIgnored });
+          if (!r || !r.success) throw new Error((r && r.error) || '操作失败');
+          currentSettings = r.settings || currentSettings;
+          showStatus(nowIgnored ? '已忽略该课程' : '已恢复追踪');
+          loadTrackedCourses();
+        } catch (e) {
+          showStatus('操作失败：' + e.message, true);
+          this.disabled = false;
+        }
+      });
+    }
+
+    const deleteBtns = body.querySelectorAll('.tracked-delete-btn');
+    for (let j = 0; j < deleteBtns.length; j++) {
+      deleteBtns[j].addEventListener('click', async function () {
+        const id = this.getAttribute('data-course-id');
+        if (!window.confirm('删除「' + id + '」及其全部作业记录？\n\n（如果只是不想再追踪，用「忽略」更好 —— 删除后它可能被页面重新自动添加）')) return;
+        this.disabled = true;
+        try {
+          const r = await chrome.runtime.sendMessage({ type: 'DELETE_COURSE', courseId: id });
+          if (!r || !r.success) throw new Error((r && r.error) || '删除失败');
+          showStatus('已删除该课程');
+          loadTrackedCourses();
+          loadMutedCourses();
+        } catch (e) {
+          showStatus('删除失败：' + e.message, true);
+          this.disabled = false;
+        }
+      });
+    }
   } catch (e) {
     body.innerHTML = '<p style="color:var(--overdue,#dc3545);font-size:12px;margin:8px 0;">加载失败：' + escapeHtml(String(e.message || e)) + '</p>';
   }
@@ -424,9 +607,17 @@ async function init() {
     if (clearErrBtn) clearErrBtn.addEventListener('click', handleClearErrors);
   } catch(e) { console.error('[Options] error report init:', e.message); }
   try { loadMutedCourses(); } catch(e) { console.error('[Options] loadMutedCourses:', e.message); }
+  try { loadTrackedCourses(); } catch(e) { console.error('[Options] loadTrackedCourses:', e.message); }
   try {
     loadNotificationDiagnostics();
   } catch(e) { console.error('[Options] notification diagnostics init:', e.message); }
+  try {
+    loadUpdateStatus();
+    var checkUpdatesBtn = $('check-updates-btn');
+    if (checkUpdatesBtn) checkUpdatesBtn.addEventListener('click', handleCheckUpdates);
+    var downloadUpdateBtn = $('download-update-btn');
+    if (downloadUpdateBtn) downloadUpdateBtn.addEventListener('click', handleDownloadUpdate);
+  } catch(e) { console.error('[Options] update section init:', e.message); }
 }
 
 // 全局未捕获 Promise 拒绝处理

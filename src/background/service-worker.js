@@ -24,7 +24,8 @@ const KEYS = {
   API_STATUS: 'api_status',
   USER_SETTINGS: 'user_settings',
   POPUP_UI_STATE: 'popup_ui_state',
-  LAST_DIGEST_DATE: 'last_digest_date'
+  LAST_DIGEST_DATE: 'last_digest_date',
+  UPDATE_STATUS: 'update_status'
 };
 
 function getNotificationIconUrl() {
@@ -55,6 +56,12 @@ import {
 } from '../shared/reminder.js';
 import { resolveItemUrl } from '../shared/item-url.js';
 import { createSerializedStore } from '../shared/items-mutex.js';
+import {
+  RELEASES_API_URL,
+  RELEASES_PAGE_URL,
+  evaluateRelease,
+  resolveDownloadTarget
+} from '../shared/update-check.js';
 
 // homework_items has many concurrent read-modify-write writers (reconcile,
 // notification bookkeeping, popup actions). All RMW mutations must go through
@@ -201,6 +208,121 @@ async function setupAlarms() {
   console.log(`[MOOC Reminder] Alarms configured: scrape=${scrapeMinutes}m badge=${badgeMinutes}m digest=${digestSettings.dailyDigestEnabled ? digestSettings.dailyDigestHour + ':00' : 'off'}`);
 }
 
+// ─── Update check ───────────────────────────────────────
+//
+// This extension is side-loaded, so Chrome never updates it (no update_url/key).
+// We can only tell the user a newer release exists and hand them the download
+// link. Pure version logic lives in shared/update-check.js.
+
+const UPDATE_NOTIFICATION_PREFIX = 'mooc-reminder:update:';
+
+async function getUpdateStatus() {
+  const result = await chrome.storage.local.get(KEYS.UPDATE_STATUS);
+  const raw = result[KEYS.UPDATE_STATUS];
+  return (raw && typeof raw === 'object') ? raw : null;
+}
+
+// chrome.runtime.getManifest() exists in every real extension, but reading it
+// must never be the thing that breaks an alarm tick (test stubs, odd runtimes).
+function getRunningVersion() {
+  try {
+    return String(chrome.runtime.getManifest().version || '');
+  } catch {
+    return '';
+  }
+}
+
+/** Returns true only when a notification was actually created. */
+async function notifyUpdateAvailable(status) {
+  if (!chrome.notifications || !chrome.notifications.create) return false;
+  // An update is not urgent — never wake the user during quiet hours. The next
+  // tick will retry, because lastNotifiedVersion is only advanced on success.
+  const settings = normalizeSettings(await getUserSettings());
+  if (isWithinQuietHours(settings, new Date())) return false;
+  try {
+    await chrome.notifications.create(UPDATE_NOTIFICATION_PREFIX + status.latestVersion, {
+      type: 'basic',
+      iconUrl: getNotificationIconUrl(),
+      title: 'MOOC Reminder 有新版本',
+      message: `v${status.currentVersion} → v${status.latestVersion}，点击前往下载`,
+      priority: 1
+    });
+    return true;
+  } catch (e) {
+    console.warn('[MOOC Reminder] Update notification failed:', e.message);
+    return false;
+  }
+}
+
+/**
+ * Ask GitHub for the newest release and remember the answer.
+ *
+ * Rides the existing 12h `badge-refresh` tick rather than adding an alarm: an
+ * update check is not worth extra service-worker wake-ups. The result is cached
+ * in `update_status` so the options page renders without a network call.
+ *
+ * Never throws — the status object carries an `error` field instead.
+ */
+async function checkForUpdates({ manual = false } = {}) {
+  const settings = normalizeSettings(await getUserSettings());
+  if (!manual && !settings.autoCheckUpdates) return await getUpdateStatus();
+
+  const previous = (await getUpdateStatus()) || {};
+  const currentVersion = getRunningVersion();
+  let result;
+  let error = null;
+
+  try {
+    const response = await fetch(RELEASES_API_URL, {
+      headers: { Accept: 'application/vnd.github+json' },
+      cache: 'no-store'
+    });
+    if (!response || !response.ok) throw new Error('HTTP ' + (response ? response.status : '?'));
+    const evaluated = evaluateRelease(await response.json(), currentVersion);
+    if (!evaluated) throw new Error('无法解析 Release 信息');
+    result = {
+      currentVersion,
+      latestVersion: evaluated.version,
+      updateAvailable: evaluated.updateAvailable,
+      downloadUrl: evaluated.downloadUrl,
+      releaseUrl: evaluated.releaseUrl,
+      notes: evaluated.notes,
+      publishedAt: evaluated.publishedAt
+    };
+  } catch (e) {
+    // Offline / rate-limited / API drift. Keep the last known good answer so a
+    // transient failure neither blanks the UI nor makes an existing "update
+    // available" indicator flip back to "up to date".
+    console.warn('[MOOC Reminder] Update check failed:', e.message);
+    error = String(e && e.message ? e.message : e);
+    result = {
+      currentVersion,
+      latestVersion: previous.latestVersion || '',
+      updateAvailable: !!(previous.latestVersion && previous.updateAvailable),
+      downloadUrl: previous.downloadUrl || '',
+      releaseUrl: previous.releaseUrl || '',
+      notes: previous.notes || '',
+      publishedAt: previous.publishedAt || ''
+    };
+  }
+
+  const next = {
+    ...result,
+    checkedAt: new Date().toISOString(),
+    error,
+    // Persisted so the 12h tick does not re-announce the same version.
+    notifiedVersion: previous.notifiedVersion || null
+  };
+
+  if (!error && next.updateAvailable && next.latestVersion &&
+      next.latestVersion !== next.notifiedVersion) {
+    if (await notifyUpdateAvailable(next)) next.notifiedVersion = next.latestVersion;
+  }
+
+  await chrome.storage.local.set({ [KEYS.UPDATE_STATUS]: next });
+  return next;
+}
+
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   console.log('[MOOC Reminder] Alarm fired:', alarm.name);
 
@@ -212,8 +334,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       break;
     case 'badge-refresh':
       await updateBadgeFromStorage();
-      break;
-    case 'daily-digest':
+      // 更新检查搭 12h 周期的便车，不额外增加 SW 唤醒（见 CLAUDE.md 调度策略）
+      await checkForUpdates();
+      break;    case 'daily-digest':
       await sendDailyDigestNotification();
       break;
     case 'daily-digest-retry':
@@ -265,18 +388,19 @@ const MESSAGE_HANDLERS = {
   async COURSE_API_DATA(msg) {
     if (!msg.course || !msg.rawData) return { success: false, error: 'Invalid payload' };
     try {
-      const items = apiExtractHomework(msg.rawData, msg.course);
+      const course = await resolveCourseForExtraction(msg.course);
+      const items = apiExtractHomework(msg.rawData, course);
       if (items.length === 0) {
         // A successful API response can legitimately contain no assessable items.
         // It still proves the batch completed and must advance the sync timestamp.
         await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
-        console.log('[MOOC Reminder] COURSE_API_DATA: 0 items extracted for', msg.course.courseId, '(courseName:', msg.course.courseName || '?', 'rawData len:', (msg.rawData||'').length, ')');
+        console.log('[MOOC Reminder] COURSE_API_DATA: 0 items extracted for', course.courseId, '(courseName:', course.courseName || '?', 'rawData len:', (msg.rawData||'').length, ')');
         return { success: true, itemCount: 0 };
       }
-      const result = await reconcileHomeworkData(msg.course, items);
+      const result = await reconcileHomeworkData(course, items);
       await updateBadgeFromStorage();
       await chrome.storage.local.set({ [KEYS.LAST_SYNC]: new Date().toISOString() });
-      console.log(`[MOOC Reminder] Course API data: ${items.length} items from ${msg.course.courseId} (${msg.course.courseName || ''})`);
+      console.log(`[MOOC Reminder] Course API data: ${items.length} items from ${course.courseId} (${course.courseName || ''})`);
       return { success: true, added: result.added, updated: result.updated, itemCount: items.length };
     } catch (e) {
       console.warn('[MOOC Reminder] COURSE_API_DATA error:', e.message, 'courseId:', msg.course?.courseId);
@@ -314,12 +438,20 @@ const MESSAGE_HANDLERS = {
   // work without re-opening the SPOC course page.
   async COURSE_UPDATE(msg) {
     if (!msg.courseId || !msg.activeTermId) return { success: false, error: 'Invalid payload' };
-    await upsertCourse({
+    const patch = {
       courseId: msg.courseId,
       activeTermId: msg.activeTermId,
       courseName: msg.courseName || '',
       courseType: msg.courseType || 'spoc'
-    });
+    };
+    // Persist the route URL the user's browser actually loaded. It is the only
+    // thing that pairs the correct /spoc/learn/ prefix with the route shell
+    // `tid`, and it is frozen here so later weak /learn/ discovery harvests of
+    // the same courseId cannot rewrite it. API items inherit it via
+    // `pageUrl: course.pageUrl`, which resolveItemUrl() already prefers over any
+    // courseType guess.
+    if (isIcCourseLearnUrl(msg.routeUrl)) patch.pageUrl = msg.routeUrl;
+    await upsertCourse(patch);
     console.log('[MOOC Reminder] COURSE_UPDATE:', msg.courseId, 'activeTermId=', msg.activeTermId, 'name=', msg.courseName);
     return { success: true };
   },
@@ -347,7 +479,10 @@ const MESSAGE_HANDLERS = {
     }
     console.log('[MOOC Reminder] COURSE_LINKS: registered', registered, 'courses, new:', newCourses, 'SPOC:', spocCount);
     // Only kick a (heavy) background refresh when a genuinely new course appeared.
-    if (newCourses > 0) {
+    // During a scrape the SW is already fetching everything through the content
+    // script (and it now asks every open page to report on every pass), so the
+    // SW-side refresh would only duplicate the same API calls.
+    if (newCourses > 0 && !periodicScrapeInFlight) {
       apiRefreshAllKnownCourses().catch(() => {});
     }
     return { success: true, registered, newCourses };
@@ -473,6 +608,72 @@ const MESSAGE_HANDLERS = {
     return { success: true, muted: settings.mutedCourseIds.indexOf(courseId) >= 0, settings };
   },
 
+  // Settings page: stop tracking a course. Unlike mute this also removes it from
+  // the refresh batch, so an unwanted course costs no API calls. Stored in settings
+  // (not on the Course record) so course-discovery re-registering the course cannot
+  // silently un-ignore it.
+  async TOGGLE_COURSE_IGNORE(msg) {
+    const courseId = String(msg.courseId || '').trim();
+    if (!courseId) return { success: false, error: 'Invalid payload' };
+    const settings = normalizeSettings(await getUserSettings());
+    const ignored = new Set(settings.ignoredCourseIds || []);
+    if (msg.ignored === false) ignored.delete(courseId);
+    else if (msg.ignored === true) ignored.add(courseId);
+    else if (ignored.has(courseId)) ignored.delete(courseId); else ignored.add(courseId);
+    settings.ignoredCourseIds = Array.from(ignored);
+    await chrome.storage.local.set({ [KEYS.USER_SETTINGS]: settings });
+    await updateBadgeFromStorage();
+    return { success: true, ignored: settings.ignoredCourseIds.indexOf(courseId) >= 0, settings };
+  },
+
+  // Settings page: drop a course and everything recorded for it.
+  async DELETE_COURSE(msg) {
+    const courseId = String(msg.courseId || '').trim();
+    if (!courseId) return { success: false, error: 'Invalid payload' };
+    await mutateCourses(courses => courses.filter(c => !c || c.courseId !== courseId));
+    await mutateHomeworkItems(items => items.filter(i => !i || i.courseId !== courseId));
+    // Drop this course's cleared-completed tombstones too. They exist to stop cleared
+    // items from being resurrected, but the items are gone now, and a stale tombstone
+    // would keep hiding items if the course is ever added again.
+    const tombstones = await getDismissedCompletedUids();
+    const kept = new Set(Array.from(tombstones).filter(uid => !String(uid).startsWith(courseId + '_')));
+    if (kept.size !== tombstones.size) await setDismissedCompletedUids(kept);
+    await updateBadgeFromStorage();
+    return { success: true, courseId };
+  },
+
+  // Settings page: the tracked-course list with per-course counts, plus which
+  // courses the user has ignored.
+  async GET_COURSE_LIST() {
+    const courses = await getCourses();
+    const items = await getHomeworkItems();
+    const settings = normalizeSettings(await getUserSettings());
+    const counts = new Map();
+    for (const item of items) {
+      if (!item || !item.courseId) continue;
+      const entry = counts.get(item.courseId) || { total: 0, unfinished: 0 };
+      entry.total++;
+      if (!item.checkedOff) entry.unfinished++;
+      counts.set(item.courseId, entry);
+    }
+    const list = courses
+      .filter(c => c && c.courseId && c.courseType !== 'manual')
+      .map(c => {
+        const count = counts.get(c.courseId) || { total: 0, unfinished: 0 };
+        return {
+          courseId: c.courseId,
+          courseName: c.courseName || '',
+          schoolName: c.schoolName || '',
+          courseType: isProvenSpocCourse(c) ? 'spoc' : (c.courseType || ''),
+          termId: c.termId || '',
+          activeTermId: c.activeTermId || '',
+          itemCount: count.total,
+          unfinishedCount: count.unfinished
+        };
+      });
+    return { success: true, courses: list, ignoredCourseIds: settings.ignoredCourseIds || [] };
+  },
+
   // Popup UI state persistence (filter + collapsed courses)
   async GET_POPUP_STATE() {
     const raw = await chrome.storage.local.get(KEYS.POPUP_UI_STATE);
@@ -593,6 +794,21 @@ const MESSAGE_HANDLERS = {
         dailyDigestRetry: alarms[3] || null
       }
     };
+  },
+
+  // Options page: cached update state (no network — renders instantly).
+  async GET_UPDATE_STATUS() {
+    return {
+      success: true,
+      status: await getUpdateStatus(),
+      currentVersion: chrome.runtime.getManifest().version
+    };
+  },
+
+  // Options page: explicit "check now" button. Bypasses the autoCheckUpdates
+  // switch on purpose — that switch governs the background tick, not a click.
+  async CHECK_UPDATES() {
+    return { success: true, status: await checkForUpdates({ manual: true }) };
   },
 
   // Clear sync errors from storage
@@ -775,10 +991,18 @@ async function reconcileHomeworkData(course, newItems) {
   }
 
   // Update course metadata — 不覆写已有的课程名称（checkPageHookData 发来的可能为空）
+  // 也不写 pageUrl/termId：
+  //   - pageUrl 只由 COURSE_UPDATE（真实页面）冻结写入，API payload 的空值会把它抹掉；
+  //   - Course.termId 全项目都当作「路由 termId」用（getProxyRouteTermId、
+  //     buildTemporaryProxyUrl、点击跳转），而这里的 course.termId 是抓取用的
+  //     termId —— SPOC 下等于 activeTermId（API id），写进去就把路由壳 id 毁掉了。
+  // 这门课必然已在 courses 里（buildApiCourseList / apiRefreshAllKnownCourses 都
+  // 从已存储课程派生），所以不同步这两个字段不会丢数据。
   if (course && course.courseId) {
     var courseMeta = {};
     for (var key in course) {
-      if (Object.prototype.hasOwnProperty.call(course, key) && key !== 'courseName' && key !== 'schoolName') {
+      if (Object.prototype.hasOwnProperty.call(course, key) &&
+          key !== 'courseName' && key !== 'schoolName' && key !== 'pageUrl' && key !== 'termId') {
         courseMeta[key] = course[key];
       }
     }
@@ -807,7 +1031,11 @@ async function updateBadgeFromStorage() {
     const items = await getHomeworkItems();
     const settings = normalizeSettings(await getUserSettings());
     const mutedIds = new Set(settings.mutedCourseIds || []);
-    const unfinished = items.filter(i => !i.checkedOff && !mutedIds.has(i.courseId));
+    // Ignored courses are not tracked at all, so keep them out of the badge count —
+    // and therefore out of deadline notifications as well.
+    const ignoredIds = new Set(settings.ignoredCourseIds || []);
+    const unfinished = items.filter(i =>
+      !i.checkedOff && !mutedIds.has(i.courseId) && !ignoredIds.has(i.courseId));
     const count = unfinished.length;
 
     if (count === 0) {
@@ -1007,6 +1235,20 @@ async function maybeNotifyDeadlines(unfinishedItems) {
 
 chrome.notifications?.onClicked?.addListener(async (notificationId) => {
   if (!notificationId || notificationId.indexOf('mooc-reminder:') !== 0) return;
+
+  // Update announcement: open the download page instead of a homework item.
+  if (notificationId.indexOf(UPDATE_NOTIFICATION_PREFIX) === 0) {
+    try {
+      const status = await getUpdateStatus();
+      const url = resolveDownloadTarget(status) || RELEASES_PAGE_URL;
+      await chrome.tabs.create({ url });
+      await chrome.notifications.clear(notificationId);
+    } catch (e) {
+      console.debug('[MOOC Reminder] Update notification click failed:', e.message);
+    }
+    return;
+  }
+
   const parts = notificationId.split(':');
   const uid = parts.length >= 2 ? decodeURIComponent(parts[1]) : '';
   if (!uid) return;
@@ -1021,7 +1263,10 @@ chrome.notifications?.onClicked?.addListener(async (notificationId) => {
     if (item) {
       const courses = await getCourses();
       const course = courses.find(c => c && c.courseId === item.courseId);
-      if (course && course.courseType) courseType = course.courseType;
+      if (course) {
+        // activeTermId outranks courseType — see isProvenSpocCourse.
+        courseType = isProvenSpocCourse(course) ? 'spoc' : (course.courseType || courseType);
+      }
     }
     const url = item ? resolveItemUrl(item, courseType) : null;
     if (url) {
@@ -1063,29 +1308,91 @@ let temporaryProxyWaiter = null;
 let temporaryProxyDispatchingJobId = null;
 const temporaryProxyFinalizingJobIds = new Set();
 
-function pickApiProxyTab(tabs) {
-  if (!tabs || tabs.length === 0) return null;
-  const sorted = tabs.slice().sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-  return sorted[0];
+// chrome.tabs.sendMessage rejects like this when the target tab has no listener —
+// typically a learn page that was already open when the extension was reloaded,
+// because reloading never injects content scripts into existing tabs.
+function isContentScriptMissingError(error) {
+  const message = String((error && error.message) || error || '');
+  return /Receiving end does not exist|Could not establish connection/i.test(message);
 }
 
-function buildApiCourseList(courses) {
-  return (Array.isArray(courses) ? courses : [])
-    .filter(course => course && course.courseType !== 'manual' && course.courseId && (course.activeTermId || course.termId))
-    .map(course => ({
-      courseId: course.courseId,
-      termId: course.activeTermId || course.termId || '',
-      courseName: course.courseName || '',
-      schoolName: course.schoolName || '',
-      courseType: course.courseType || ''
-    }));
+// A SPOC course can be split across TWO terms, and the page renders both side by
+// side:
+//   - the ROUTE term — the `?tid=` the user actually opens. Carries the teacher's
+//     own additions (verified 2026-09 on 模拟电子技术基础: term 1488279445 held
+//     only the 线上学习任务 / 翻转课堂 chapters).
+//   - the ACTIVE/source term — `window.moocTermDto.id`, the source MOOC course the
+//     SPOC was cloned from (same course: term 1488001444 held the 10 source
+//     chapters).
+// They are disjoint, and `isSameHomeworkCandidate` refuses to merge across
+// termIds, so fetching only one silently loses half the course — which is exactly
+// how the teacher's 线上学习任务 group went missing. Emit one entry per term.
+function buildApiCourseList(courses, ignoredCourseIds) {
+  const ignored = ignoredCourseIds instanceof Set ? ignoredCourseIds : new Set(ignoredCourseIds || []);
+  const out = [];
+  for (const course of (Array.isArray(courses) ? courses : [])) {
+    if (!course || course.courseType === 'manual' || !course.courseId) continue;
+    // 被用户忽略的课程不参与任何抓取（设置页「已追踪课程」）
+    if (ignored.has(course.courseId)) continue;
+    // activeTermId is written ONLY by COURSE_UPDATE, which main.js sends ONLY
+    // from a genuine SPOC page. So its presence proves SPOC regardless of what
+    // courseType says — a /learn/ discovery harvest of the same courseId may have
+    // demoted courseType to 'mooc'. Deriving the effective type here keeps SPOC
+    // items correctly labelled all the way to the popup click target.
+    const provenSpoc = isProvenSpocCourse(course);
+    const courseType = provenSpoc ? 'spoc' : (course.courseType || '');
+
+    const terms = [];
+    const active = String(course.activeTermId || course.termId || '');
+    if (active) terms.push(active);
+    if (provenSpoc) {
+      // 路由 term：老师自己加的内容在这里。非 SPOC 不扩展 —— MOOC 的 active 与路由
+      // 本来就是同一个 id，扩展了也只会重复。
+      // pageUrl 是 COURSE_UPDATE 冻结的「用户真实打开过的 URL」，它的 ?tid= 比
+      // course.termId 更可靠：旧版本曾把 termId 覆盖成 API id（不变量 10），
+      // 那些历史记录要靠这里救回来。
+      const routeCandidates = [String(course.termId || '')];
+      const fromPage = /[?&]tid=(\d+)/.exec(String(course.pageUrl || ''));
+      if (fromPage) routeCandidates.push(fromPage[1]);
+      for (const route of routeCandidates) {
+        if (route && route !== 'manual' && !terms.includes(route)) terms.push(route);
+      }
+    }
+    if (terms.length === 0) continue;
+
+    for (const termId of terms) {
+      out.push({
+        courseId: course.courseId,
+        termId,
+        courseName: course.courseName || '',
+        schoolName: course.schoolName || '',
+        courseType
+      });
+    }
+  }
+  return out;
 }
 
 function getProxyRouteTermId(course) {
   if (!course) return '';
   if (course.termId && course.termId !== 'manual') return String(course.termId);
-  // A SPOC activeTermId is an API ID and can differ from the route shell ID.
-  return course.courseType === 'spoc' ? '' : String(course.activeTermId || '');
+  // A SPOC activeTermId is an API ID and can differ from the route shell ID, so
+  // it must never be used as the route `tid`. See isProvenSpocCourse.
+  return isProvenSpocCourse(course) ? '' : String(course.activeTermId || '');
+}
+
+// A usable icourse163 learn route: right origin, /learn/ or /spoc/learn/ path, and
+// a `tid`. Anything else (homepage links, user-typed junk) must never be stored as
+// a course route, because it would be handed straight to chrome.tabs.create.
+function isIcCourseLearnUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.origin === ICOURSE_ORIGIN &&
+      /\/(?:spoc\/)?learn\//.test(url.pathname) &&
+      !!url.searchParams.get('tid');
+  } catch {
+    return false;
+  }
 }
 
 function buildTemporaryProxyUrl(course) {
@@ -1093,22 +1400,21 @@ function buildTemporaryProxyUrl(course) {
   if (!course || !course.courseId || !routeTermId) return null;
 
   const storedUrl = course.pageUrl || course.courseUrl || '';
-  try {
+  if (isIcCourseLearnUrl(storedUrl)) {
     const url = new URL(storedUrl);
-    if (url.origin === 'https://www.icourse163.org' && /\/(?:spoc\/)?learn\//.test(url.pathname) && url.searchParams.get('tid')) {
-      url.hash = '/learn/testlist';
-      return url.toString();
-    }
-  } catch {}
+    url.hash = '/learn/testlist';
+    return url.toString();
+  }
 
   const path = course.courseType === 'spoc' ? '/spoc/learn/' : '/learn/';
   return 'https://www.icourse163.org' + path + encodeURIComponent(course.courseId) +
     '?tid=' + encodeURIComponent(routeTermId) + '#/learn/testlist';
 }
 
-function pickTemporaryProxyCourse(courses) {
+function pickTemporaryProxyCourse(courses, ignoredCourseIds) {
+  const ignored = ignoredCourseIds instanceof Set ? ignoredCourseIds : new Set(ignoredCourseIds || []);
   return (Array.isArray(courses) ? courses : [])
-    .filter(course => course && course.courseType !== 'manual' && buildTemporaryProxyUrl(course))
+    .filter(course => course && course.courseType !== 'manual' && !ignored.has(course.courseId) && buildTemporaryProxyUrl(course))
     .sort((a, b) => new Date(b.lastSeen || 0) - new Date(a.lastSeen || 0))[0] || null;
 }
 
@@ -1248,7 +1554,8 @@ async function createTemporaryProxyJob(courses, source) {
     return { success: false, pending: true, error: 'Temporary MOOC proxy is already running', temporaryProxy: true };
   }
 
-  const proxyCourse = pickTemporaryProxyCourse(courses);
+  const ignoredCourseIds = normalizeSettings(await getUserSettings()).ignoredCourseIds || [];
+  const proxyCourse = pickTemporaryProxyCourse(courses, ignoredCourseIds);
   const proxyUrl = buildTemporaryProxyUrl(proxyCourse);
   if (!proxyCourse || !proxyUrl) {
     return { success: false, error: '没有可用于后台刷新的已载入 MOOC 课程', temporaryProxy: false };
@@ -1273,7 +1580,9 @@ async function createTemporaryProxyJob(courses, source) {
       proxyUrl,
       createdAt,
       deadlineAt: createdAt + TEMPORARY_PROXY_TIMEOUT_MS,
-      expectedCourseIds: buildApiCourseList(courses).map(course => course.courseId)
+      // A SPOC course now contributes one batch entry per term, so dedupe: this is
+      // a set of course ids to wait for, not a per-request count.
+      expectedCourseIds: [...new Set(buildApiCourseList(courses, ignoredCourseIds).map(course => course.courseId))]
     };
     activeTemporaryProxyJob = job;
     const completion = createTemporaryProxyWaiter(job);
@@ -1337,7 +1646,8 @@ async function runTemporaryProxyBatch(job) {
   let outcome;
   try {
     await setTemporaryProxyJobPhase(job, 'fetching');
-    const apiCourses = buildApiCourseList(await getCourses());
+    const ignoredCourseIds = normalizeSettings(await getUserSettings()).ignoredCourseIds || [];
+    const apiCourses = buildApiCourseList(await getCourses(), ignoredCourseIds);
     if (apiCourses.length === 0) throw new Error('没有可抓取的已载入课程');
 
     const remainingMs = Math.max(1, job.deadlineAt - Date.now());
@@ -1374,48 +1684,156 @@ async function runTemporaryProxyBatch(job) {
   return outcome;
 }
 
+const LEARN_TAB_URLS = [
+  'https://www.icourse163.org/learn/*',
+  'https://www.icourse163.org/spoc/learn/*'
+];
+
+// Every icourse163 page may know about courses (`course-discovery.js` runs on all
+// of them), so every scrape asks the whole site — not only the learn tabs: the
+// 「我的课程」page is the richest source of course links, and a learn tab answers
+// for itself (main.js). The answers also tell the SW which pages are still alive.
+const ICOURSE_TAB_URLS = ['https://www.icourse163.org/*'];
+
+// A page that cannot answer must never be trusted with anything. Two ways to get
+// no answer: the content script is missing (page predates the last extension
+// reload, or the browser discarded the tab — rejects immediately) or the renderer
+// is frozen/unresponsive as a long-hidden background tab (the promise never
+// settles). Both are normal in a browser that has been open for a while, so every
+// ask is bounded and the answer decides what that page is used for.
+const PAGE_ANSWER_TIMEOUT_MS = 1500;
+
+// main.js answers REQUEST_COURSE_LINKS only after its own COURSE_LINKS /
+// COURSE_UPDATE were handled, but course-discovery's anchor harvest is
+// fire-and-forget: give those messages a moment to land before reading `courses`.
+const COURSE_REPORT_SETTLE_MS = 800;
+
+/**
+ * Ask every open icourse163 page to re-report the courses it knows, and return the
+ * ids of the pages that answered.
+ *
+ * One cheap round trip does two jobs:
+ *  - **registration**: `course-discovery` reports each course once per page load and
+ *    `main.js` registers its own course only while loading, so a course whose page
+ *    has been sitting in the background since before 清除数据 (or whose page load
+ *    never captured the API hook) would otherwise never be known again. Asking on
+ *    every scrape makes the course list self-healing instead of only recoverable
+ *    when it is empty.
+ *  - **liveness**: only a page that answers may be chosen to serve the heavy
+ *    BATCH_API_FETCH. A frozen/unloaded page never answers, and sending it the batch
+ *    used to abort the whole pass after a 90-second timeout even though another tab
+ *    — or the temporary proxy — could have served it.
+ */
+async function askOpenPagesToReport(tabs) {
+  const candidates = (Array.isArray(tabs) ? tabs : []).filter(tab => tab && Number.isInteger(tab.id));
+  const responders = new Set();
+  if (candidates.length === 0) return responders;
+
+  // Ask every page at once: sequentially awaiting a frozen page would add its whole
+  // timeout to the pass, and one silent page must not delay the others.
+  await Promise.all(candidates.map(async tab => {
+    try {
+      await withTimeout(
+        chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_COURSE_LINKS' }),
+        PAGE_ANSWER_TIMEOUT_MS,
+        'no answer within ' + PAGE_ANSWER_TIMEOUT_MS + 'ms'
+      );
+      responders.add(tab.id);
+    } catch (e) {
+      console.warn('[MOOC Reminder] Page', tab.id, 'did not answer (' + (e && e.message) +
+        ') — it cannot report courses or serve the batch');
+    }
+  }));
+
+  console.log('[MOOC Reminder] Open icourse163 pages:', candidates.length, '— answered:', responders.size);
+  if (responders.size > 0) {
+    await new Promise(resolve => setTimeout(resolve, COURSE_REPORT_SETTLE_MS));
+  }
+  return responders;
+}
+
 async function performPeriodicScrape(source) {
   if (periodicScrapeInFlight) return periodicScrapeInFlight;
 
   const run = (async function() {
     console.log('[MOOC Reminder] Periodic scrape started');
     try {
-      const courses = await getCourses();
-      const apiCourses = buildApiCourseList(courses);
+      // Ask first, then read: the answers may register courses this very pass needs.
+      const openTabs = await chrome.tabs.query({ url: ICOURSE_TAB_URLS });
+      const responders = await askOpenPagesToReport(openTabs);
+
+      let courses = await getCourses();
+      const ignoredCourseIds = normalizeSettings(await getUserSettings()).ignoredCourseIds || [];
+      let apiCourses = buildApiCourseList(courses, ignoredCourseIds);
+
       if (apiCourses.length === 0) {
-        return { success: false, error: '没有可抓取的已载入课程', tabsScanned: 0 };
+        // This used to return in TOTAL silence, which made 「popup 一点都抓不到」
+        // almost undiagnosable: the empty popup blamed the login and neither the
+        // console nor 错误报告 said anything. Say which of the two reasons it is,
+        // and record it so the popup/设置页 can show it too.
+        const trackable = courses.filter(c => c && c.courseType !== 'manual' && c.courseId);
+        const reason = courses.length === 0
+          ? '还没有任何已载入的课程：请先打开一次 icourse163 课程页面（刚重新加载过扩展的话，还需要刷新已打开的页面）'
+          : trackable.length === 0
+            ? '没有可抓取的已载入课程（已知的只有手动提醒条目）'
+            : '所有课程都被跳过（共 ' + courses.length + ' 门；已忽略 ' + ignoredCourseIds.length + ' 门）';
+        console.warn('[MOOC Reminder] Periodic scrape skipped:', reason);
+        await addSyncError('抓取跳过：' + reason);
+        return { success: false, error: reason, tabsScanned: 0 };
       }
 
-      const tabs = await chrome.tabs.query({
-        url: [
-          'https://www.icourse163.org/learn/*',
-          'https://www.icourse163.org/spoc/learn/*'
-        ]
-      });
-      const proxyTab = pickApiProxyTab(tabs);
+      // Only pages that just proved they can answer are candidates. This is what
+      // makes a refresh independent of which course tabs the browser froze or
+      // unloaded while the user was looking elsewhere.
+      const learnTabs = await chrome.tabs.query({ url: LEARN_TAB_URLS });
+      const candidates = (Array.isArray(learnTabs) ? learnTabs : [])
+        .filter(tab => tab && responders.has(tab.id))
+        .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
 
-      if (!proxyTab) {
-        console.log('[MOOC Reminder] No learn tab open, creating a temporary proxy tab');
+      if (candidates.length === 0) {
+        console.log('[MOOC Reminder] No responsive learn tab, creating a temporary proxy tab');
         return await createTemporaryProxyJob(courses, source || 'periodic');
       }
 
-      console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', apiCourses.length, 'courses to tab', proxyTab.id);
-      const results = await withTimeout(
-        chrome.tabs.sendMessage(proxyTab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }),
-        TEMPORARY_PROXY_TIMEOUT_MS,
-        'MOOC proxy batch timed out'
-      );
-      if (!Array.isArray(results) || results.length === 0) {
-        throw new Error('MOOC proxy returned no course data');
+      // Try the most recently used responsive learn tab first, then the others. A
+      // learn tab that was already open when the extension was reloaded has NO
+      // content script, and chrome.tabs.sendMessage then rejects with "Receiving
+      // end does not exist" — that used to abort the entire scrape even though
+      // other tabs could have served it. Only that definitive "nobody is
+      // listening" failure moves on to the next candidate (it can still happen if
+      // the page navigated right after answering); a real timeout on a page that
+      // just answered fails loudly, because the data would be lost silently.
+      for (const tab of candidates) {
+        console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', apiCourses.length, 'courses to tab', tab.id);
+        try {
+          const results = await withTimeout(
+            chrome.tabs.sendMessage(tab.id, { type: 'BATCH_API_FETCH', courses: apiCourses }),
+            TEMPORARY_PROXY_TIMEOUT_MS,
+            'MOOC proxy batch timed out'
+          );
+          if (!Array.isArray(results) || results.length === 0) {
+            throw new Error('MOOC proxy returned no course data');
+          }
+          await updateBadgeFromStorage();
+          console.log('[MOOC Reminder] Periodic scrape complete');
+          return {
+            success: true,
+            temporaryProxy: false,
+            fetchedCourseCount: results.length,
+            tabsScanned: 1,
+            tabId: tab.id
+          };
+        } catch (e) {
+          if (!isContentScriptMissingError(e)) throw e;
+          console.warn('[MOOC Reminder] Tab', tab.id, 'has no content script (page predates the last extension reload)');
+        }
       }
-      await updateBadgeFromStorage();
-      console.log('[MOOC Reminder] Periodic scrape complete');
-      return {
-        success: true,
-        temporaryProxy: false,
-        fetchedCourseCount: Array.isArray(results) ? results.length : 0,
-        tabsScanned: 1
-      };
+
+      // Every candidate turned out to be stale (they answered, then navigated).
+      // The temporary proxy is created fresh, so it always gets the content
+      // script — use it rather than failing the scrape.
+      console.warn('[MOOC Reminder] No learn tab could serve the batch, falling back to a temporary proxy tab');
+      return await createTemporaryProxyJob(courses, source || 'periodic');
     } catch (e) {
       console.error('[MOOC Reminder] Periodic scrape failed:', e);
       await addSyncError('Periodic scrape: ' + e.message);
@@ -1487,6 +1905,25 @@ async function setDismissedCompletedUids(uids) {
   });
 }
 
+// A courseId can carry BOTH a MOOC and a SPOC offering (a SPOC course shares its
+// {school}-{id} with the plain course of the same name). `courses` holds one
+// record per courseId, so the two offerings collide on every write.
+//
+// SPOC evidence is considered proven when activeTermId is present — it is written
+// only by COURSE_UPDATE, which main.js sends only from a genuine SPOC page — or
+// when the recorded courseType is already 'spoc' (a /spoc/learn/ link harvest).
+// A 'mooc' patch without that proof is a weak signal: course-discovery.js labels
+// every href lacking /spoc/ as 'mooc', so the same course's plain /learn/ link
+// would otherwise demote the record (popup title flips to the MOOC name and the
+// item's click target becomes /learn/).
+function isProvenSpocCourse(course) {
+  return !!(course && (course.activeTermId || course.courseType === 'spoc'));
+}
+
+function isWeakMoocPatch(course) {
+  return !!(course && course.courseType === 'mooc');
+}
+
 // Serialized read-modify-write: see mutateCourses above. Every course write
 // must go through here so concurrent COURSE_LINKS / COURSE_UPDATE /
 // COURSE_API_DATA updates cannot drop each other's courses.
@@ -1496,7 +1933,16 @@ async function upsertCourse(course) {
     const idx = courses.findIndex(c => c && c.courseId === course.courseId);
     const lastSeen = new Date().toISOString();
     if (idx >= 0) {
-      courses[idx] = { ...courses[idx], ...course, lastSeen };
+      const existing = courses[idx];
+      if (isProvenSpocCourse(existing) && isWeakMoocPatch(course)) {
+        // Drop the patch whole, not just courseType: the weak patch also carries
+        // a MOOC termId, and overwriting the SPOC route termId would break the
+        // temporary-proxy route. lastSeen still advances so proxy picking sees
+        // the course as recently active.
+        courses[idx] = { ...existing, lastSeen };
+        return courses;
+      }
+      courses[idx] = { ...existing, ...course, lastSeen };
     } else {
       courses.push({ ...course, firstSeen: course.firstSeen || lastSeen, lastSeen });
     }
@@ -1654,11 +2100,41 @@ function apiCoerceJson(input) {
   return null;
 }
 
+// The content script reports only what it fetched. The click target and the
+// collision-proof SPOC evidence live on the stored Course record, which the SW
+// owns, so resolve them here rather than trusting a round-tripped echo:
+//   - pageUrl      — the route URL frozen by COURSE_UPDATE from the page the user
+//                    actually opened. API items must inherit it, because their own
+//                    termId is the API id, which is the wrong `tid` for a route.
+//   - activeTermId — proves SPOC even when courseType was demoted (see above).
+// A page-supplied pageUrl still wins when present: the page-hook path captured
+// its response from that exact URL.
+async function resolveCourseForExtraction(course) {
+  if (!course || !course.courseId) return course;
+  try {
+    const courses = await getCourses();
+    const stored = courses.find(c => c && c.courseId === course.courseId);
+    if (!stored) return course;
+    return {
+      ...course,
+      courseType: isProvenSpocCourse(stored) ? 'spoc' : (course.courseType || stored.courseType || ''),
+      pageUrl: course.pageUrl || stored.pageUrl || ''
+    };
+  } catch {
+    return course;
+  }
+}
+
 function apiExtractHomework(input, course) {
   const data = apiCoerceJson(input);
   if (!data || !course) return [];
   const out = [];
   const seen = new Set();
+  // Nodes that carry a name AND a signal but fail the type gate. They used to be
+  // dropped in total silence, which made "this course's items are missing" almost
+  // undiagnosable — the contentType that caused it was never reported anywhere.
+  // Kept in sync with src/shared/icourse163-api.js (invariant 12).
+  const nearMisses = [];
   let visited = 0;
   function looksLikeChapter(node) { return Array.isArray(node.lessons) || /chapter/i.test(node.type || ''); }
   function looksLikeLesson(node) { return Array.isArray(node.units) || /lesson/i.test(node.type || ''); }
@@ -1675,8 +2151,9 @@ function apiExtractHomework(input, course) {
     // contentType 是权威字段：2=测验, 3=作业, 6=考试；名字正则作为后备
     var ct = String(node.contentType || '');
     var ctIsAssessed = ct === '2' || ct === '3' || ct === '6';
-    if (typeof name === 'string' && name.trim() && hasSignal &&
-        (ctIsAssessed || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)))) {
+    var isAssessed = typeof name === 'string' && name.trim() && hasSignal &&
+        (ctIsAssessed || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)));
+    if (isAssessed) {
 
       const homeworkId = String(node.id || node.jobId || node.quizId || node.testId || node.homeworkId || '') || ('h' + (out.length + 1));
       const uid = `${course.courseId}_tid${course.termId}_ch${chapterId || ''}_le${lessonId || ''}_hw${homeworkId}`;
@@ -1703,6 +2180,10 @@ function apiExtractHomework(input, course) {
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
           title: name.trim(), type: apiClassifyType(name, node.contentType || nt2.type || null),
           courseName: course.courseName || '', schoolName: course.schoolName || '',
+          // Kept in sync with src/shared/icourse163-api.js extractHomeworkFromTermDto:
+          // items must self-describe their route type, otherwise a demoted Course
+          // record is the only thing deciding /learn/ vs /spoc/learn/.
+          courseType: course.courseType || '',
           status: done ? 'completed' : 'unfinished',
           checkedOff: done, manuallyCheckedOff: false,
           autoDetectedCompleted: done, completionReason: done ? 'auto' : null,
@@ -1712,10 +2193,30 @@ function apiExtractHomework(input, course) {
           apiCompleted: done
         });
       }
+    } else if (typeof name === 'string' && name.trim() && hasSignal) {
+      // Name + signal but the type gate rejected it. Record why, capped so a
+      // 200KB DTO cannot flood the console.
+      if (nearMisses.length < 5) {
+        nearMisses.push({
+          name: String(name).trim().slice(0, 40),
+          contentType: ct || null,
+          type: node.type != null ? node.type : null,
+          testType: (node.test && node.test.type != null) ? node.test.type : null
+        });
+      } else if (nearMisses.length === 5) {
+        nearMisses.push('…');
+      }
     }
+
     const nextChapter = node.chapterId || (looksLikeChapter(node) ? node.id : chapterId);
     const nextLesson = node.lessonId || (looksLikeLesson(node) ? node.id : lessonId);
     for (const key of Object.keys(node)) {
+      // `test` 是节点自身的元数据，不是子作业 —— 它自带 name/type/deadline，
+      // 访问它会以 test.id 为 homeworkId 再生成一条重复条目（2026-09 在真实 DTO
+      // 上实测：「第一章 测验」和三条 Multisim 测验都中招，只因为末尾的同名去重
+      // 才没露出）。所需字段都通过 node.test 显式读取，故跳过该子树。
+      // 与 src/shared/icourse163-api.js 保持一致（不变量 12）。
+      if (key === 'test') continue;
       const v = node[key];
       if (v && typeof v === 'object') {
         visit(v, nextChapter, nextLesson);
@@ -1771,6 +2272,13 @@ function apiExtractHomework(input, course) {
         j--;
       }
     }
+  }
+
+  if (nearMisses.length > 0) {
+    // Deliberately actionable: when a course looks like it is missing items, this
+    // line names the contentType the gate rejected. See CLAUDE.md「抓不到/抓不全条目」.
+    console.log('[MOOC Reminder] apiExtractHomework: ' + nearMisses.length +
+      ' 个节点有名字+截止/分数但被类型门槛拦下（若某课程条目缺失，先看这里）:', JSON.stringify(nearMisses));
   }
 
   return out;

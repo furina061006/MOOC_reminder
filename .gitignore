@@ -1,8 +1,14 @@
 # Dependencies
 node_modules/
 
-# Logs
+# Logs (runtime output)
 logs/
+# ...but .claude/logs/ is NOT runtime output: it holds the developer docs that
+# CLAUDE.md links to (changelog.md, architecture.md, dated dev logs). Without these
+# negations `logs/` silently swallows every new file written there — several dev
+# logs were already lost that way.
+!.claude/logs/
+!.claude/logs/**
 
 # IDE / Editor
 .vscode/
@@ -17,17 +23,32 @@ Thumbs.db
 # Build output
 dist/
 build/
-mooc-reminder.zip
+mooc-reminder*.zip
 
 # Environment
 .env
 .env.local
 
-# Local settings (may contain sensitive paths)
+# Claude Code 的本机脚手架 —— 不进仓库：
+#   settings.json 含本机绝对路径，scheduled_tasks.json 是本机任务列表，
+#   settings.local.json 是本机权限。项目文档（CLAUDE.md、.claude/logs/）照旧提交；
+#   给 AI 工具的通用约定应该写进 CLAUDE.md，而不是留在这些本机文件里。
+.claude/settings.json
 .claude/settings.local.json
+.claude/scheduled_tasks.json
 
 # reference projects
 reference_projects/
 
-# zcode
-zcode/
+# zcode —— AI 规划工具的本地目录。这条规则以前写成 `zcode/`（少了点），
+# 挡不住真实目录，于是 `.zcode/plans/*.md` 曾被提交进仓库（2026-09-21 已 git rm）。
+.zcode/
+
+# Local diagnostic dumps — raw DOM snapshots and API captures contain the user's
+# own course/account data (userId, course ids, teacher content) and this repo is
+# public. See tools/diagnostics/README.md.
+element.txt
+mooc-dto-report.json
+dto*.json
+*-report.json
+*.har

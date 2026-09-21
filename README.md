@@ -11,6 +11,10 @@
 
 打开 [中国大学MOOC](https://www.icourse163.org/) 完成线上作业时，插件自动爬取「测验与作业」和「考试」板块的未完成作业，在扩展图标上显示数量，点击即可查看清单。
 
+> [!TIP]
+> 遇到问题或想提建议？→ **[新建 Issue](https://github.com/furina061006/MOOC_reminder/issues/new/choose)**（有模板，会问你要日志）。
+> 提交之前请先做一次「在 `chrome://extensions` 重新加载扩展 **+** 刷新已打开的课程页面」——大部分「抓不到」都是漏了这一步。
+
 ## 功能一览
 
 | 功能 | 说明 |
@@ -54,14 +58,18 @@
 
 ### 步骤
 
-1. 下载项目代码（`git clone` 或下载 ZIP 解压）。
+1. 打开 [Releases 页面](https://github.com/furina061006/MOOC_reminder/releases/latest)，下载最新版的 `mooc-reminder-v*.zip` 并解压。
 2. 打开浏览器扩展管理页：`chrome://extensions/`。
 3. 开启右上角「开发者模式」。
 4. 点击左上角「加载已解压的扩展」。
-5. 选择 `MOOC_reminder` 文件夹。
+5. 选择解压出来的 `MOOC_reminder` 文件夹。
 
 > [!WARNING]
 > 本插件未上架 Chrome 网上应用店，需通过「开发者模式」加载。
+>
+> 也正因为是「开发者模式」加载，**Chrome 不会自动更新本插件**。插件会在后台检查新版本（默认每 12 小时一次），发现新版本时弹出通知，你也可以在设置页的「更新」区块手动检查并一键前往下载。升级时按上面的步骤重新下载解压、并在扩展管理页点一下「刷新」即可，作业数据不会丢失。
+>
+> 如果不想让插件联网检查更新，可在设置页关闭「自动检查更新」——关闭后插件不会发出任何外部请求。
 
 ## 使用方法
 
@@ -112,7 +120,12 @@ popup 左上角可筛选：
 
 ## 反馈建议
 
-如有问题或建议，请发送邮件至 **[zemei.huang@foxmail.com](mailto:zemei.huang@foxmail.com)**。
+**优先用 Issues**——可以搜到别人提过的问题，也能看到处理进度。模板会引导你附上插件版本、浏览器版本、`[MOOC Reminder]` 日志和诊断输出；信息给够通常一轮就能定位。
+
+- 🐞 [Bug 报告](https://github.com/furina061006/MOOC_reminder/issues/new?template=bug_report.yml)
+- 💡 [功能建议](https://github.com/furina061006/MOOC_reminder/issues/new?template=feature_request.yml)
+- ✉️ 涉及个人账号信息、不方便公开讨论时：发邮件至 **[zemei.huang@foxmail.com](mailto:zemei.huang@foxmail.com)**
+- 🛠 想改代码：[CONTRIBUTING.md](https://github.com/furina061006/MOOC_reminder/blob/main/CONTRIBUTING.md)
 
 ## 近期合并的 Pull Request
 
@@ -126,11 +139,12 @@ popup 左上角可筛选：
 
 ## 最近更新
 
+- **更新提醒**：后台默认每 12 小时检查一次 GitHub 上的新版本，发现后弹出系统通知，设置页「更新」区块可查看当前/最新版本并一键前往下载（可关闭自动检查）。
 - **无标签页自动刷新**：没有现成学习标签页时，使用临时非激活代理页刷新已载入课程。
 - **低频后台检查**：后台检查和徽章刷新默认间隔均为 12 小时。
 - **每日摘要补发**：每天定时发送摘要，并在当天首次启动浏览器时补发临期摘要。
 
-完整更新记录请参阅 [.claude/logs/changelog.md](.claude/logs/changelog.md)。
+完整更新记录请参阅 [.claude/logs/changelog.md](https://github.com/furina061006/MOOC_reminder/blob/main/.claude/logs/changelog.md)。
 
 ## 贡献者
 
@@ -138,6 +152,8 @@ popup 左上角可筛选：
 - [@puresky271](https://github.com/puresky271) — 桌面通知、设置页面、日历导出、SVG 图标、全课程追踪、CI/CD、测试
 
 ## 原理 & 技术栈（给开发者）
+
+> 想改代码？先读 [CONTRIBUTING.md](https://github.com/furina061006/MOOC_reminder/blob/main/CONTRIBUTING.md)：本地怎么加载扩展、`npm run validate`、以及**不要把抓取产物提交上来**这条红线。
 
 ### 工作原理
 
@@ -155,7 +171,7 @@ popup 左上角可筛选：
 ```
 
 > [!TIP]
-> 详细架构请参阅 [architecture.md](.claude/logs/architecture.md)。
+> 详细架构请参阅 [architecture.md](https://github.com/furina061006/MOOC_reminder/blob/main/.claude/logs/architecture.md)。
 
 ### 技术栈
 
@@ -178,7 +194,11 @@ MOOC_reminder/
 │   ├── content/            # 页面注入脚本（API 代理 + SPOC 支持）
 │   ├── popup/              # 弹出窗口（HTML/CSS/JS）
 │   └── shared/             # 共享模块（数据模型、存储、API 解析、设置）
-├── .claude/logs/           # 开发日志
+├── tests/unit/             # 单测（含 SW 集成测试的 chrome.* stub）
+├── tools/diagnostics/      # 排查「某门课抓不到」用的诊断脚本
+├── .github/                # Issue 模板、PR 模板、CI 与发布 workflow
+├── .claude/logs/           # 更新日志与开发日志
+├── CONTRIBUTING.md         # 参与开发前先看这个
 └── README.md
 ```
 

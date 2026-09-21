@@ -1,0 +1,91 @@
+name: 🐞 Bug 报告
+description: 插件行为不对、抓不到作业、提醒没来 —— 用这个模板
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        谢谢反馈！带 * 的项请尽量填满，信息够了才能直接定位。
+
+        提交前请先做两件事，它们能解决一大半「抓不到」：
+
+        1. 看过 README 的「局限性」与「使用技巧」；
+        2. **在 `chrome://extensions` 里点过「重新加载」，并把已打开的 icourse163 页面刷新过一次**。
+           只重载扩展而不刷新页面的话，页面里就没有插件的代码，什么都不会工作。
+  - type: input
+    id: version
+    attributes:
+      label: 插件版本
+      description: 在 `chrome://extensions` 的卡片上，或设置页底部可以看到（形如 1.0.1）。
+      placeholder: "1.0.1"
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: 浏览器与版本
+      description: 插件跑在 Chromium 内核浏览器里，不同版本的标签页回收行为差别很大。
+      placeholder: "Chrome 128.0.6613.120 / Edge 127 / 夸克 6.x"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象
+      description: 你做了什么、期望什么、实际看到什么。截图或录屏可以直接拖进来。
+      placeholder: |
+        1. 打开 XXX 课程学习页
+        2. 点 popup 里的刷新按钮
+        3. 期望看到 3 条作业；实际列表是空的，并提示「……」
+    validations:
+      required: true
+  - type: dropdown
+    id: reloaded
+    attributes:
+      label: 最近有没有「重新加载扩展 + 刷新课程页面」
+      description: 这是排查的第一步，能排除掉最常见的一类问题。
+      options:
+        - 两个都做了（重载扩展 + 刷新页面）
+        - 只重载了扩展，没刷新页面
+        - 都没做
+        - 不确定
+    validations:
+      required: true
+  - type: input
+    id: course
+    attributes:
+      label: 涉及的课程
+      description: 哪门课？MOOC 还是 SPOC？只有某几门课不对，还是所有课都不对？
+      placeholder: "大学物理（SPOC），只有这一门不对"
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志与错误报告
+      description: |
+        设置页有「错误报告」区块，把内容复制过来即可。
+        更详细的是扩展自己的 Service Worker 控制台：`chrome://extensions` → MOOC Reminder → 点「Service Worker」，
+        把 `[MOOC Reminder]` 开头的行贴上来（尤其是点刷新前后那几行）。
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 诊断输出（推荐）
+      description: |
+        在同一个控制台里粘贴并运行 `tools/diagnostics/dump-extension-state.js` 的内容。它会列出扩展现在存了什么、
+        每门课的 termId，以及每个 icourse163 页面是否还活着（`discarded` / `answered`）。
+        **输出里含你的课程名，贴之前可以自行删减。**
+      render: json
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我看过 README 的「局限性」，并确认自己装的是最新 Release
+          required: true

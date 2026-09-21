@@ -1,0 +1,13 @@
+# Issue 选择器的配置。
+#
+# 关掉「空白 issue」：让每份报告都带上足够的信息，否则「抓不到作业」这种一句话
+# 描述要来回问好几轮才能定位（排查第一步、日志、诊断输出都在模板里）。
+blank_issues_enabled: false
+
+contact_links:
+  - name: 📖 先看 README（安装 / 使用技巧 / 局限性）
+    url: https://github.com/furina061006/MOOC_reminder#局限性
+    about: 「抓不到作业」「提醒没来」这类问题，README 的局限性与使用技巧里通常已经写明了原因。
+  - name: ✉️ 不方便公开讨论？发邮件
+    url: https://github.com/furina061006/MOOC_reminder/blob/main/README.md#反馈建议
+    about: 涉及个人账号信息、或不想公开讨论时，用邮件联系维护者（地址见 README 的「反馈建议」段）。

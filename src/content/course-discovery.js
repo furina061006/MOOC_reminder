@@ -36,7 +36,10 @@
     };
   }
 
-  function harvest() {
+  // force=true 会清掉本次页面加载的去重记录，用于 SW 要求重新上报
+  // （用户在设置页清空数据/删除课程后，已打开的页面否则永远不会再上报）。
+  function harvest(force) {
+    if (force) reported = {};
     var anchors = document.querySelectorAll('a[href*="/learn/"]');
     var found = [];
     for (var i = 0; i < anchors.length; i++) {
@@ -76,6 +79,18 @@
   // to /learn/ or /spoc/learn/ tabs, or to a temporary proxy tab navigated to a
   // learn URL (where main.js owns the message). The broken branch was removed
   // instead of being left in place as a silent return-empty fallback.
+
+  // 数据被清空后，SW 会要求已打开的学习页重新上报课程链接（见 service-worker
+  // 的 askOpenPagesToReport，每轮抓取都会问一次）。没有这个入口，用户就必须手动
+  // 刷新页面。
+  try {
+    chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+      if (!msg || msg.type !== 'REQUEST_COURSE_LINKS') return false;
+      try { harvest(true); } catch { /* ignore */ }
+      try { sendResponse({ success: true }); } catch { /* ignore */ }
+      return false;
+    });
+  } catch { /* ignore */ }
 
   function start() {
     harvest();

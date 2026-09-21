@@ -36,6 +36,82 @@
     }
   }
 
+  // Best-effort course name from the page itself. Only used for display, and the
+  // SW never overwrites a non-empty stored name with an empty one, so a miss here
+  // is harmless.
+  function readCourseName() {
+    var name = '';
+    try {
+      var el = document.querySelector('h1, .course-name, [class*="courseTitle"], .m-coursename');
+      if (el) name = el.textContent.trim();
+    } catch { /* ignore */ }
+    if (!name) {
+      try { name = document.title.replace(/[_-]\s*中国大学MOOC.*$/i, '').trim(); } catch { /* ignore */ }
+    }
+    return name;
+  }
+
+  /**
+   * Report THIS page's own course identity to the SW.
+   *
+   * course-discovery.js can only harvest `/learn/{id}?tid={tid}` anchors, and a
+   * course page has none (its SPA menu is `data-menu-id="/learn/..."`, not a
+   * link) — so when the user clears the data / deletes a course, the SW's
+   * "re-discovery" pass used to come back empty from exactly the pages that know
+   * the answer, and the course list stayed empty until the user reloaded a page
+   * (a page load re-runs init(), which registers the course via COURSE_UPDATE /
+   * the xhr hook). This handler closes that hole: the SW asks, we answer with
+   * what this page already knows about itself.
+   *
+   * Two messages, mirroring what init()/batchApiFetch already send:
+   *  - COURSE_LINKS carries the ROUTE term (`?tid=`) + courseType.
+   *  - COURSE_UPDATE carries the SPOC active term + routeUrl (不变量 5/6: 路由
+   *    term 与 active term 不可混用；buildApiCourseList 用两者做并集).
+   *
+   * SPOC is proven by the URL prefix ONLY — the same rule init() uses. The
+   * `data-mooc-real-termid` bridge attribute is NOT proof: it is injected on
+   * every learn page and a MOOC page exposes `window.moocTermDto` too, so using
+   * its presence here would register a MOOC course as SPOC and send its clicks
+   * to /spoc/learn/.
+   */
+  async function reportOwnCourseIdentity() {
+    var meta = parseCourseUrl(window.location.href);
+    if (!meta || !meta.courseId || !meta.termId) return false;
+
+    var courseName = readCourseName();
+    var isSpoc = meta.isSpoc === true;
+    var realTid = null;
+    try { realTid = document.documentElement.getAttribute('data-mooc-real-termid'); } catch { /* ignore */ }
+
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'COURSE_LINKS',
+        courses: [{
+          courseId: meta.courseId,
+          termId: meta.termId,
+          courseName: courseName,
+          courseType: isSpoc ? 'spoc' : 'mooc'
+        }]
+      });
+    } catch { /* SW asleep — the scrape that asked for this is retried by the user */ }
+
+    if (isSpoc && realTid) {
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'COURSE_UPDATE',
+          courseId: meta.courseId,
+          activeTermId: realTid,
+          courseName: courseName,
+          courseType: 'spoc',
+          routeUrl: window.location.href
+        });
+      } catch { /* ignore */ }
+    }
+
+    console.log('[MOOC Reminder] Reported own course identity:', meta.courseId, 'routeTid=' + meta.termId, 'spoc=' + isSpoc);
+    return true;
+  }
+
   // ─── Initialization ─────────────────────────────────────
 
   async function init() {
@@ -63,6 +139,12 @@
         });
         return true;
       }
+      if (msg.type === 'REQUEST_COURSE_LINKS') {
+        reportOwnCourseIdentity()
+          .then(function (reported) { try { sendResponse({ success: reported }); } catch { /* port closed */ } })
+          .catch(function () { try { sendResponse({ success: false }); } catch { /* port closed */ } });
+        return true;
+      }
       return false;
     });
 
@@ -85,15 +167,18 @@
         var spocMeta = parseCourseUrl(window.location.href);
         if (spocMeta && spocMeta.isSpoc && spocMeta.courseId) {
           // 从页面读取课程名称
-          var spocPageName = '';
-          try { var h2 = document.querySelector('h1, .course-name, [class*="courseTitle"], .m-coursename'); if (h2) spocPageName = h2.textContent.trim(); } catch {}
-          if (!spocPageName) { try { spocPageName = document.title.replace(/[_-]\s*中国大学MOOC.*$/i, '').trim(); } catch {} }
+          var spocPageName = readCourseName();
           chrome.runtime.sendMessage({
             type: 'COURSE_UPDATE',
             courseId: spocMeta.courseId,
             activeTermId: realTid,
             courseName: spocPageName,
-            courseType: 'spoc'
+            courseType: 'spoc',
+            // The URL the browser actually opened. It is the only source that
+            // pairs the /spoc/learn/ prefix with the route shell `tid` — the
+            // API termId differs from the route termId and must not be used to
+            // rebuild a clickable URL (see CLAUDE.md「两者不可混用」).
+            routeUrl: window.location.href
           }).catch(function(){});
           console.log('[MOOC Reminder] SPOC real termId persisted for', spocMeta.courseId, 'name:', spocPageName);
         }
@@ -155,7 +240,7 @@
                   var sendTid = (realTid && realTid !== urlTid) ? realTid : (entryTid || pageMeta.termId);
                   var swResp = await chrome.runtime.sendMessage({
                     type: 'COURSE_API_DATA',
-                    course: { courseId: pageMeta.courseId, termId: sendTid, courseName: '', schoolName: '' },
+                    course: { courseId: pageMeta.courseId, termId: sendTid, courseName: '', schoolName: '', courseType: pageMeta.isSpoc ? 'spoc' : 'mooc', pageUrl: window.location.href },
                     rawData: entry.resp
                   });
                   console.log('[MOOC Reminder] Page-hook COURSE_API_DATA response:', JSON.stringify(swResp));
@@ -184,9 +269,7 @@
     if (pageMeta && pageMeta.courseId && pageMeta.termId) {
       var hasCurrent = courses.some(function(c){ return c.courseId === pageMeta.courseId; });
       if (!hasCurrent) {
-        var pageName = '';
-        try { var h = document.querySelector('h1, .course-name, [class*="courseTitle"], .m-coursename'); if (h) pageName = h.textContent.trim(); } catch {}
-        if (!pageName) { try { pageName = document.title.replace(/[_-]\s*中国大学MOOC.*$/i, '').trim(); } catch {} }
+        var pageName = readCourseName();
         courses.push({ courseId: pageMeta.courseId, termId: pageMeta.termId, courseName: pageName, schoolName: '' });
       }
     }
@@ -237,17 +320,13 @@
       var isCurrentSpocPage = isSpocPage && c.courseId === pageMeta.courseId;
       var courseIsSpoc = (c.courseType === 'spoc') || isCurrentSpocPage;
 
-      // ═══ SPOC: 仅当在本课程页面上时，才用 DOM 属性替换 termId ═══
-      // 在其他页面上用 DOM 属性会拿到别的课程的真实 termId，造成数据串
-      if (isCurrentSpocPage) {
-        try {
-          var realTermId = document.documentElement.getAttribute('data-mooc-real-termid');
-          if (realTermId && realTermId !== c.termId) {
-            console.log('[MOOC Reminder] SPOC: using real termId', realTermId, 'instead of URL termId', c.termId, 'for', c.courseId);
-            c.termId = realTermId;
-          }
-        } catch(e) {}
-      } else if (courseIsSpoc) {
+      // ═══ SPOC: 不再用 DOM 属性覆盖 termId ═══
+      // SW 的 buildApiCourseList 现在对 SPOC 课程**每个 term 各发一条**（路由 term =
+      // 老师新增内容，activeTermId = 源课程内容，见 CLAUDE.md 不变量 14），所以这里的
+      // 列表就是权威的。以前把路由 term 替换成 DOM 的真实 term，会让「老师内容」那一半
+      // 永远抓不到 —— 那正是 2026-09 修复过的问题，别再把它改回来。
+      // DOM 属性的职责只剩「在 init() 里把 activeTermId 持久化」（COURSE_UPDATE）。
+      if (courseIsSpoc && !isCurrentSpocPage) {
         // 在非本页面处理 SPOC 课程——termId 来自 SW 的 activeTermId
         console.debug('[MOOC Reminder] SPOC: cross-page handling', c.courseId, 'termId=' + c.termId);
       }
@@ -330,7 +409,7 @@
         }
 
         results.push({
-          course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '' },
+          course: { courseId: c.courseId, termId: c.termId, courseName: c.courseName || '', schoolName: c.schoolName || '', courseType: c.courseType || '' },
           rawData: text
         });
       } catch(e) {

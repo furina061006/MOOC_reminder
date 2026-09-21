@@ -25,9 +25,15 @@ export const DEFAULT_SETTINGS = {
   dailyDigestEnabled: false,   // one summary notification per day
   dailyDigestHour: 8,          // local hour for daily digest
   mutedCourseIds: [],          // courses muted for notifications/digests
+  // Courses the user chose to STOP tracking (设置页「已追踪课程」→ 忽略). Unlike
+  // mute, this also drops them from the refresh batch, so they consume no API
+  // calls. Kept here rather than as a flag on the Course record so that
+  // course-discovery re-registering the course cannot silently un-ignore it.
+  ignoredCourseIds: [],
   autoDismissErrors: true,    // auto-clear sync errors from the UI
   showSnoozeButton: true,       // show snooze button in popup
   showCourseMute: true,         // show course mute button
+  autoCheckUpdates: true,       // periodically ask GitHub whether a newer release exists
 };
 
 export function clampInt(value, min, max, fallback) {
@@ -64,9 +70,12 @@ export function normalizeSettings(stored) {
     dailyDigestEnabled: s.dailyDigestEnabled === true,
     dailyDigestHour: clampInt(s.dailyDigestHour, 0, 23, DEFAULT_SETTINGS.dailyDigestHour),
     mutedCourseIds: Array.isArray(s.mutedCourseIds) ? s.mutedCourseIds.filter(Boolean).map(String) : [],
+    ignoredCourseIds: Array.isArray(s.ignoredCourseIds) ? s.ignoredCourseIds.filter(Boolean).map(String) : [],
     autoDismissErrors: s.autoDismissErrors === true,
     showSnoozeButton: s.showSnoozeButton !== false,
     showCourseMute: s.showCourseMute !== false,
+    // Default-on: opt out is possible, opt in is not required.
+    autoCheckUpdates: s.autoCheckUpdates !== false,
   };
 }
 

@@ -97,3 +97,97 @@ test('extractHomeworkFromTermDto returns [] for empty / unparseable input', () =
   assert.deepEqual(extractHomeworkFromTermDto('garbage', course), []);
   assert.deepEqual(extractHomeworkFromTermDto({ result: {} }, course), []);
 });
+
+// ── near-miss diagnostics ────────────────────────────────────────────────
+// A node with a name AND a deadline/score that fails the `contentType ∈ {2,3,6}`
+// gate used to vanish without a trace, which is why "this course's items are
+// missing" was so hard to diagnose. It must now be reported.
+
+/** Run the extractor while capturing console.log lines. */
+function captureLogs(fn) {
+  const logs = [];
+  const original = console.log;
+  console.log = (...args) => logs.push(args.map(String).join(' '));
+  try {
+    return { result: fn(), logs };
+  } finally {
+    console.log = original;
+  }
+}
+
+/** A chapter/lesson/unit DTO whose units are the given assessment-ish nodes. */
+function dtoWithUnits(units) {
+  return {
+    result: {
+      mocTermDto: {
+        chapters: [{
+          id: 1, name: '第1章', type: 'chapter',
+          lessons: [{ id: 11, name: '1.1', type: 'lesson', units }]
+        }]
+      }
+    }
+  };
+}
+
+test('extractHomeworkFromTermDto reports nodes it rejected on content type', () => {
+  const deadline = Date.now() + 86400000;
+  const dto = dtoWithUnits([
+    { id: 101, name: '第一章 测验', contentType: 2, test: { deadline } },
+    // name + deadline but an unrecognised contentType → currently gated out
+    { id: 102, name: '“Multisim” 对应的测试', contentType: 9, test: { deadline } }
+  ]);
+
+  const { result, logs } = captureLogs(() =>
+    extractHomeworkFromTermDto(dto, { courseId: 'NEU-1', termId: '1476504498' }));
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].title, '第一章 测验');
+
+  const line = logs.find((l) => l.includes('被类型门槛拦下'));
+  assert.ok(line, 'expected a near-miss diagnostic line');
+  assert.match(line, /Multisim/);
+  // contentType is stringified by the extractor, so it reports "9" not 9
+  assert.match(line, /"contentType":"9"/);
+});
+
+test('the near-miss report is capped so a large DTO cannot flood the console', () => {
+  const deadline = Date.now() + 86400000;
+  const units = [];
+  for (let i = 0; i < 9; i++) {
+    units.push({ id: 200 + i, name: '未识别类型 ' + i, contentType: 8, test: { deadline } });
+  }
+
+  const { result, logs } = captureLogs(() =>
+    extractHomeworkFromTermDto(dtoWithUnits(units), { courseId: 'NEU-1', termId: '1' }));
+
+  assert.deepEqual(result, []);
+  const line = logs.find((l) => l.includes('被类型门槛拦下'));
+  assert.ok(line);
+  // the log prefix is "[MOOC Reminder] …", so cut at the ": [" that precedes the array
+  const reported = JSON.parse(line.slice(line.indexOf(': [') + 2));
+  assert.equal(reported.length, 6, '5 real entries plus an ellipsis marker');
+  assert.equal(reported[5], '…');
+});
+
+test('a node.test sub-object never becomes a second item', () => {
+  // Real shape (2026-09): the assessment node and its `test` metadata BOTH carry a
+  // name that matches the keyword regex, but with different ids — parent id vs
+  // test.id. Recursing into `test` used to mint a duplicate item keyed by test.id.
+  const deadline = Date.now() + 86400000;
+  const dto = dtoWithUnits([
+    {
+      id: 1278666208, name: '第一章 测验', contentType: 2,
+      test: { id: 1258634750, name: '第一章 测验', type: 2, deadline, totalScore: 35 }
+    }
+  ]);
+
+  const items = extractHomeworkFromTermDto(dto, { courseId: 'NEU-1', termId: '1488001444' });
+
+  assert.equal(items.length, 1, 'the test sub-object must not be extracted separately');
+  assert.ok(items[0].uid.includes('hw1278666208'), 'kept item is keyed by the parent id');
+
+  // The duplicate used to be hidden by the name-prefix dedup; that safety net is
+  // name-based and fragile, so assert it is not needed in the first place.
+  assert.deepEqual(items.map((i) => i.title), ['第一章 测验']);
+});
+
