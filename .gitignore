@@ -1,8 +1,14 @@
 # Dependencies
 node_modules/
 
-# Logs
+# Logs (runtime output)
 logs/
+# ...but .claude/logs/ is NOT runtime output: it holds the developer docs that
+# CLAUDE.md links to (changelog.md, architecture.md, dated dev logs). Without these
+# negations `logs/` silently swallows every new file written there — several dev
+# logs were already lost that way.
+!.claude/logs/
+!.claude/logs/**
 
 # IDE / Editor
 .vscode/
