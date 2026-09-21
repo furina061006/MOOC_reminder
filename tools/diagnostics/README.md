@@ -7,7 +7,7 @@
 
 | 脚本 | 在哪里运行 | 回答什么问题 |
 |---|---|---|
-| `dump-extension-state.js` | **扩展的** Service Worker Console（`chrome://extensions` → MOOC Reminder → 「Service Worker」） | 扩展现在到底存了什么？那些条目在不在？用的是哪个 `termId`？ |
+| `dump-extension-state.js` | **扩展的** Service Worker Console（`chrome://extensions` → MOOC Reminder → 「Service Worker」） | 扩展现在到底存了什么？那些条目在不在？用的是哪个 `termId`？每个 icourse163 标签页还活着吗（`discarded` / `answered`）？ |
 | `dump-page-dto.js` | 课程页面的 Console（F12） | API 数据里到底有没有那些条目？有的话为什么被门槛拦下？ |
 | `find-dto-in-har.mjs` | 终端：`node tools/diagnostics/find-dto-in-har.mjs network.har` | 那些条目**到底在哪个请求 / 哪个 termId 下**？（`dump-page-dto.js` 拿不到 DTO 时用这个） |
 
@@ -15,6 +15,12 @@
 
 1. 先跑 `dump-extension-state.js` 确认**症状**：如果条目根本不在 `homework_items` 里，
    那就是抓取/提取的问题；如果条目在，那问题在展示层，不要往抓取方向查。
+   它的 `icourseTabs` 表同时回答「**课程为什么登记不上 / 抓不动**」：
+   - `discarded: true` → 该页已被浏览器卸载（内存节省器）。它没有可用的内容脚本，
+     只有切回前台时才会自动重载，扩展拿不到它的课程身份；
+   - `answered: false` → 该页现在不响应消息（被冻结 / 已卸载 / 页面早于上次扩展重载）；
+   - 探测用的 `REQUEST_COURSE_LINKS` 会让**能应答**的页面重新登记课程，所以它同时
+     也是一次手动「重新发现」：跑完后 `courses` 里应该多出这些页面对应的课程。
 2. 再看**扩展的 Service Worker Console** 有没有这行：
    ```
    [MOOC Reminder] apiExtractHomework: N 个节点有名字+截止/分数但被类型门槛拦下…
