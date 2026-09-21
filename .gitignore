@@ -1,14 +1,17 @@
 # Dependencies
 node_modules/
 
-# Logs (runtime output)
+# 运行时输出。注意 `logs/` 会匹配任意层级的 logs 目录，所以下面必须把
+# .dsh/logs/ 显式放行——否则新写的开发日志会被静默忽略（2026-09-21 真的丢过一批）。
 logs/
-# ...but .dsh/logs/ is NOT runtime output: it holds the developer docs that
-# AGENTS.md links to (changelog.md, architecture.md, dated dev logs). Without these
-# negations `logs/` silently swallows every new file written there — several dev
-# logs were already lost that way (once under .claude/logs/, hence the rename).
+
+# .dsh/ 是项目文档目录：只跟踪 logs/（历史与更新日志）和 agents/（分主题知识库），
+# 其余任何东西（各工具的本机 settings 等）一律不进仓库。
+.dsh/*
 !.dsh/logs/
 !.dsh/logs/**
+!.dsh/agents/
+!.dsh/agents/**
 
 # IDE / Editor
 .vscode/
@@ -29,13 +32,10 @@ mooc-reminder*.zip
 .env
 .env.local
 
-# Claude Code 的本机脚手架 —— 不进仓库：
-#   settings.json 含本机绝对路径，scheduled_tasks.json 是本机任务列表，
-#   settings.local.json 是本机权限。项目文档（AGENTS.md、.dsh/logs/）照旧提交；
-#   给 AI 工具的通用约定应该写进 AGENTS.md，而不是留在这些本机文件里。
-.claude/settings.json
-.claude/settings.local.json
-.claude/scheduled_tasks.json
+# AI 工具的本机目录 —— 仓库不再使用 .claude/（2026-09-21 已把里面有用的东西折进
+# AGENTS.md / .dsh/agents/，目录整个删掉）。这条规则只是安全带：以后谁再跑 Claude Code
+# 或别的兼容工具，它自动生成的 settings 不会被顺手提交。
+.claude/
 
 # reference projects
 reference_projects/

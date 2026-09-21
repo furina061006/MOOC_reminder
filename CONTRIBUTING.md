@@ -54,7 +54,7 @@ CI 会在每个 PR 上跑 `npm run validate`，并产出一个可下载的 zip�
 | `element.txt` | 页面 DOM 快照，含你的 userId 与课程内容 |
 | `*.har` | DevTools 导出的网络抓包，含完整 API 响应 |
 | `dto*.json`、`*-report.json` | DTO/诊断脚本的输出 |
-| `.claude/settings.local.json` | 本地设置，可能含本机路径 |
+| 各种 AI 工具的本机配置 | 例如 `.claude/settings*.json`；`.gitignore` 已整目录挡掉 |
 
 它们已经在 `.gitignore` 里，**不要用 `git add -f` 绕过**——`tests/unit/repo-hygiene.test.mjs`
 会检查 git 索引里没有这些文件，CI 会拦下来。需要把抓取内容给别人看时，先自己删掉
@@ -68,9 +68,9 @@ CI 会在每个 PR 上跑 `npm run validate`，并产出一个可下载的 zip�
 
 约定：
 
-- **`AGENTS.md`（仓库根目录）是平台事实与不变量的唯一来源**，动抓取/解析/SPOC 相关代码前先读它；
+- **项目事实的入口是仓库根目录的 `AGENTS.md`**（红线 + 路由表），细节在 `.dsh/agents/`；动抓取/解析/SPOC 相关代码前按路由表先读对应文档；
 - `src/shared/icourse163-api.js` 与 Service Worker 里内联的 `apiExtractHomework` 是**两份必须同步的拷贝**（见不变量 12），改一侧必须改另一侧；
-- `.dsh/logs/` 是**文档目录**（更新日志与开发日志），不是临时输出目录；用户能感知的变化请写入 `.dsh/logs/changelog.md`。
+- `.dsh/` 是**文档目录**（`agents/` = 知识库，`logs/` = 更新日志与开发日志），不是临时输出目录；用户能感知的变化请写入 `.dsh/logs/changelog.md`。
 
 ## 安全
 

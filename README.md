@@ -171,7 +171,8 @@ popup 左上角可筛选：
 ```
 
 > [!TIP]
-> 详细架构请参阅 [architecture.md](https://github.com/furina061006/MOOC_reminder/blob/main/.dsh/logs/architecture.md)。
+> 详细架构与平台事实请参阅开发者知识库 [`.dsh/agents/`](https://github.com/furina061006/MOOC_reminder/tree/main/.dsh/agents)（架构、API、SPOC、判定逻辑、不变量…）；
+> 2026-09-01 的完整架构快照存档在 [architecture.md](https://github.com/furina061006/MOOC_reminder/blob/main/.dsh/logs/architecture.md)。
 
 ### 技术栈
 
@@ -197,8 +198,9 @@ MOOC_reminder/
 ├── tests/unit/             # 单测（含 SW 集成测试的 chrome.* stub）
 ├── tools/diagnostics/      # 排查「某门课抓不到」用的诊断脚本
 ├── .github/                # Issue 模板、PR 模板、CI 与发布 workflow
+├── .dsh/agents/            # 分主题的项目事实 / 不变量 / 排查流程（开发者知识库）
 ├── .dsh/logs/              # 更新日志与开发日志
-├── AGENTS.md               # 项目事实来源（架构 / 不变量 / 已知限制）
+├── AGENTS.md               # 索引：红线 + 路由表（指向 .dsh/agents/）
 ├── CONTRIBUTING.md         # 参与开发前先看这个
 └── README.md
 ```

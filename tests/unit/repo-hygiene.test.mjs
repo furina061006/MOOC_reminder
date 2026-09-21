@@ -60,9 +60,10 @@ test('隐私产物既被 .gitignore 忽略，也不在 git 索引里', { skip: !
     'network.har',
     'dto1.json',
     'mooc-dto-report.json',
+    // AI/工具的本机配置：.claude/ 已整目录忽略，.dsh/ 只放行 logs/ 与 agents/
     '.claude/settings.json',
     '.claude/settings.local.json',
-    '.claude/scheduled_tasks.json',
+    '.dsh/settings.json',
     'mooc-reminder-v1.0.0.zip' // 本地打包产物，别误提交
   ]) {
     assert.ok(isIgnored(path), path + ' 必须被 .gitignore 忽略');
@@ -99,17 +100,31 @@ test('issue 表单具备 GitHub Issue Forms 必需字段', () => {
   assert.match(config, /^contact_links:/m, '至少要留一个邮件/README 兜底入口');
 });
 
-test('项目指令与文档目录在 DSH 找得到的位置', { skip: !gitAvailable() && 'git 不可用' }, () => {
+test('根 AGENTS.md 是索引，细节在 .dsh/agents/（且都在 DSH 找得到的位置）', { skip: !gitAvailable() && 'git 不可用' }, () => {
   // DSH 只自动加载 AGENTS.md / CLAUDE.md 这两个文件名，位置决定作用域：
   // 仓库根目录 = 项目级指令（每轮都在上下文里），子目录 = 只对该目录生效。
-  // 所以项目主文档必须在根目录，不能塞进 .dsh/ 里。
-  assert.ok(existsSync(join(root, 'AGENTS.md')), '项目主文档必须在仓库根目录，否则不再是项目级指令');
-  assert.ok(existsSync(join(root, '.dsh/logs/changelog.md')), '更新日志应在 .dsh/logs/');
+  // 所以根目录的 AGENTS.md 只做「索引 + 红线 + 路由表」，细节在 .dsh/agents/。
+  const index = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+  assert.ok(existsSync(join(root, 'AGENTS.md')), '项目索引必须在仓库根目录，否则不再是项目级指令');
+  assert.ok(Buffer.byteLength(index) < 16_000,
+    'AGENTS.md 膨胀到 ' + Buffer.byteLength(index) + ' 字节了 —— 它是索引，细节应写进 .dsh/agents/');
+  assert.match(index, /\.dsh\/agents\//, '索引必须给出 .dsh/agents/ 的路由');
 
-  // 全局的 `logs/` 忽略规则会把 .dsh/logs/ 一起吞掉（2026-09-21 就因此丢过整批日志），
-  // 靠 .gitignore 里的否定规则放行；这里显式守住，因为这种情况 git status 看起来是干净的。
+  const agentDocs = [
+    'architecture', 'platform', 'spoc', 'extraction', 'troubleshooting',
+    'scheduling', 'invariants', 'data-model', 'operations'
+  ];
+  for (const name of agentDocs) {
+    const rel = '.dsh/agents/' + name + '.md';
+    assert.ok(existsSync(join(root, rel)), rel + ' 不见了 —— 索引的路由表指着它');
+    // .dsh/* 会忽略一切，只靠否定规则放行 logs/ 与 agents/
+    assert.equal(isIgnored(rel), false, rel + ' 必须被 .gitignore 否定规则放行');
+  }
+  assert.ok(existsSync(join(root, '.dsh/logs/changelog.md')), '更新日志应在 .dsh/logs/');
   assert.equal(isIgnored('.dsh/logs/changelog.md'), false, '.dsh/logs/ 必须被 .gitignore 否定规则放行');
 
+  // 旧位置不得复活；.claude/ 已整个删除（只留一条忽略规则当安全带）
+  assert.equal(existsSync(join(root, '.claude')), false, '.claude/ 已删除，不该再出现');
   assert.equal(existsSync(join(root, '.claude/CLAUDE.md')), false, '旧路径不该再存在');
   assert.equal(existsSync(join(root, '.claude/logs')), false, '旧日志目录不该再存在');
 });
