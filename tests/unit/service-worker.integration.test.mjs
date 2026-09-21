@@ -1298,6 +1298,83 @@ test('GET_UPDATE_STATUS reports the running version without a network call', asy
   assert.equal(fetchCalls.length, 0, 'rendering the options page must not hit the network');
 });
 
+test('检查失败时保留「最新版本」，但「有更新」按当前运行版本重算（不再照抄旧结论）', async () => {
+  // 真机第二次截图（2026-09-22 00:15）：已经跑在 1.1.0 上，点「检查更新」时那次请求失败了，
+  // 旧代码把上次（当时运行 1.0.0）算出的 updateAvailable=true 原样搬过来 → 页面显示
+  // 「当前版本 v1.1.0 / 最新版本 v1.1.0 / 发现新版本 v1.1.0」。最新版本是客观事实要保留，
+  // 「是否有更新」必须按当前版本重算。
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(async () => { throw new Error('offline (test stub)'); }); // 这次检查失败
+  h.storageData.set('update_status', {
+    currentVersion: '1.0.0', latestVersion: '1.1.0', updateAvailable: true,
+    downloadUrl: 'https://github.com/furina061006/MOOC_reminder/releases/download/v1.1.0/mooc-reminder-v1.1.0.zip',
+    releaseUrl: 'https://github.com/furina061006/MOOC_reminder/releases/tag/v1.1.0',
+    checkedAt: '2026-09-22T00:13:41.000Z', error: null, notifiedVersion: '1.1.0'
+  });
+
+  const original = globalThis.chrome.runtime.getManifest;
+  globalThis.chrome.runtime.getManifest = () => ({ version: '1.1.0' });
+  let resp;
+  try {
+    resp = await sendMessage({ type: 'CHECK_UPDATES' }); // 默认 fetch 抛错 = 这次检查失败
+  } finally {
+    globalThis.chrome.runtime.getManifest = original;
+  }
+
+  assert.equal(resp.status.currentVersion, '1.1.0');
+  assert.equal(resp.status.latestVersion, '1.1.0', '上次成功拿到的「最新版本」要保留，不能清空');
+  assert.equal(resp.status.updateAvailable, false, '已经装上了，不能因为这次失败就继续喊「有新版本」');
+  assert.ok(resp.status.error, '失败原因必须写进 status，设置页才有的可显示');
+  assert.equal(h.notificationsCreated.size, 0, '一个已经不新的版本不该弹通知');
+  assert.equal(h.storageData.get('update_status').updateAvailable, false, '写回 storage 的也必须是重算后的结论');
+});
+
+test('检查失败不会丢掉仍然成立的更新提示（保留上次结果的本意）', async () => {
+  arrangeUpdateCheck({ autoCheckUpdates: true });
+  setFetchResponder(async () => { throw new Error('offline (test stub)'); }); // 仍旧失败
+  h.storageData.set('update_status', {
+    currentVersion: '1.0.0', latestVersion: '1.2.0', updateAvailable: true,
+    checkedAt: '2026-09-22T00:13:41.000Z', error: null
+  });
+
+  const resp = await sendMessage({ type: 'CHECK_UPDATES' }); // 仍旧失败（离线桩）
+
+  assert.equal(resp.status.updateAvailable, true, '运行版本仍是 1.0.0，1.2.0 确实更新 → 提示必须留下');
+  assert.equal(resp.status.latestVersion, '1.2.0');
+  assert.ok(resp.status.error, '同时如实记下这次没查成');
+  assert.equal(h.notificationsCreated.size, 0, '失败的那一轮不弹通知（避免基于旧数据打扰用户）');
+});
+
+test('重新加载到新版本后，设置页不再显示「当前版本还是旧的 + 有新版本」', async () => {
+  // 真机现象（2026-09-22）：装着 1.1.0 却看到「当前版本 v1.0.0 / 发现新版本 v1.1.0」。
+  // 快照是上一次检查（当时运行 1.0.0）写的，而重新加载后 12h 的 tick 未必马上跑。
+  arrangeUpdateCheck({});
+  h.storageData.set('update_status', {
+    currentVersion: '1.0.0', latestVersion: '1.1.0', updateAvailable: true,
+    downloadUrl: 'https://github.com/furina061006/MOOC_reminder/releases/download/v1.1.0/mooc-reminder-v1.1.0.zip',
+    releaseUrl: 'https://github.com/furina061006/MOOC_reminder/releases/tag/v1.1.0',
+    checkedAt: '2026-09-22T00:13:41.000Z', error: null, notifiedVersion: '1.1.0'
+  });
+
+  const original = globalThis.chrome.runtime.getManifest;
+  globalThis.chrome.runtime.getManifest = () => ({ version: '1.1.0' });
+  let resp;
+  try {
+    resp = await sendMessage({ type: 'GET_UPDATE_STATUS' });
+  } finally {
+    globalThis.chrome.runtime.getManifest = original;
+  }
+
+  assert.equal(resp.currentVersion, '1.1.0', '响应里的当前版本 = 正在运行的实例');
+  assert.equal(resp.status.currentVersion, '1.1.0', '缓存快照也要对齐到运行版本，否则页面仍显示 v1.0.0');
+  assert.equal(resp.status.updateAvailable, false, '装上了就不该再提示「发现新版本」');
+  assert.equal(resp.status.latestVersion, '1.1.0', '最新版本 / 上次检查时间这些客观事实保留');
+  assert.equal(resp.status.checkedAt, '2026-09-22T00:13:41.000Z');
+  assert.equal(fetchCalls.length, 0, '对齐是纯计算，不该联网');
+  assert.equal(h.storageData.get('update_status').updateAvailable, true,
+    '只在读取时对齐，不额外写 storage（真正的检查会自己刷新快照）');
+});
+
 // ── SPOC split across two terms (backlog: 老师新增的「线上学习任务」抓不到) ──
 //
 // Real data captured 2026-09 from 模拟电子技术基础 (NEU-1486374162):
