@@ -105,6 +105,7 @@ function initDomRefs() {
   dom.emptyRefreshBtn = safeQuery('#empty-refresh-btn');
   dom.resetDataBtn    = safeQuery('#reset-data-btn');
   dom.exportIcsBtn    = safeQuery('#export-ics-btn');
+  dom.feedbackIssues  = safeQuery('#feedback-issues');
   dom.filterSelect    = safeQuery('#filter-select');
   dom.addManualBtn    = safeQuery('#add-manual-btn');
   dom.manualForm      = safeQuery('#manual-form');
@@ -287,6 +288,7 @@ function setupEventListeners() {
   safeOn(dom.emptyRefreshBtn, 'click', handleRefresh);
   safeOn(dom.resetDataBtn,    'click', handleResetData);
   safeOn(dom.exportIcsBtn,    'click', handleExportCalendar);
+  safeOn(dom.feedbackIssues,  'click', handleOpenIssues);
   safeOn(dom.clearCompletedBtn, 'click', handleClearCompleted);
   safeOn(dom.addManualBtn,    'click', toggleManualForm);
   safeOn(dom.manualCancelBtn, 'click', toggleManualForm);
@@ -573,6 +575,16 @@ function openUrl(url) {
     if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: url });
     else window.open(url, '_blank');
   } catch { try { window.open(url, '_blank'); } catch { /* ignore */ } }
+}
+
+// 页脚的「GitHub Issues」入口。反馈优先走 Issues：别人能搜到同样的问题，模板会引导用户
+// 附上版本/日志/诊断输出，一轮就能定位；邮件入口保留在它旁边，给没有 GitHub 账号、
+// 或涉及账号信息不想公开讨论的人。
+const ISSUES_CHOOSER_URL = 'https://github.com/furina061006/MOOC_reminder/issues/new/choose';
+
+function handleOpenIssues(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  openUrl(ISSUES_CHOOSER_URL);
 }
 
 function createCourseGroup(course, items) {

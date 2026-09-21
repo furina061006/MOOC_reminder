@@ -358,6 +358,17 @@ function handleDownloadUpdate() {
   } catch { try { window.open(url, '_blank'); } catch { /* ignore */ } }
 }
 
+// 反馈优先走 Issues：别人能搜到同样的问题，模板会引导用户附上版本与日志；
+// 邮件入口留在同一段里，给没有 GitHub 账号或不想公开讨论的人。
+function handleOpenIssues(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const url = 'https://github.com/furina061006/MOOC_reminder/issues/new/choose';
+  try {
+    if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: url });
+    else window.open(url, '_blank');
+  } catch { try { window.open(url, '_blank'); } catch { /* ignore */ } }
+}
+
 // ─── 已追踪课程 ────────────────────────────────────────
 //
 // 列出所有被追踪的课程，并允许「忽略」（停止追踪，保留记录）或「删除」（清掉课程
@@ -605,6 +616,8 @@ async function init() {
     if (refreshErrBtn) refreshErrBtn.addEventListener('click', loadErrorReport);
     var clearErrBtn = $('clear-errors-btn');
     if (clearErrBtn) clearErrBtn.addEventListener('click', handleClearErrors);
+    var feedbackIssues = $('feedback-issues');
+    if (feedbackIssues) feedbackIssues.addEventListener('click', handleOpenIssues);
   } catch(e) { console.error('[Options] error report init:', e.message); }
   try { loadMutedCourses(); } catch(e) { console.error('[Options] loadMutedCourses:', e.message); }
   try { loadTrackedCourses(); } catch(e) { console.error('[Options] loadTrackedCourses:', e.message); }
