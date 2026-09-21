@@ -3,12 +3,12 @@ node_modules/
 
 # Logs (runtime output)
 logs/
-# ...but .claude/logs/ is NOT runtime output: it holds the developer docs that
-# CLAUDE.md links to (changelog.md, architecture.md, dated dev logs). Without these
+# ...but .dsh/logs/ is NOT runtime output: it holds the developer docs that
+# AGENTS.md links to (changelog.md, architecture.md, dated dev logs). Without these
 # negations `logs/` silently swallows every new file written there — several dev
-# logs were already lost that way.
-!.claude/logs/
-!.claude/logs/**
+# logs were already lost that way (once under .claude/logs/, hence the rename).
+!.dsh/logs/
+!.dsh/logs/**
 
 # IDE / Editor
 .vscode/
@@ -31,8 +31,8 @@ mooc-reminder*.zip
 
 # Claude Code 的本机脚手架 —— 不进仓库：
 #   settings.json 含本机绝对路径，scheduled_tasks.json 是本机任务列表，
-#   settings.local.json 是本机权限。项目文档（CLAUDE.md、.claude/logs/）照旧提交；
-#   给 AI 工具的通用约定应该写进 CLAUDE.md，而不是留在这些本机文件里。
+#   settings.local.json 是本机权限。项目文档（AGENTS.md、.dsh/logs/）照旧提交；
+#   给 AI 工具的通用约定应该写进 AGENTS.md，而不是留在这些本机文件里。
 .claude/settings.json
 .claude/settings.local.json
 .claude/scheduled_tasks.json

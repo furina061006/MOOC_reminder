@@ -4,14 +4,15 @@ Chrome/Edge Manifest V3 浏览器扩展，自动追踪中国大学MOOC (icourse1
 
 ## 知识管理约定（每次会话遵守）
 
-- **`.claude/CLAUDE.md（本文件）`** — 项目唯一事实来源。所有核心技术结论写在这里，任何开发者打开项目即能理解全貌
+- **`AGENTS.md`（本文件，仓库根目录）** — 项目唯一事实来源。所有核心技术结论写在这里，任何开发者打开项目即能理解全貌
 - **README.md** — 面向用户的项目说明：安装、使用、功能、限制和当前能力；保持精简，不放完整更新日志
-- **`.claude/logs/changelog.md`** — 面向用户的完整版本更新记录，按日期记录可感知的新增、变更和修复
-- **`.claude/logs/`** — 面向开发者的过程记录。写「踩过什么坑、试过哪些死路、为什么选方案 A 不选 B」以及实现细节，供想深挖的人追溯
+- **`.dsh/logs/changelog.md`** — 面向用户的完整版本更新记录，按日期记录可感知的新增、变更和修复
+- **`.dsh/logs/`** — 面向开发者的过程记录。写「踩过什么坑、试过哪些死路、为什么选方案 A 不选 B」以及实现细节，供想深挖的人追溯
 - **`CONTRIBUTING.md`** — 面向外部贡献者：本地加载扩展、`npm run validate`、**不得提交抓取产物**的红线、PR 流程
 - **`.github/ISSUE_TEMPLATE/`** — 外部反馈的唯一结构化入口（Bug / 功能建议表单 + `config.yml`）；空白 issue 已关闭，邮件只在「不方便公开」时兜底。模板里刻意写进了两条操作性陷阱，用来挡掉重复的「抓不到」
-- **Memory** — 仅用于快速回忆。不再重复存储 CLAUDE.md 已有的技术知识，只保留偏好、习惯等个人上下文
-- **每次重大技术变化后**：先更新本文件，再写开发日志；涉及用户可感知变化时同步更新 `.claude/logs/changelog.md`，最后更新 memory 索引
+- **Memory** — 仅用于快速回忆。不再重复存储 AGENTS.md 已有的技术知识，只保留偏好、习惯等个人上下文
+- **每次重大技术变化后**：先更新本文件，再写开发日志；涉及用户可感知变化时同步更新 `.dsh/logs/changelog.md`，最后更新 memory 索引
+- **本文件为什么在根目录（别搬走）**：DSH 只自动加载 `AGENTS.md` / `CLAUDE.md` 这两个文件名，位置决定作用域——**仓库根目录 = 项目级指令**（每轮都在上下文里），放在任何子目录（例如 `.dsh/`）就只对那个子目录生效。子目录里也可以放自己的 `AGENTS.md` 作为局部规则
 
 > [!important]
 > `>>>工作时必须牢记的事>>>`
@@ -20,7 +21,7 @@ Chrome/Edge Manifest V3 浏览器扩展，自动追踪中国大学MOOC (icourse1
 > 
 > `<<<工作时必须牢记的事<<<`
 
-文档职责保持清晰：README 面向使用者，`.claude/logs/changelog.md` 面向版本回顾，其余 `.claude/logs/` 文件面向技术追溯。更新日志并入 `.claude/logs/` 是为了避免同一类信息分散在两个目录、产生职权冲突。
+文档职责保持清晰：README 面向使用者，`.dsh/logs/changelog.md` 面向版本回顾，其余 `.dsh/logs/` 文件面向技术追溯。更新日志并入 `.dsh/logs/` 是为了避免同一类信息分散在两个目录、产生职权冲突。
 
 ---
 
@@ -400,7 +401,7 @@ API 提供 `contentType` 字段作为类型标识，优先级高于名字正则�
 
 **注意**：部分 SPOC 课程的数据是反过来的——**没有 `node.test`，所有字段平铺在节点顶层**（如大学物理使用 `node.type` 而非 `node.contentType`）。此时顶层优先规则自然生效，`apiDetectPhase` 也通过 `node.contentType` 后备来兼容这种结构。
 
-详细实现见 `.claude/logs/2026-06-28-completion-logic.md`。
+详细实现见 `.dsh/logs/2026-06-28-completion-logic.md`。
 
 ### 抓不到 / 抓不全条目（排查流程）
 
@@ -675,7 +676,7 @@ npm run package
   再检查 git 索引里没有这些文件——**不要用 `git add -f` 绕过**。
 - **反馈走 `.github/ISSUE_TEMPLATE/`**（空白 issue 已关闭）。改模板时记得它同时是排查分流器：
   「重载扩展 + 刷新页面」和「后台页会被冻结」这两条陷阱写在表单里，能挡掉大半重复的「抓不到」。
-- **README 会被打进发布 zip，而 zip 里没有 `.claude/` 与 `CONTRIBUTING.md`**，所以 README 里指向这些
+- **README 会被打进发布 zip，而 zip 里没有 `.dsh/` 与 `CONTRIBUTING.md`**，所以 README 里指向这些
   文件的链接必须用绝对 GitHub URL，相对链接在用户解压后是死链。
 - 打包清单只有一处：`tools/package-extension.mjs`（CI 的 PR 产物与发版都调它），别在 workflow 里另抄一份。
 
@@ -695,7 +696,7 @@ git tag v1.0.1 && git push origin v1.0.1
 用户在浏览器里看到的版本来自 `manifest.json`，而插件检查更新读的是 Release tag，两者一旦
 漂移，用户装了新包却会被反复提示「有新版本」。workflow 里那道校验就是为此存在的。
 
-**发版打成包用显式文件清单而不是 `zip -x` 通配**（`.claude/logs/` 也会被 `logs/*` 之类的
+**发版打成包用显式文件清单而不是 `zip -x` 通配**（`.dsh/logs/` 也会被 `logs/*` 之类的
 通配误伤或漏掉）。清单只写在 `tools/package-extension.mjs` 里，本地与 CI 共用：
 
 ```bash
@@ -704,9 +705,9 @@ npm run package          # 产出 mooc-reminder-v{version}.zip（内层 MOOC_rem
 
 ## 相关文档
 
-- `.claude/logs/changelog.md` — 面向用户的完整更新记录
-- `.claude/logs/architecture.md` — 完整架构文档
+- `.dsh/logs/changelog.md` — 面向用户的完整更新记录
+- `.dsh/logs/architecture.md` — 完整架构文档
 - `CONTRIBUTING.md` — 外部贡献者入门（本地加载扩展、`npm run validate`、隐私红线、PR 流程）
 - `.github/ISSUE_TEMPLATE/` — Bug / 功能建议表单；空白 issue 已关闭
-- `.claude/logs/2026-06-27-development.md` — API 字段分析、互评判定、SPOC 支持
-- `.claude/logs/2026-06-26-development.md` — 背景 API 代理、完成检测重写
+- `.dsh/logs/2026-06-27-development.md` — API 字段分析、互评判定、SPOC 支持
+- `.dsh/logs/2026-06-26-development.md` — 背景 API 代理、完成检测重写

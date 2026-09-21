@@ -99,6 +99,21 @@ test('issue 表单具备 GitHub Issue Forms 必需字段', () => {
   assert.match(config, /^contact_links:/m, '至少要留一个邮件/README 兜底入口');
 });
 
+test('项目指令与文档目录在 DSH 找得到的位置', { skip: !gitAvailable() && 'git 不可用' }, () => {
+  // DSH 只自动加载 AGENTS.md / CLAUDE.md 这两个文件名，位置决定作用域：
+  // 仓库根目录 = 项目级指令（每轮都在上下文里），子目录 = 只对该目录生效。
+  // 所以项目主文档必须在根目录，不能塞进 .dsh/ 里。
+  assert.ok(existsSync(join(root, 'AGENTS.md')), '项目主文档必须在仓库根目录，否则不再是项目级指令');
+  assert.ok(existsSync(join(root, '.dsh/logs/changelog.md')), '更新日志应在 .dsh/logs/');
+
+  // 全局的 `logs/` 忽略规则会把 .dsh/logs/ 一起吞掉（2026-09-21 就因此丢过整批日志），
+  // 靠 .gitignore 里的否定规则放行；这里显式守住，因为这种情况 git status 看起来是干净的。
+  assert.equal(isIgnored('.dsh/logs/changelog.md'), false, '.dsh/logs/ 必须被 .gitignore 否定规则放行');
+
+  assert.equal(existsSync(join(root, '.claude/CLAUDE.md')), false, '旧路径不该再存在');
+  assert.equal(existsSync(join(root, '.claude/logs')), false, '旧日志目录不该再存在');
+});
+
 test('打包配方只有一处，两个 workflow 都调它', () => {
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   assert.match(pkg.scripts.package || '', /tools\/package-extension\.mjs/);
