@@ -29,8 +29,13 @@ mooc-reminder*.zip
 .env
 .env.local
 
-# Local settings (may contain sensitive paths)
+# Claude Code 的本机脚手架 —— 不进仓库：
+#   settings.json 含本机绝对路径，scheduled_tasks.json 是本机任务列表，
+#   settings.local.json 是本机权限。项目文档（CLAUDE.md、.claude/logs/）照旧提交；
+#   给 AI 工具的通用约定应该写进 CLAUDE.md，而不是留在这些本机文件里。
+.claude/settings.json
 .claude/settings.local.json
+.claude/scheduled_tasks.json
 
 # reference projects
 reference_projects/

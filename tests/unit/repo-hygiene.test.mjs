@@ -43,13 +43,15 @@ function isIgnored(path) {
   }
 }
 
-// 与 .gitignore 末尾那段「Local diagnostic dumps」对应
+// 与 .gitignore 末尾两段对应：抓取产物 + Claude Code 的本机脚手架
 const FORBIDDEN_TRACKED = [
   /(^|\/)element\.txt$/i,
   /\.har$/i,
   /(^|\/)dto[^/]*\.json$/i,
   /-report\.json$/i,
-  /(^|\/)settings\.local\.json$/i
+  // settings.json 含本机绝对路径；scheduled_tasks.json / settings.local.json 是本机的
+  /(^|\/)settings(\.local)?\.json$/i,
+  /(^|\/)scheduled_tasks\.json$/i
 ];
 
 test('隐私产物既被 .gitignore 忽略，也不在 git 索引里', { skip: !gitAvailable() && 'git 不可用' }, () => {
@@ -58,7 +60,9 @@ test('隐私产物既被 .gitignore 忽略，也不在 git 索引里', { skip: !
     'network.har',
     'dto1.json',
     'mooc-dto-report.json',
+    '.claude/settings.json',
     '.claude/settings.local.json',
+    '.claude/scheduled_tasks.json',
     'mooc-reminder-v1.0.0.zip' // 本地打包产物，别误提交
   ]) {
     assert.ok(isIgnored(path), path + ' 必须被 .gitignore 忽略');
