@@ -64,10 +64,17 @@ test('隐私产物既被 .gitignore 忽略，也不在 git 索引里', { skip: !
     '.claude/settings.json',
     '.claude/settings.local.json',
     '.dsh/settings.json',
-    'mooc-reminder-v1.0.0.zip' // 本地打包产物，别误提交
+    'mooc-reminder-v1.0.0.zip', // 本地打包产物，别误提交
+    'npm-debug.log', 'debug.log' // 运行时输出
   ]) {
     assert.ok(isIgnored(path), path + ' 必须被 .gitignore 忽略');
   }
+
+  // 反向守卫：日志目录不是「运行时输出」。本项目要共享的开发日志就在 .dsh/logs/，
+  // 早先那条「忽略任何叫 logs 的目录」的规则曾把它整个吞掉（2026-09-21 丢过一批），
+  // 所以现在只按文件类型挡 *.log ——任何叫 logs 的目录都必须能正常跟踪。
+  assert.equal(isIgnored('.dsh/logs/changelog.md'), false, '.dsh/logs/ 是要共享的开发日志，不能被忽略');
+  assert.equal(isIgnored('src/logs/notes.md'), false, '不要按目录名 logs 一刀切忽略');
 
   const tracked = gitLines(['ls-files']);
   const leaked = tracked.filter(path => FORBIDDEN_TRACKED.some(re => re.test(path)));
