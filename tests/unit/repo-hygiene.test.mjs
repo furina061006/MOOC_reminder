@@ -136,6 +136,35 @@ test('根 AGENTS.md 是索引，细节在 .dsh/agents/（且都在 DSH 找得到
   assert.equal(existsSync(join(root, '.claude/logs')), false, '旧日志目录不该再存在');
 });
 
+test('README 是精简入口，细节在 docs/（且外部锚点没被改掉）', () => {
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+
+  // README 会被打进发布 zip（zip 里没有 docs/、.dsh/、CONTRIBUTING.md），
+  // 所以它必须能独立阅读：指向仓库文件的链接一律绝对 URL，不能出现相对链接。
+  const size = Buffer.byteLength(readme);
+  assert.ok(size < 9_000, 'README 又长到 ' + size + ' 字节了 —— 细节应该放进 docs/');
+  for (const bad of ['](docs/', '](.dsh/', '](CONTRIBUTING.md', '](./']) {
+    assert.equal(readme.includes(bad), false, 'README 里不能出现相对链接 ' + bad + '（zip 里会变死链）');
+  }
+
+  // 外部锚点：.github/ISSUE_TEMPLATE/config.yml 与 CONTRIBUTING.md 正在用这两个标题
+  assert.match(readme, /^## 局限性$/m, '外部链接 README.md#局限性 依赖这个标题');
+  assert.match(readme, /^## 反馈建议$/m, '外部链接 README.md#反馈建议 依赖这个标题');
+
+  // 细节文档必须在，且 README 用绝对链接指到每一个（拆分后仍然可发现）
+  const base = 'https://github.com/furina061006/MOOC_reminder/blob/main/docs/';
+  for (const name of ['features', 'faq', 'privacy', 'contributors']) {
+    assert.ok(existsSync(join(root, 'docs', name + '.md')), 'docs/' + name + '.md 不见了');
+    assert.ok(readme.includes(base + name + '.md'), 'README 必须链到 docs/' + name + '.md');
+  }
+
+  // 使用者文档面向的是「不会读源码的人」：每个文件都要能回到 README
+  for (const name of ['features', 'faq', 'privacy', 'contributors']) {
+    const doc = readFileSync(join(root, 'docs', name + '.md'), 'utf8');
+    assert.match(doc, /\]\(\.\.\/README\.md\)/, 'docs/' + name + '.md 应该有返回 README 的链接');
+  }
+});
+
 test('打包配方只有一处，两个 workflow 都调它', () => {
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   assert.match(pkg.scripts.package || '', /tools\/package-extension\.mjs/);
