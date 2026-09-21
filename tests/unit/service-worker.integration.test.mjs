@@ -151,10 +151,13 @@ function seedItem(overrides) {
 }
 function storedItems() { return h.storageData.get('homework_items') || []; }
 function seedCourses(courses) { h.storageData.set('courses', courses); }
-async function waitFor(predicate, attempts = 20) {
+// Poll with a real delay: a scrape now asks every open page first and waits a short
+// settle window before reading the course list, so a predicate that only becomes
+// true a few hundred ms later must not give up after a handful of microtasks.
+async function waitFor(predicate, attempts = 80) {
   for (let i = 0; i < attempts; i++) {
     if (predicate()) return;
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 25));
   }
   assert.fail('Timed out waiting for expected test state');
 }
@@ -591,7 +594,7 @@ test('course rediscovery asks every open icourse163 page, not only the learn tab
 });
 
 test('a page that never answers cannot hang the rediscovery pass', async () => {
-  // Regression: requestCourseRediscovery awaited chrome.tabs.sendMessage with no
+  // Regression: the SW's course rediscovery awaited chrome.tabs.sendMessage with no
   // timeout. A frozen background renderer never settles that promise, so the whole
   // scrape vanished without one log line and the popup spun until it gave up.
   h.tabMessages.length = 0;
@@ -628,6 +631,42 @@ test('a page that never answers cannot hang the rediscovery pass', async () => {
   assert.ok(warns.some(l => /did not answer/.test(l) && l.includes('96')), 'the silent page must be reported');
   const asked = h.tabMessages.filter(t => t.msg && t.msg.type === 'REQUEST_COURSE_LINKS').map(t => t.tabId);
   assert.deepEqual(asked.slice().sort(), [96, 97], 'both pages are asked in the same pass');
+  const batched = h.tabMessages.filter(t => t.msg && t.msg.type === 'BATCH_API_FETCH').map(t => t.tabId);
+  assert.deepEqual(batched, [97],
+    'the heavy batch must only go to a page that just answered, never to the silent one');
+});
+
+test('a course reported during the probe is scraped in the same pass', async () => {
+  // User report (2026-09-21): 复变函数与积分变换 was only ever scraped after being
+  // brought to the foreground. Registration used to be one-shot at page load and the
+  // SW only asked open pages to re-report when the whole course list was empty, so a
+  // course whose page had been sitting in the background (until the browser froze or
+  // unloaded it) stayed unknown forever while other courses kept the list non-empty.
+  h.tabMessages.length = 0;
+  h.tabsCreated.length = 0;
+  seedCourses([{ courseId: 'BIT-1', termId: '11', courseName: '数据结构', courseType: 'mooc' }]);
+  h.setTabsQuery([{ id: 71, lastAccessed: 7000 }, { id: 72, lastAccessed: 6000 }]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'REQUEST_COURSE_LINKS') {
+      // Only the second page knows the course the user is missing.
+      if (tabId === 72) {
+        const known = h.storageData.get('courses') || [];
+        seedCourses(known.concat([{ courseId: 'NEU-9', termId: '99', courseName: '复变函数与积分变换', courseType: 'mooc' }]));
+      }
+      return { success: true };
+    }
+    if (msg && msg.type === 'BATCH_API_FETCH') return [{ courseId: 'ok' }];
+    return true;
+  });
+
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+
+  assert.equal(result.success, true);
+  const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
+  assert.ok(batch, 'the scrape must still run');
+  const ids = (batch.msg.courses || []).map(c => c.courseId);
+  assert.ok(ids.includes('NEU-9'), 'the course reported during the probe must be fetched in this pass: ' + JSON.stringify(ids));
+  assert.ok(ids.includes('BIT-1'), 'along with the courses that were already known');
 });
 
 test('when no open page can answer, the skip reason says what to do', async () => {
@@ -1465,11 +1504,13 @@ test('when every learn tab is stale the temporary proxy is used instead', async 
   await waitFor(() => h.storageData.get('temporary_proxy_job') == null);
 });
 
-test('a genuine timeout is not masked by trying other tabs', async () => {
+test('a genuine batch failure is not masked by trying other tabs', async () => {
+  // The flip side of the liveness probe: once a page HAS answered, a failure while
+  // serving the batch is a real error and must surface instead of being retried on
+  // every other tab (which would multiply the same failing API calls).
   h.tabMessages.length = 0;
   h.storageData.delete('temporary_proxy_job');
   seedCourses([{ courseId: 'BIT-100', termId: '101', courseName: '普通课程', courseType: 'mooc' }]);
-  h.storageData.set('last_sync', new Date(Date.now() - 60 * 60 * 1000).toISOString());
   h.setTabsQuery([
     { id: 55, lastAccessed: 9000 },
     { id: 66, lastAccessed: 1000 }
@@ -1479,11 +1520,12 @@ test('a genuine timeout is not masked by trying other tabs', async () => {
     return true;
   });
 
-  await sendMessage({ type: 'PAGE_OPENED' });
-  await new Promise(r => setTimeout(r, 300));
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
 
+  assert.equal(result.success, false);
+  assert.match(result.error, /returned no course data/);
   const targets = h.tabMessages.filter(t => t.msg && t.msg.type === 'BATCH_API_FETCH').map(t => t.tabId);
-  assert.deepEqual(targets, [55], 'only "nobody is listening" advances to the next tab');
+  assert.deepEqual(targets, [55], 'a real error does not advance to the next tab');
   assert.equal(h.storageData.get('temporary_proxy_job'), undefined, 'and no proxy is created for a real error');
 });
 
@@ -1538,7 +1580,7 @@ test('an ignored course is dropped from the refresh batch and the badge', async 
   assert.equal(h.badge.text, '1', 'an ignored course must not count towards the badge');
 
   await sendMessage({ type: 'PAGE_OPENED' });
-  await new Promise(r => setTimeout(r, 1500));
+  await waitFor(() => h.tabMessages.some(t => t.msg && t.msg.type === 'BATCH_API_FETCH'));
   const batch = h.tabMessages.find(t => t.msg && t.msg.type === 'BATCH_API_FETCH');
   assert.ok(batch);
   assert.deepEqual(batch.msg.courses.map(c => c.courseId), ['BIT-1'],

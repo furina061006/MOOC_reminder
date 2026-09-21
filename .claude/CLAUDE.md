@@ -61,7 +61,7 @@ src/
 - `COURSE_API_DATA {course, rawData}` — CS → SW，API 原始响应。`course` 只声明「抓到了什么」（courseId / 抓取 termId / courseType / 来源页 URL）；点击目标与 SPOC 证据由 SW 从存储的 Course 记录解析（`resolveCourseForExtraction`）
 - `COURSE_UPDATE {courseId, activeTermId, courseName, courseType, routeUrl}` — CS(main.js，**仅在真实 SPOC 页发起**) → SW；持久化 SPOC 真实 termId，并把 `routeUrl`（`window.location.href`）冻结为 `course.pageUrl`
 - `COURSE_LINKS {courses[]}` — CS(course-discovery) → SW；上报从 icourse163 各页采集到的课程链接，`courseType` 仅按 href 是否含 `/spoc/` 判定，属**弱信号**
-- `REQUEST_COURSE_LINKS` — SW → CS，要求已打开页面**重新上报课程**（课程列表为空时的补救，见「两个操作性陷阱 2」）。**两个内容脚本都会应答，两者互补**：
+- `REQUEST_COURSE_LINKS` — SW → CS，**每轮抓取开始时**发给所有已打开的 icourse163 页面（1.5 秒上限，见 `askOpenPagesToReport`），一次往返干两件事：**重新上报课程**（课程列表自愈）与**探测哪些页面还活着**（只有刚应答过的页面才会被选中去跑 `BATCH_API_FETCH`）。**两个内容脚本都会应答，两者互补**：
   - `course-discovery.js`：重扫页面里的 `/learn/{id}?tid=` 锚点（「我的课程」这类页面只有它有货）
   - `main.js`：上报**本页自己的身份**（`parseCourseUrl(location.href)` + bridge 的 SPOC active term）。**学习页上一个 `/learn/` 锚点都没有**（SPA 菜单是 `data-menu-id="/learn/xxx"`，不是链接，2026-09-21 用真实页面 DOM 验证：35 个 `<a>`，`href` 含 `/learn/` 的 0 个），所以「课程页自报家门」是清除数据后唯一能救回课程的通路
 - `TEMPORARY_PROXY_BATCH_COMPLETE {proxyJobId, resultCount}` — CS → SW，临时批量中的所有 `COURSE_API_DATA` 已发出；支持 Service Worker 被回收后恢复清理
@@ -440,18 +440,19 @@ hasSignal（有 deadline 或 分数）
    SW 发去的消息也没有接收方。**完整恢复步骤是「重载扩展 → 再刷新页面」**，只做前者会出现
    「扩展看着是活的，但一点都抓不到」。SW 侧对这种情况会退到临时代理页兜底（见 `performPeriodicScrape`
    的逐个标签页尝试），但**内容脚本侧只能靠页面刷新恢复**。
-2. **`course-discovery` 对同一个页面只上报一次**（`reported` 去重）。所以「清除数据 / 删除课程」之后，
-   已经打开的课程页不会再上报。为此 SW 在课程列表为空时会发 `REQUEST_COURSE_LINKS`
-   （`requestCourseRediscovery`），用户不必手动刷新页面。三个要点：
+2. **`course-discovery` 对同一个页面只上报一次**（`reported` 去重），`main.js` 也只在**页面加载时**登记自己的课程。所以「清除数据 / 删除课程」之后，已经打开的课程页不会再上报。为此 SW **每轮抓取开始时**都会问所有已打开的 icourse163 页面一次（`REQUEST_COURSE_LINKS` → `askOpenPagesToReport`），用户不必手动刷新页面。三个要点：
    - **问的是所有 icourse163 页面**，不只是学习页：「我的课程」页是锚点最全的来源；
    - **学习页上没有任何 `/learn/` 锚点**，所以它靠 `main.js` 自报本页身份（见「消息协议」）。
      2026-09-21 之前只问锚点，于是「清除数据 → 刷新」永远抓不到东西（页面上根本没有可采集的链接，
      只有重新打开页面才会走 `init()` 的注册路径）；
-   - **每个页面的应答都设了 1.5 秒上限**（`COURSE_REDISCOVERY_TIMEOUT_MS`）。`chrome.tabs.sendMessage`
-     对冻结的后台渲染进程**永远不会 settle**，无上限的 await 会让整次抓取无声消失（日志停在
+   - **每个页面的应答都设了 1.5 秒上限**（`PAGE_ANSWER_TIMEOUT_MS`）。`chrome.tabs.sendMessage`
+     对冻结/已卸载的后台页面**永远不会 settle**，无上限的 await 会让整次抓取无声消失（日志停在
      `Periodic scrape started`），所以这里刻意并行发问 + 逐一限时 + 每个不应答的页面都打日志。
-3. **`REQUEST_COURSE_LINKS` 只能救回「此刻打开着的页面」上的课程。** 课程列表被清空后，没打开的课程
-   不会被恢复（没有任何数据源知道它）。真想要完整恢复，SW 只能等用户下次打开「我的课程」页。
+3. **长期挂在后台的课程页会被浏览器冻结或卸载（Memory Saver），这类页面帮不上任何忙**：它没有内容脚本，既不能上报课程，也不能接手 `BATCH_API_FETCH`——「不切到那个页面就抓不到」正是这么来的。所以：
+   - 课程登记不能只靠页面加载：**每轮抓取都问一遍**（同上），把「谁能回答」这件事变成常态；
+   - `BATCH_API_FETCH` **只发给刚应答过探针的页面**。以前按 `lastAccessed` 挑一个就发，挑中冻结页会白等 90 秒超时并把整轮抓取判失败（尽管下面几行就有代理页兜底）；
+   - 一个应答的页面都没有时用临时代理页（新建的页面不会被冻结）。
+   排查时跑 `tools/diagnostics/dump-extension-state.js`：它列出每个页面的 `discarded`（是否已被卸载）与 `answered`（此刻是否应答），并顺手让能应答的页面重新登记课程。
 
 另外：**任何提前 return 都必须留下用户可见的痕迹。** `performPeriodicScrape` 曾有一条完全静默的
 `apiCourses.length === 0` 出口，导致 popup 空白却查不到任何原因；现已按「无课程 / 只有手动条目 /
@@ -478,7 +479,7 @@ MOOC 作业按天更新、提醒阈值是 24h/48h 级，不需要高频轮询：
 | `badge-refresh` alarm | 默认每 12h | 纯本地重算徽章 + 截止提醒检查 |
 | `daily-digest` alarm | 默认关 | 启用后每天定时摘要；当天首次启动浏览器时补发临期摘要 |
 
-SW 唤醒从 ~336 次/天降到 ~102 次/天。`BATCH_API_FETCH` 按 `lastAccessed` 倒序**逐个**尝试现有学习页，用第一个能响应的（发给所有标签页 = N 倍重复抓取）。只有「对方没有 content script」这种确定性失败才会继续下一个，真超时仍明确失败。**一个学习页都没有、或全部都是扩展重载前打开的（没有 content script）**时，最多创建一个扩展拥有的非激活代理页兜底，任务成功、超时或关闭后清理。
+SW 唤醒从 ~336 次/天降到 ~102 次/天。每轮抓取先问**所有**已打开的 icourse163 页面（`REQUEST_COURSE_LINKS`，每个 1.5 秒上限）——既让课程列表自愈，又拿到「哪些页面还活着」：`BATCH_API_FETCH` 只发给**刚应答过**的学习页，按 `lastAccessed` 倒序逐个尝试（发给所有标签页 = N 倍重复抓取）。只有「对方没有 content script」这种确定性失败才会继续下一个，**已应答页面**上的真失败仍明确报错。一个应答的学习页都没有时，最多创建一个扩展拥有的非激活代理页兜底，任务成功、超时或关闭后清理。
 
 「完全脱离浏览器」（外部 cron/后端）不可行：登录 cookie 绑定浏览器 profile，扩展无法在浏览器外取用（与「无后端」设计决策一致）。
 
@@ -642,7 +643,8 @@ badge-refresh alarm（12h）→ checkForUpdates()
 - SPOC 页面 `getOpenHomeworkInfo.rpc` 不可用，缺少 submitStatus 补充字段
 - **同一 `courseId` 的 SPOC 与普通 MOOC 无法并存**：`courses` 以 `courseId` 为唯一键，两者会碰撞，目前规则是 SPOC 优先（不变量 11）。若用户同时选修同名 MOOC 与 SPOC，只能看到一个课程分组
 - **SPOC 课程需要至少打开过一次学习页**，才能把真实路由 URL 冻结进 `course.pageUrl`；否则旧的 SPOC 条目只能退回用 `courseType` + 抓取 termId 拼 URL（前缀对，`?tid=` 是 API id）。从旧版本升级后请打开一次 SPOC 课程页
-- **「清除数据 / 删除课程」后只能靠当时打开着的页面恢复课程列表**：SW 询问所有已打开的 icourse163 页面（学习页自报身份、其他页面报锚点，见「两个操作性陷阱 2」），所以**没打开的课程不会自动回来**——要完整恢复就打开一次「我的课程」页（`home.htm#/home/course`），或逐门重新打开课程页
+- **「清除数据 / 删除课程」后只能靠当时打开着的页面恢复课程列表**：SW 每轮抓取都会问所有已打开的 icourse163 页面（学习页自报身份、其他页面报锚点，见「两个操作性陷阱 2」），所以**没打开的课程不会自动回来**——要完整恢复就打开一次「我的课程」页（`home.htm#/home/course`），或逐门重新打开课程页
+- **被浏览器冻结/卸载（Memory Saver）的后台课程页无法参与任何环节**：它既不能上报课程，也不能接手抓取。此时插件会退到临时代理页，所以「刷新不出东西」不会再发生；但那门课若从未被登记过，仍需要它的页面被打开一次（切换回去即会自动重载并登记）
 - **无法自动更新**：开发者模式侧载的扩展 Chrome 不会更新，只能提醒用户去 Release 下载（见「更新检查」）。且更新检查依赖仓库里存在 Release —— 只打 tag 不发 Release 会让检查一直失败
 - **更新检查需要 `https://api.github.com/*` 的 host 权限**，用户在扩展详情页能看到这一条；未认证请求有 60 次/小时限流（12h 一次检查远够）。关闭 `autoCheckUpdates` 后后台不再发任何请求
 

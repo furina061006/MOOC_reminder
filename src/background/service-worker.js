@@ -479,7 +479,10 @@ const MESSAGE_HANDLERS = {
     }
     console.log('[MOOC Reminder] COURSE_LINKS: registered', registered, 'courses, new:', newCourses, 'SPOC:', spocCount);
     // Only kick a (heavy) background refresh when a genuinely new course appeared.
-    if (newCourses > 0) {
+    // During a scrape the SW is already fetching everything through the content
+    // script (and it now asks every open page to report on every pass), so the
+    // SW-side refresh would only duplicate the same API calls.
+    if (newCourses > 0 && !periodicScrapeInFlight) {
       apiRefreshAllKnownCourses().catch(() => {});
     }
     return { success: true, registered, newCourses };
@@ -1687,55 +1690,66 @@ const LEARN_TAB_URLS = [
 ];
 
 // Every icourse163 page may know about courses (`course-discovery.js` runs on all
-// of them), so re-discovery asks the whole site, not only the learn tabs: the
-// 「我的课程」page is the richest source, and a learn tab answers for itself.
+// of them), so every scrape asks the whole site — not only the learn tabs: the
+// 「我的课程」page is the richest source of course links, and a learn tab answers
+// for itself (main.js). The answers also tell the SW which pages are still alive.
 const ICOURSE_TAB_URLS = ['https://www.icourse163.org/*'];
 
-// A tab that cannot answer must not swallow the whole scrape. Two ways to get no
-// answer: the content script is missing (page predates the last extension
-// reload — rejects immediately) or the renderer is frozen/unresponsive as a
-// background tab (the promise never settles). The second one used to hang
-// `performPeriodicScrape` forever with nothing in any log, so every ask is
-// bounded.
-const COURSE_REDISCOVERY_TIMEOUT_MS = 1500;
-const COURSE_REDISCOVERY_SETTLE_MS = 1200;
+// A page that cannot answer must never be trusted with anything. Two ways to get
+// no answer: the content script is missing (page predates the last extension
+// reload, or the browser discarded the tab — rejects immediately) or the renderer
+// is frozen/unresponsive as a long-hidden background tab (the promise never
+// settles). Both are normal in a browser that has been open for a while, so every
+// ask is bounded and the answer decides what that page is used for.
+const PAGE_ANSWER_TIMEOUT_MS = 1500;
+
+// main.js answers REQUEST_COURSE_LINKS only after its own COURSE_LINKS /
+// COURSE_UPDATE were handled, but course-discovery's anchor harvest is
+// fire-and-forget: give those messages a moment to land before reading `courses`.
+const COURSE_REPORT_SETTLE_MS = 800;
 
 /**
- * Ask already-open icourse163 pages to re-report the courses they know.
+ * Ask every open icourse163 page to re-report the courses it knows, and return the
+ * ids of the pages that answered.
  *
- * course-discovery reports each course once per page load, so a course list that
- * was emptied (清除数据 / 删除课程) stays empty while those pages keep sitting
- * there — the user would have to reload a page by hand. Returns true when at
- * least one page answered.
+ * One cheap round trip does two jobs:
+ *  - **registration**: `course-discovery` reports each course once per page load and
+ *    `main.js` registers its own course only while loading, so a course whose page
+ *    has been sitting in the background since before 清除数据 (or whose page load
+ *    never captured the API hook) would otherwise never be known again. Asking on
+ *    every scrape makes the course list self-healing instead of only recoverable
+ *    when it is empty.
+ *  - **liveness**: only a page that answers may be chosen to serve the heavy
+ *    BATCH_API_FETCH. A frozen/unloaded page never answers, and sending it the batch
+ *    used to abort the whole pass after a 90-second timeout even though another tab
+ *    — or the temporary proxy — could have served it.
  */
-async function requestCourseRediscovery(tabs) {
+async function askOpenPagesToReport(tabs) {
   const candidates = (Array.isArray(tabs) ? tabs : []).filter(tab => tab && Number.isInteger(tab.id));
-  if (candidates.length === 0) return false;
+  const responders = new Set();
+  if (candidates.length === 0) return responders;
 
-  // Ask every page at once: sequentially awaiting a frozen tab would add its whole
-  // timeout to the pass, and one silent tab must not delay the others.
-  const answers = await Promise.all(candidates.map(async tab => {
+  // Ask every page at once: sequentially awaiting a frozen page would add its whole
+  // timeout to the pass, and one silent page must not delay the others.
+  await Promise.all(candidates.map(async tab => {
     try {
       await withTimeout(
         chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_COURSE_LINKS' }),
-        COURSE_REDISCOVERY_TIMEOUT_MS,
-        'course rediscovery timed out'
+        PAGE_ANSWER_TIMEOUT_MS,
+        'no answer within ' + PAGE_ANSWER_TIMEOUT_MS + 'ms'
       );
-      return true;
+      responders.add(tab.id);
     } catch (e) {
-      // Either no content script (page predates the last extension reload) or a
-      // frozen background renderer. Both mean "this page cannot help"; say so
-      // instead of failing the whole pass in silence.
-      console.warn('[MOOC Reminder] Course rediscovery: tab', tab.id, 'did not answer —', e && e.message);
-      return false;
+      console.warn('[MOOC Reminder] Page', tab.id, 'did not answer (' + (e && e.message) +
+        ') — it cannot report courses or serve the batch');
     }
   }));
-  const asked = answers.filter(Boolean).length;
-  console.log('[MOOC Reminder] Course rediscovery: asked', candidates.length, 'page(s),', asked, 'answered');
-  if (asked === 0) return false;
-  // Give the pages a moment to harvest and send COURSE_LINKS back.
-  await new Promise(resolve => setTimeout(resolve, COURSE_REDISCOVERY_SETTLE_MS));
-  return true;
+
+  console.log('[MOOC Reminder] Open icourse163 pages:', candidates.length, '— answered:', responders.size);
+  if (responders.size > 0) {
+    await new Promise(resolve => setTimeout(resolve, COURSE_REPORT_SETTLE_MS));
+  }
+  return responders;
 }
 
 async function performPeriodicScrape(source) {
@@ -1744,24 +1758,13 @@ async function performPeriodicScrape(source) {
   const run = (async function() {
     console.log('[MOOC Reminder] Periodic scrape started');
     try {
+      // Ask first, then read: the answers may register courses this very pass needs.
+      const openTabs = await chrome.tabs.query({ url: ICOURSE_TAB_URLS });
+      const responders = await askOpenPagesToReport(openTabs);
+
       let courses = await getCourses();
       const ignoredCourseIds = normalizeSettings(await getUserSettings()).ignoredCourseIds || [];
       let apiCourses = buildApiCourseList(courses, ignoredCourseIds);
-
-      if (apiCourses.length === 0) {
-        // Normal right after 清除数据 / 删除课程 — the pages that are already open
-        // will not re-report on their own (course-discovery dedupes per page load),
-        // so ask them all. A learn page answers for itself (main.js), any other
-        // icourse163 page answers with the course links it contains.
-        const openedTabs = await chrome.tabs.query({ url: ICOURSE_TAB_URLS });
-        const openCount = Array.isArray(openedTabs) ? openedTabs.length : 0;
-        console.log('[MOOC Reminder] No trackable course yet — asking', openCount, 'open icourse163 page(s) to re-report');
-        if (await requestCourseRediscovery(openedTabs)) {
-          courses = await getCourses();
-          apiCourses = buildApiCourseList(courses, ignoredCourseIds);
-          console.log('[MOOC Reminder] Course rediscovery restored', courses.length, 'course(s),', apiCourses.length, 'term(s) to scrape');
-        }
-      }
 
       if (apiCourses.length === 0) {
         // This used to return in TOTAL silence, which made 「popup 一点都抓不到」
@@ -1779,23 +1782,27 @@ async function performPeriodicScrape(source) {
         return { success: false, error: reason, tabsScanned: 0 };
       }
 
-      const tabs = await chrome.tabs.query({ url: LEARN_TAB_URLS });
-      const candidates = (Array.isArray(tabs) ? tabs : [])
-        .slice()
+      // Only pages that just proved they can answer are candidates. This is what
+      // makes a refresh independent of which course tabs the browser froze or
+      // unloaded while the user was looking elsewhere.
+      const learnTabs = await chrome.tabs.query({ url: LEARN_TAB_URLS });
+      const candidates = (Array.isArray(learnTabs) ? learnTabs : [])
+        .filter(tab => tab && responders.has(tab.id))
         .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
 
       if (candidates.length === 0) {
-        console.log('[MOOC Reminder] No learn tab open, creating a temporary proxy tab');
+        console.log('[MOOC Reminder] No responsive learn tab, creating a temporary proxy tab');
         return await createTemporaryProxyJob(courses, source || 'periodic');
       }
 
-      // Try the most recently used learn tab first, then the others. A learn tab
-      // that was already open when the extension was reloaded has NO content
-      // script, and chrome.tabs.sendMessage then rejects with "Receiving end does
-      // not exist" — that used to abort the entire scrape even though other tabs
-      // could have served it, leaving the user with an empty popup telling them to
-      // log in. Only that definitive "nobody is listening" failure moves on to the
-      // next candidate; a real timeout still fails loudly.
+      // Try the most recently used responsive learn tab first, then the others. A
+      // learn tab that was already open when the extension was reloaded has NO
+      // content script, and chrome.tabs.sendMessage then rejects with "Receiving
+      // end does not exist" — that used to abort the entire scrape even though
+      // other tabs could have served it. Only that definitive "nobody is
+      // listening" failure moves on to the next candidate (it can still happen if
+      // the page navigated right after answering); a real timeout on a page that
+      // just answered fails loudly, because the data would be lost silently.
       for (const tab of candidates) {
         console.log('[MOOC Reminder] Sending BATCH_API_FETCH:', apiCourses.length, 'courses to tab', tab.id);
         try {
@@ -1822,8 +1829,9 @@ async function performPeriodicScrape(source) {
         }
       }
 
-      // Every open learn tab is stale. The temporary proxy is created fresh, so it
-      // always gets the content script — use it rather than failing the scrape.
+      // Every candidate turned out to be stale (they answered, then navigated).
+      // The temporary proxy is created fresh, so it always gets the content
+      // script — use it rather than failing the scrape.
       console.warn('[MOOC Reminder] No learn tab could serve the batch, falling back to a temporary proxy tab');
       return await createTemporaryProxyJob(courses, source || 'periodic');
     } catch (e) {
