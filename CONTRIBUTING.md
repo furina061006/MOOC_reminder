@@ -60,6 +60,26 @@ CI 会在每个 PR 上跑 `npm run validate`，并产出一个可下载的 zip�
 会检查 git 索引里没有这些文件，CI 会拦下来。需要把抓取内容给别人看时，先自己删掉
 课程名、userId 和 cookie 相关字段。
 
+## 仓库结构
+
+```text
+MOOC_reminder/
+├── manifest.json           # 扩展清单
+├── src/
+│   ├── background/         # Service Worker（alarms、协调、badge、通知）
+│   ├── content/            # 页面注入脚本（API 代理 + SPOC 支持）
+│   ├── popup/              # 弹出窗口（HTML/CSS/JS）
+│   └── shared/             # 共享模块（数据模型、存储、API 解析、设置）
+├── tests/unit/             # 单测（含 SW 集成测试的 chrome.* stub）
+├── tools/                  # diagnostics/（排查脚本）、package-extension.mjs（打包配方）
+├── docs/                   # 面向使用者的文档（功能、FAQ、隐私、贡献者）——不进发布 zip
+├── .dsh/agents/            # 面向开发者的分主题事实 / 不变量 / 排查流程
+├── .dsh/logs/              # 更新日志与开发日志
+├── .github/                # Issue 模板、PR 模板、CI 与发布 workflow
+├── AGENTS.md               # 索引：红线 + 路由表（指向 .dsh/agents/）
+└── README.md               # 面向使用者的精简入口
+```
+
 ## 提 PR
 
 1. 从 `main` 切一个分支，PR 也指向 `main`；
@@ -70,7 +90,8 @@ CI 会在每个 PR 上跑 `npm run validate`，并产出一个可下载的 zip�
 
 - **项目事实的入口是仓库根目录的 `AGENTS.md`**（红线 + 路由表），细节在 `.dsh/agents/`；动抓取/解析/SPOC 相关代码前按路由表先读对应文档；
 - `src/shared/icourse163-api.js` 与 Service Worker 里内联的 `apiExtractHomework` 是**两份必须同步的拷贝**（见不变量 12），改一侧必须改另一侧；
-- `.dsh/` 是**文档目录**（`agents/` = 知识库，`logs/` = 更新日志与开发日志），不是临时输出目录；用户能感知的变化请写入 `.dsh/logs/changelog.md`。
+- `.dsh/` 是**开发者文档目录**（`agents/` = 知识库，`logs/` = 更新日志与开发日志），不是临时输出目录；用户能感知的变化请写入 `.dsh/logs/changelog.md`；
+- **面向使用者的文档在 `docs/`**（功能、FAQ、隐私），`README.md` 是它的精简入口：改了用户能看到的行为/文案，记得同步这两处。注意 `docs/` **不会被打进发布 zip**，所以 README 只能用绝对链接指过去。
 
 ## 安全
 

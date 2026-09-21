@@ -98,8 +98,9 @@ npx web-ext run --source-dir . --target chromium
   再检查 git 索引里没有这些文件——**不要用 `git add -f` 绕过**。
 - **反馈走 `.github/ISSUE_TEMPLATE/`**（空白 issue 已关闭）。改模板时记得它同时是排查分流器：
   「重载扩展 + 刷新页面」和「后台页会被冻结」这两条陷阱写在表单里，能挡掉大半重复的「抓不到」。
-- **README 会被打进发布 zip，而 zip 里没有 `.dsh/` 与 `CONTRIBUTING.md`**，所以 README 里指向这些
-  文件的链接必须用绝对 GitHub URL，相对链接在用户解压后是死链。
+- **README 会被打进发布 zip，而 zip 里只有 `manifest.json`、`README.md`、`LICENSE`、`src/`**（不含
+  `.dsh/`、`docs/`、`CONTRIBUTING.md`），所以 README 里指向这些文件的链接必须用绝对 GitHub URL，
+  相对链接在用户解压后是死链。面向使用者的细节文档在 `docs/`，但它**不进包**。
 - 打包清单只有一处：`tools/package-extension.mjs`（CI 的 PR 产物与发版都调它），别在 workflow 里另抄一份。
 
 ### 发版流程（.github/workflows/release.yml）

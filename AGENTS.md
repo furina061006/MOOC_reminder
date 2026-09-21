@@ -29,6 +29,7 @@ Chrome / Edge（Chromium 内核）Manifest V3 扩展，自动追踪中国大学M
 | 动数据结构 / storage / 数据流 / 消息协议 | [`.dsh/agents/data-model.md`](.dsh/agents/data-model.md) + [`.dsh/agents/architecture.md`](.dsh/agents/architecture.md) |
 | 改代码前逐条核对不变量 | [`.dsh/agents/invariants.md`](.dsh/agents/invariants.md) |
 | 发版、打包、CI、Issue/PR 模板、已知限制 | [`.dsh/agents/operations.md`](.dsh/agents/operations.md) |
+| 改用户能看到的文档 / 文案 | [`docs/`](docs/)（功能、FAQ、隐私、贡献者）+ 必要时 `.dsh/logs/changelog.md` |
 | 想知道「为什么这么改」「踩过什么坑」 | [`.dsh/logs/`](.dsh/logs/)（按日期；用户可感知的变化在 `changelog.md`） |
 
 ## 知识管理约定（每次会话遵守）
@@ -37,8 +38,9 @@ Chrome / Edge（Chromium 内核）Manifest V3 扩展，自动追踪中国大学M
 - **`.dsh/agents/`** — 分主题的项目事实、不变量、排查流程（本文件的展开）。改代码前按路由表读，**改完要回来更新**
 - **`.dsh/logs/changelog.md`** — 面向用户的版本更新记录，按日期记录可感知的新增 / 变更 / 修复
 - **`.dsh/logs/`** — 面向开发者的过程记录：为什么这么做、试过哪些死路、根因分析
-- **`README.md`** — 面向使用者：安装、使用、功能、限制和当前能力
-- **`CONTRIBUTING.md`** — 面向外部贡献者：本地加载扩展、`npm run validate`、隐私红线、PR 流程
+- **`README.md`** — 面向使用者的**精简入口**（安装 / 使用 / 限制 / 反馈）；细节拆到 `docs/`
+- **`docs/`** — 面向使用者的细节文档：`features.md`（功能与技巧）、`faq.md`（常见问题）、`privacy.md`（隐私与权限）、`contributors.md`（致谢与参与）。**不进发布 zip**，所以 README 只能用绝对链接指过来
+- **`CONTRIBUTING.md`** — 面向外部贡献者：本地加载扩展、`npm run validate`、隐私红线、仓库结构、PR 流程
 - **`.github/ISSUE_TEMPLATE/`** — 外部反馈入口（Bug / 功能建议表单；空白 issue 已关闭）
 - **每次重大技术变化后**：先更新 `.dsh/agents/` 对应文档 → 再写 `.dsh/logs/` 开发日志 → 有用户可感知变化时同步 `.dsh/logs/changelog.md`
 

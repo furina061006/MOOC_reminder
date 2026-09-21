@@ -12,6 +12,17 @@ src/
 └── shared/         共享模块 — 数据模型、API 解析、存储、设置
 ```
 
+### 技术栈
+
+| 技术 | 用途 |
+| --- | --- |
+| Manifest V3 | Chrome 扩展最新标准 |
+| 原生 JavaScript | 零框架，轻量高效 |
+| chrome.storage.local | 本地持久化存储 |
+| chrome.notifications | 桌面通知 |
+| XMLHttpRequest | 同源 API 调用（绕过 CSRF） |
+| content script proxy | 页面上下文代理 API 请求 |
+
 ### 数据流
 
 ```
@@ -33,6 +44,29 @@ src/
     → reconcileHomeworkData() 合并（UID 匹配 dedup）
     → updateBadgeFromStorage()
   → 批量响应完成、超时或 tab 被关闭后，只清理扩展自己创建的临时页
+```
+
+### 一次刷新的完整时序
+
+（原先写在 README 的「API 抓取流程」，2026-09-21 README 精简后搬到这里）
+
+```text
+SW alarm / 手动刷新
+  ↓ 优先复用现有 learn/spoc 标签页；没有时先创建 about:blank，持久化临时任务后导航到已保存课程 URL
+  ↓ 发送 BATCH_API_FETCH {courses: [...], proxyJobId?}
+Content Script（icourse163.org 同源）
+  ↓ chrome.cookies.get({name:'NTESSTUDYSI'}) → HttpOnly CSRF
+  ↓ XHR → getLastLearnedMocTermDto.rpc?csrfKey=xxx
+  ↓ 浏览器自动附带 icourse163.org cookies
+  ↓ 返回 200KB+ 完整课程 DTO（作业+考试+分数+互评阶段）
+  ↓ 辅助: getOpenHomeworkInfo.rpc → submitStatus 等补充字段
+  ↓ SPOC: window.moocTermDto.id → 真实 termId（替换 URL 假 tid）
+  ↓ COURSE_API_DATA → SW
+SW
+  ↓ apiExtractHomework() 解析 → 基于 scorePubStatus + usedTryCount + userScore
+  ↓ reconcileHomeworkData() 合并（UID 匹配 dedup）
+  ↓ updateBadgeFromStorage()
+  ↓ 临时代理：BATCH 完成、超时或关闭后仅关闭该扩展创建的 tab
 ```
 
 ### 消息协议
