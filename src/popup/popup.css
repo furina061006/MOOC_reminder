@@ -563,6 +563,10 @@ body {
 
 .footer-sep { color: #d6d9de; }
 
+/* 页脚的反馈入口：小字里也要看得出是可点的 */
+.footer-info a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.footer-info a:hover { color: var(--text); }
+
 .footer-actions {
   display: flex;
   gap: 6px;

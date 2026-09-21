@@ -76,3 +76,63 @@
 - 锚点：`grep '^## 局限性$\|^## 反馈建议$' README.md` 均命中。
 - 打包：`npm run package` → 包内仍是 40 个条目、只有 `MOOC_reminder/{manifest.json,README.md,LICENSE,src/**}`，
   `docs/`、`.dsh/` 命中数为 **0**（产物已清理）。
+
+---
+
+## 后记（同日晚）
+
+用户改主意了：**`INTRODUCTION.md` 已删除**（`git rm`）。
+
+理由（也是它该走的理由）：它是一份过时的「README 重复版」——内容与 `docs/` 重叠，
+却停留在没有更新提醒、没有 FAQ、反馈只留邮箱的年代；而上一节说的「本次没动它」写在这里后
+就被这条推翻了。删除前确认过：仓库里**没有任何活文档引用它**（只有几篇历史日志提到过它，
+那属于存档，不改写）。
+
+面向使用者的文档现在只有两处：`README.md`（入口）与 `docs/`（细节）；面向开发者的在
+`AGENTS.md` + `.dsh/agents/`，历史在 `.dsh/logs/`——再没有第五个地方。
+
+---
+
+## 第五轮（同日晚）：用户自己加了截图 + 反馈入口改「Issues 主 / 邮件兜底」
+
+用户自己改了 README（加两张截图、重排「使用方法」与「常用功能」），并问：popup 底部的反馈建议
+该写 Issue 还是继续写邮箱。顺带发现他这版 README 会让 CI 变红。
+
+### README 的三处修正（保留他的意图，只修结构性错误）
+
+1. **相对图片链接会砸两件事**：README 会被打进发布 zip，而 zip 里没有 `docs/` → 用户解压后图片是断的；
+   同时 `tests/unit/repo-hygiene.test.mjs` 那条「README 不得出现相对链接」直接报错（实测 `not ok`）。
+   改成绝对 raw URL：`https://raw.githubusercontent.com/furina061006/MOOC_reminder/main/docs/images/…`。
+2. **图片文件名改成 ASCII**（`课程页面.png` → `course-page.png`、`popup页面.png` → `popup.png`）：
+   中文文件名在 URL 里要百分号编码，写在 markdown 里难看，别的渲染器也容易坏。
+3. **Markdown 结构**：`> [!tip]` 改成 `> [!IMPORTANT]`（GitHub 的 admonition 只认大写，小写会当成普通引用）；
+   块引用原来被一行没带 `>` 的正文截成两半；列表项里的图片只缩进 2 空格（`3. ` 的内容缩进需要 3+），
+   改成 4 空格并补空行，图才真正落在列表项里。
+
+### 隐私核对（公开前查过）
+
+- `course-page.png`：问候语里的名字用户自己已打码；我把右上角「个人中心」头像与右下角浮动头像
+  裁出来放大看过——**分别是画笔 emoji 头像和插画客服形象，不是本人照片**，没有 PII。
+  剩下可见的信息只有课程名（概率论与数理统计）与作业日期。
+- `popup.png`：显示了他实际在追的 4 门课程名 + 邮箱（邮箱本来就在 README 里）。课程名属于个人偏好，
+  用户自己判断即可。
+- 图片不进发布 zip，只随仓库公开。
+
+### 反馈入口：Issues 主 + 邮件兜底
+
+判断依据：使用者主要是学生，**很多没有 GitHub 账号** → 只留 Issues 会直接把一部分反馈挡在门外；
+但只留邮箱的代价是反馈不沉淀（搜不到、看不到进度、维护者还得反复要日志）。
+所以两个都给，主次分明：
+
+- `src/popup/popup.html` 页脚：原来是最差的组合——邮箱是**纯文本，根本点不了**；
+  现在是 `反馈：GitHub Issues · 邮件` 两个链接（Issues 在前，title 里写明「推荐：别人能搜到、
+  模板会引导你附日志」）。
+- `src/popup/popup.css`：给页脚链接加了 `color: inherit` + 下划线，小字里也看得出可点。
+- `src/popup/popup.js`：复用已有的 `openUrl()`（`chrome.tabs.create` 优先）打开 Issues 选择器；
+  用 `preventDefault` 阻止 `href="#"` 跳转。
+- `src/popup/options.html` + `options.js`：设置页空间大，写成两行说明——第一行推荐 Issues 并解释为什么，
+  第二行给「没有 GitHub 账号 / 涉及账号信息」的人留邮箱。
+- `docs/features.md`：功能表里「反馈渠道」那行同步成「可一键提 Issue（推荐）或发邮件」。
+
+验证：`npm run validate` 135 项通过、eslint 0 error（README 那条断言已转绿）；
+HTML 里的 `id="feedback-issues"` 与两个 JS 的接线都对得上。
