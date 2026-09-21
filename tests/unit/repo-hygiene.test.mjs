@@ -1,19 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { INDEX_FILE, renderIndex } from '../../tools/gen-log-index.mjs';
 
 /**
  * 仓库卫生检查。
  *
- * 这里守的是两条不靠「记得」的不变量：
+ * 这里守的是三条不靠「记得」的不变量：
  *  1. 抓取产物/隐私数据绝不进 git —— 本仓库是公开的，而 `element.txt` / `*.har` /
  *     `*-report.json` 里有使用者自己的课程与账号数据。`.gitignore` 只挡普通 `git add`，
  *     挡不住 `git add -f`，所以这里直接检查 git 索引。
  *  2. 反馈入口与打包配方不能被误删 —— issue 模板是外部用户唯一的提意见入口，
  *     打包清单只有 tools/package-extension.mjs 一份（CI 与发版都依赖它）。
+ *  3. 日志索引不能过期 —— 它是生成物（tools/gen-log-index.mjs），手写或漏跑生成器都会腐烂。
  */
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -162,6 +164,22 @@ test('README 是精简入口，细节在 docs/（且外部锚点没被改掉）'
   for (const name of ['features', 'faq', 'privacy', 'contributors']) {
     const doc = readFileSync(join(root, 'docs', name + '.md'), 'utf8');
     assert.match(doc, /\]\(\.\.\/README\.md\)/, 'docs/' + name + '.md 应该有返回 README 的链接');
+  }
+});
+
+test('日志索引是生成物，且与 .dsh/logs/ 的实际内容一致', () => {
+  // 索引的价值全在「不过期」上，而它最容易过期的方式是「有人忘了跑生成器」或
+  // 「有人直接手改」。逐字节比对生成结果，两种都会当场失败（修法就是跑 npm run logs:index）。
+  const committed = readFileSync(join(root, INDEX_FILE), 'utf8');
+  assert.equal(committed, renderIndex(root),
+    INDEX_FILE + ' 与生成结果不一致 —— 它是生成物，请跑 `npm run logs:index`（不要手改）');
+
+  // 逐字节一致之外再确认一遍覆盖面：生成器若因正则/命名变化漏扫日志，这里会先说清楚
+  const logs = readdirSync(join(root, '.dsh/logs'))
+    .filter(name => /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(name));
+  assert.ok(logs.length >= 10, '.dsh/logs/ 里应该有按日期命名的开发日志');
+  for (const name of logs) {
+    assert.ok(committed.includes('](' + name + ')'), name + ' 没有出现在日志索引里');
   }
 });
 

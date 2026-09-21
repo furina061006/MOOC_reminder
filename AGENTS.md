@@ -30,25 +30,26 @@ Chrome / Edge（Chromium 内核）Manifest V3 扩展，自动追踪中国大学M
 | 改代码前逐条核对不变量 | [`.dsh/agents/invariants.md`](.dsh/agents/invariants.md) |
 | 发版、打包、CI、Issue/PR 模板、已知限制 | [`.dsh/agents/operations.md`](.dsh/agents/operations.md) |
 | 改用户能看到的文档 / 文案 | [`docs/`](docs/)（功能、FAQ、隐私、贡献者）+ 必要时 `.dsh/logs/changelog.md` |
-| 想知道「为什么这么改」「踩过什么坑」 | [`.dsh/logs/`](.dsh/logs/)（按日期；用户可感知的变化在 `changelog.md`） |
+| 想知道「为什么这么改」「踩过什么坑」 | [`.dsh/logs/README.md`](.dsh/logs/README.md)（日志索引；用户可感知的变化在 `changelog.md`） |
 
 ## 知识管理约定（每次会话遵守）
 
 - **`AGENTS.md`（本文件）** — 索引 + 红线 + 路由表。**保持精简**：细节写进 `.dsh/agents/`，过程写进 `.dsh/logs/`
 - **`.dsh/agents/`** — 分主题的项目事实、不变量、排查流程（本文件的展开）。改代码前按路由表读，**改完要回来更新**
 - **`.dsh/logs/changelog.md`** — 面向用户的版本更新记录，按日期记录可感知的新增 / 变更 / 修复
-- **`.dsh/logs/`** — 面向开发者的过程记录：为什么这么做、试过哪些死路、根因分析
+- **`.dsh/logs/`** — 面向开发者的过程记录：为什么这么做、试过哪些死路、根因分析。其 `README.md` 是**生成的索引**（`npm run logs:index`，勿手改）
 - **`README.md`** — 面向使用者的**精简入口**（安装 / 使用 / 限制 / 反馈）；细节拆到 `docs/`
 - **`docs/`** — 面向使用者的细节文档：`features.md`（功能与技巧）、`faq.md`（常见问题）、`privacy.md`（隐私与权限）、`contributors.md`（致谢与参与）。**不进发布 zip**，所以 README 只能用绝对链接指过来
 - **`CONTRIBUTING.md`** — 面向外部贡献者：本地加载扩展、`npm run validate`、隐私红线、仓库结构、PR 流程
 - **`.github/ISSUE_TEMPLATE/`** — 外部反馈入口（Bug / 功能建议表单；空白 issue 已关闭）
-- **每次重大技术变化后**：先更新 `.dsh/agents/` 对应文档 → 再写 `.dsh/logs/` 开发日志 → 有用户可感知变化时同步 `.dsh/logs/changelog.md`
+- **每次重大技术变化后**：先更新 `.dsh/agents/` 对应文档 → 再写 `.dsh/logs/` 开发日志（写完跑 `npm run logs:index` 更新索引）→ 有用户可感知变化时同步 `.dsh/logs/changelog.md`
 
 **为什么本文件必须在仓库根目录**：DSH 只自动加载 `AGENTS.md` / `CLAUDE.md` 这两个**文件名**，而**位置决定作用域**——根目录那份 = 项目级指令（每轮都在上下文里），放在任何子目录（例如 `.dsh/`）就只对那个目录生效。所以索引留在根目录，细节才敢放进 `.dsh/agents/`。
 
 ## 相关文档
 
 - `.dsh/agents/` — 架构与消息协议、平台与 API、SPOC、提取判定、排查、调度、不变量、数据模型、工程与发版
+- `.dsh/logs/README.md` — 开发日志索引（**生成物**：`npm run logs:index`；`validate` 会校验它没过期）
 - `.dsh/logs/changelog.md` — 面向用户的完整更新记录
 - `.dsh/logs/architecture.md` — 2026-09-01 的完整架构快照（**历史存档**；现行事实见 `.dsh/agents/`）
 - `CONTRIBUTING.md` — 参与开发前先看

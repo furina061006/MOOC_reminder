@@ -72,6 +72,9 @@ npx eslint src/
 # 校验（lint + 全部单测）
 npm run validate
 
+# 更新开发日志索引（.dsh/logs/README.md 是生成物，新写日志后跑一次；validate 会校验）
+npm run logs:index
+
 # 本地打一个「解压即可加载」的 zip（与 CI/发版共用同一份配方）
 npm run package
 ```
@@ -102,6 +105,11 @@ npx web-ext run --source-dir . --target chromium
   `.dsh/`、`docs/`、`CONTRIBUTING.md`），所以 README 里指向这些文件的链接必须用绝对 GitHub URL，
   相对链接在用户解压后是死链。面向使用者的细节文档在 `docs/`，但它**不进包**。
 - 打包清单只有一处：`tools/package-extension.mjs`（CI 的 PR 产物与发版都调它），别在 workflow 里另抄一份。
+- **日志索引是生成的，不是手写的**：`.dsh/logs/README.md` 由 `tools/gen-log-index.mjs` 从各日志首行的
+  `# 标题` 生成（主题 = 标题，日期/文件名/月份分组取自文件本身），新增日志后跑 `npm run logs:index`。
+  `tests/unit/repo-hygiene.test.mjs` 断言它与生成结果**逐字节一致**，所以手改或漏跑都会被
+  `npm run validate` 打回——「索引过期」这件事因此不靠自觉。非日期文件要进索引，得在生成器的
+  `STANDING_DOCS` 里登记一行（没登记会直接报错，避免某篇日志悄悄从索引里消失）。
 
 ### 发版流程（.github/workflows/release.yml）
 
