@@ -20,6 +20,7 @@ function makeChromeStub() {
   const tabsUpdated = [];
   const tabsRemoved = [];
   const tabMessages = [];
+  const tabQueryCalls = [];
   const alarmsCreated = new Map();
   const badge = { text: null, color: null };
   let tabsQueryResult = [];
@@ -76,7 +77,7 @@ function makeChromeStub() {
     },
     tabs: {
       onRemoved: { addListener: fn => listeners.onRemoved.push(fn) },
-      async query() { return tabsQueryResult; },
+      async query(filter) { tabQueryCalls.push(filter); return tabsQueryResult; },
       async create(o) {
         tabCreateRequests.push({ ...o });
         const tab = { id: 100 + tabsCreated.length, ...o };
@@ -105,7 +106,7 @@ function makeChromeStub() {
   };
 
   return {
-    storageData, listeners, notificationsCreated, tabCreateRequests, tabsCreated, tabsUpdated, tabsRemoved, tabMessages,
+    storageData, listeners, notificationsCreated, tabCreateRequests, tabsCreated, tabsUpdated, tabsRemoved, tabMessages, tabQueryCalls,
     alarmsCreated, badge,
     setTabsQuery(tabs) { tabsQueryResult = tabs; },
     setTabMessageResponder(fn) { tabMessageResponder = fn; },
@@ -571,6 +572,87 @@ test('an emptied course list is recovered from the open learn pages', async () =
   assert.ok((h.storageData.get('courses') || []).length > 0, 'and the course comes back');
   assert.ok(h.tabMessages.some(t => t.msg && t.msg.type === 'BATCH_API_FETCH'),
     'so the refresh can proceed in the same pass');
+});
+
+test('course rediscovery asks every open icourse163 page, not only the learn tabs', async () => {
+  h.tabQueryCalls.length = 0;
+  h.storageData.set('courses', []);
+  h.tabsCreated.length = 0;
+  // Nobody is open, so the pass can only be observed through the query it makes.
+  h.setTabsQuery([]);
+  h.setTabMessageResponder(null);
+
+  await sendMessage({ type: 'TRIGGER_SCRAPE' });
+
+  assert.ok(
+    h.tabQueryCalls.some(f => JSON.stringify(f).includes('https://www.icourse163.org/*')),
+    'the rediscovery pass must consider every icourse163 page (我的课程 included)'
+  );
+});
+
+test('a page that never answers cannot hang the rediscovery pass', async () => {
+  // Regression: requestCourseRediscovery awaited chrome.tabs.sendMessage with no
+  // timeout. A frozen background renderer never settles that promise, so the whole
+  // scrape vanished without one log line and the popup spun until it gave up.
+  h.tabMessages.length = 0;
+  h.tabsCreated.length = 0;
+  h.storageData.set('courses', []);
+  h.storageData.set('sync_errors', []);
+  h.setTabsQuery([{ id: 96, lastAccessed: 6000 }, { id: 97, lastAccessed: 5000 }]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'REQUEST_COURSE_LINKS') {
+      if (tabId === 96) return new Promise(() => {}); // frozen renderer: never settles
+      seedCourses([{ courseId: 'BIT-2', termId: '22', courseName: '操作系统', courseType: 'mooc' }]);
+      return { success: true };
+    }
+    if (msg && msg.type === 'BATCH_API_FETCH') return [{ courseId: 'BIT-2' }];
+    return true;
+  });
+
+  const warns = [];
+  const original = console.warn;
+  const startedAt = Date.now();
+  let result;
+  let elapsed;
+  console.warn = (...args) => warns.push(args.map(String).join(' '));
+  try {
+    result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+    elapsed = Date.now() - startedAt;
+  } finally {
+    console.warn = original;
+  }
+
+  assert.equal(result.success, true, 'the page that answers must still serve the scrape');
+  assert.ok(elapsed < 8000, 'the silent page must not stall the pass (took ' + elapsed + 'ms)');
+  assert.ok((h.storageData.get('courses') || []).some(c => c.courseId === 'BIT-2'), 'and its course comes back');
+  assert.ok(warns.some(l => /did not answer/.test(l) && l.includes('96')), 'the silent page must be reported');
+  const asked = h.tabMessages.filter(t => t.msg && t.msg.type === 'REQUEST_COURSE_LINKS').map(t => t.tabId);
+  assert.deepEqual(asked.slice().sort(), [96, 97], 'both pages are asked in the same pass');
+});
+
+test('when no open page can answer, the skip reason says what to do', async () => {
+  // The stale-content-script case: reloading the extension leaves pages that were
+  // already open without one, so every ask rejects immediately.
+  h.tabsCreated.length = 0;
+  h.storageData.set('courses', []);
+  h.storageData.set('sync_errors', []);
+  h.setTabsQuery([{ id: 98, lastAccessed: 1000 }]);
+  h.setTabMessageResponder(async (tabId, msg) => {
+    if (msg && msg.type === 'REQUEST_COURSE_LINKS') {
+      throw new Error('Could not establish connection. Receiving end does not exist.');
+    }
+    return true;
+  });
+
+  const startedAt = Date.now();
+  const result = await sendMessage({ type: 'TRIGGER_SCRAPE' });
+  const elapsed = Date.now() - startedAt;
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /还没有任何已载入的课程/);
+  assert.match(result.error, /刷新已打开的页面/);
+  assert.ok(elapsed < 3000, 'a rejected ask must not wait for the settle window (took ' + elapsed + 'ms)');
+  assert.equal(h.tabsCreated.length, 0, 'and must not spawn a proxy tab it cannot use');
 });
 
 test('an empty course list reports itself instead of failing silently', async () => {

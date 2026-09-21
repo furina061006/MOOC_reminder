@@ -42,3 +42,26 @@ test('manifest registers the course-discovery content script site-wide', () => {
     'https://www.icourse163.org/spoc/learn/*'
   ]);
 });
+
+test('every learn tab the SW messages is a page main.js actually runs on', async () => {
+  // Coupling guard: the SW sends BATCH_API_FETCH / REQUEST_COURSE_LINKS to tabs
+  // matching LEARN_TAB_URLS. If a pattern is added there without extending the
+  // manifest, those tabs answer nothing and the scrape reports "no content
+  // script" for pages that should have worked.
+  const sw = await readFile(new URL('../../src/background/service-worker.js', import.meta.url), 'utf8');
+  const block = /const LEARN_TAB_URLS = \[([\s\S]*?)\]/.exec(sw);
+  assert.ok(block, 'LEARN_TAB_URLS is declared in the service worker');
+  const patterns = [...block[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+  assert.ok(patterns.length > 0);
+
+  const main = manifest.content_scripts.find(s => (s.js || []).includes('src/content/main.js'));
+  for (const pattern of patterns) {
+    assert.ok(main.matches.includes(pattern), pattern + ' is messaged by the SW but main.js does not run there');
+  }
+
+  // main.js is the only script that can answer "who am I" on a course page
+  // (course-discovery only harvests /learn/ anchors, which course pages lack).
+  const mainSource = await readFile(new URL('../../src/content/main.js', import.meta.url), 'utf8');
+  assert.match(mainSource, /REQUEST_COURSE_LINKS/, 'main.js must answer the rediscovery request');
+  assert.match(mainSource, /COURSE_UPDATE/, 'and must re-send the SPOC active term');
+});

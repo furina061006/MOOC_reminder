@@ -1686,27 +1686,55 @@ const LEARN_TAB_URLS = [
   'https://www.icourse163.org/spoc/learn/*'
 ];
 
+// Every icourse163 page may know about courses (`course-discovery.js` runs on all
+// of them), so re-discovery asks the whole site, not only the learn tabs: the
+// 「我的课程」page is the richest source, and a learn tab answers for itself.
+const ICOURSE_TAB_URLS = ['https://www.icourse163.org/*'];
+
+// A tab that cannot answer must not swallow the whole scrape. Two ways to get no
+// answer: the content script is missing (page predates the last extension
+// reload — rejects immediately) or the renderer is frozen/unresponsive as a
+// background tab (the promise never settles). The second one used to hang
+// `performPeriodicScrape` forever with nothing in any log, so every ask is
+// bounded.
+const COURSE_REDISCOVERY_TIMEOUT_MS = 1500;
+const COURSE_REDISCOVERY_SETTLE_MS = 1200;
+
 /**
- * Ask already-open learn pages to re-scan their course links.
+ * Ask already-open icourse163 pages to re-report the courses they know.
  *
- * course-discovery reports each course once per page load, so a course list that was
- * emptied (清除数据 / 删除课程) stays empty while those pages keep sitting there —
- * the user would have to reload a page by hand. Returns true when at least one page
- * was asked to re-scan.
+ * course-discovery reports each course once per page load, so a course list that
+ * was emptied (清除数据 / 删除课程) stays empty while those pages keep sitting
+ * there — the user would have to reload a page by hand. Returns true when at
+ * least one page answered.
  */
 async function requestCourseRediscovery(tabs) {
-  let asked = 0;
-  for (const tab of (Array.isArray(tabs) ? tabs : [])) {
+  const candidates = (Array.isArray(tabs) ? tabs : []).filter(tab => tab && Number.isInteger(tab.id));
+  if (candidates.length === 0) return false;
+
+  // Ask every page at once: sequentially awaiting a frozen tab would add its whole
+  // timeout to the pass, and one silent tab must not delay the others.
+  const answers = await Promise.all(candidates.map(async tab => {
     try {
-      await chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_COURSE_LINKS' });
-      asked++;
-    } catch {
-      // No content script in that tab (page predates the extension reload) — skip.
+      await withTimeout(
+        chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_COURSE_LINKS' }),
+        COURSE_REDISCOVERY_TIMEOUT_MS,
+        'course rediscovery timed out'
+      );
+      return true;
+    } catch (e) {
+      // Either no content script (page predates the last extension reload) or a
+      // frozen background renderer. Both mean "this page cannot help"; say so
+      // instead of failing the whole pass in silence.
+      console.warn('[MOOC Reminder] Course rediscovery: tab', tab.id, 'did not answer —', e && e.message);
+      return false;
     }
-  }
+  }));
+  const asked = answers.filter(Boolean).length;
+  console.log('[MOOC Reminder] Course rediscovery: asked', candidates.length, 'page(s),', asked, 'answered');
   if (asked === 0) return false;
   // Give the pages a moment to harvest and send COURSE_LINKS back.
-  await new Promise(resolve => setTimeout(resolve, 1200));
+  await new Promise(resolve => setTimeout(resolve, COURSE_REDISCOVERY_SETTLE_MS));
   return true;
 }
 
@@ -1721,13 +1749,17 @@ async function performPeriodicScrape(source) {
       let apiCourses = buildApiCourseList(courses, ignoredCourseIds);
 
       if (apiCourses.length === 0) {
-        // Normal right after 清除数据 / 删除课程 — but the open learn pages will not
-        // re-report on their own (course-discovery dedupes per page load), so without
-        // this nudge the list stays empty until the user reloads the page by hand.
-        const openedTabs = await chrome.tabs.query({ url: LEARN_TAB_URLS });
+        // Normal right after 清除数据 / 删除课程 — the pages that are already open
+        // will not re-report on their own (course-discovery dedupes per page load),
+        // so ask them all. A learn page answers for itself (main.js), any other
+        // icourse163 page answers with the course links it contains.
+        const openedTabs = await chrome.tabs.query({ url: ICOURSE_TAB_URLS });
+        const openCount = Array.isArray(openedTabs) ? openedTabs.length : 0;
+        console.log('[MOOC Reminder] No trackable course yet — asking', openCount, 'open icourse163 page(s) to re-report');
         if (await requestCourseRediscovery(openedTabs)) {
           courses = await getCourses();
           apiCourses = buildApiCourseList(courses, ignoredCourseIds);
+          console.log('[MOOC Reminder] Course rediscovery restored', courses.length, 'course(s),', apiCourses.length, 'term(s) to scrape');
         }
       }
 
@@ -1738,7 +1770,7 @@ async function performPeriodicScrape(source) {
         // and record it so the popup/设置页 can show it too.
         const trackable = courses.filter(c => c && c.courseType !== 'manual' && c.courseId);
         const reason = courses.length === 0
-          ? '还没有任何已载入的课程：请先打开一次 icourse163 的课程学习页'
+          ? '还没有任何已载入的课程：请先打开一次 icourse163 课程页面（刚重新加载过扩展的话，还需要刷新已打开的页面）'
           : trackable.length === 0
             ? '没有可抓取的已载入课程（已知的只有手动提醒条目）'
             : '所有课程都被跳过（共 ' + courses.length + ' 门；已忽略 ' + ignoredCourseIds.length + ' 门）';
