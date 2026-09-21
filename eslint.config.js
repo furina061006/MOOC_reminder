@@ -37,9 +37,10 @@ export default [
     ignores: [
       'node_modules/**',
       'dist/**',
-      'mooc-reminder.zip',
+      'mooc-reminder*.zip',
       'reference_projects/**',
       '.claude/**',
+      '.dsh/**',
       '.serena/**'
     ]
   },

@@ -94,3 +94,12 @@
 1. 仓库 **Settings → Features** 确认 Issues 已开启（模板与 config 已经进仓库，开关不在代码里）。
    想加自定义标签（如「需要日志」）需先在 UI 建好，模板里的 `labels:` 才会生效。
 2. `dsh` 目前没有远端跟踪，且本地 `main` 比 `origin/main` 领先 2 个提交；推哪些、怎么合并由用户决定。
+
+---
+
+## 后记（同日晚）
+
+目录后来整体改了名：`.claude/logs/` → **`.dsh/logs/`**，项目主文档 `.claude/CLAUDE.md` → 仓库根目录的
+**`AGENTS.md`**（`AGENTS.md` 是 DSH 的首选指令名，且**只有放在仓库根目录才是项目级指令**）。
+`.claude/` 里只留下本机、已忽略的 Claude Code 设置文件。原因与代价见
+`.dsh/logs/2026-09-21-rename-agent-docs-to-dsh.md`。

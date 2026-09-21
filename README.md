@@ -144,7 +144,7 @@ popup 左上角可筛选：
 - **低频后台检查**：后台检查和徽章刷新默认间隔均为 12 小时。
 - **每日摘要补发**：每天定时发送摘要，并在当天首次启动浏览器时补发临期摘要。
 
-完整更新记录请参阅 [.claude/logs/changelog.md](https://github.com/furina061006/MOOC_reminder/blob/main/.claude/logs/changelog.md)。
+完整更新记录请参阅 [.dsh/logs/changelog.md](https://github.com/furina061006/MOOC_reminder/blob/main/.dsh/logs/changelog.md)。
 
 ## 贡献者
 
@@ -171,7 +171,7 @@ popup 左上角可筛选：
 ```
 
 > [!TIP]
-> 详细架构请参阅 [architecture.md](https://github.com/furina061006/MOOC_reminder/blob/main/.claude/logs/architecture.md)。
+> 详细架构请参阅 [architecture.md](https://github.com/furina061006/MOOC_reminder/blob/main/.dsh/logs/architecture.md)。
 
 ### 技术栈
 
@@ -197,7 +197,8 @@ MOOC_reminder/
 ├── tests/unit/             # 单测（含 SW 集成测试的 chrome.* stub）
 ├── tools/diagnostics/      # 排查「某门课抓不到」用的诊断脚本
 ├── .github/                # Issue 模板、PR 模板、CI 与发布 workflow
-├── .claude/logs/           # 更新日志与开发日志
+├── .dsh/logs/              # 更新日志与开发日志
+├── AGENTS.md               # 项目事实来源（架构 / 不变量 / 已知限制）
 ├── CONTRIBUTING.md         # 参与开发前先看这个
 └── README.md
 ```

@@ -68,9 +68,9 @@ CI 会在每个 PR 上跑 `npm run validate`，并产出一个可下载的 zip�
 
 约定：
 
-- **`.claude/CLAUDE.md` 是平台事实与不变量的唯一来源**，动抓取/解析/SPOC 相关代码前先读它；
+- **`AGENTS.md`（仓库根目录）是平台事实与不变量的唯一来源**，动抓取/解析/SPOC 相关代码前先读它；
 - `src/shared/icourse163-api.js` 与 Service Worker 里内联的 `apiExtractHomework` 是**两份必须同步的拷贝**（见不变量 12），改一侧必须改另一侧；
-- `.claude/logs/` 是**文档目录**（更新日志与开发日志），不是临时输出目录；用户能感知的变化请写入 `.claude/logs/changelog.md`。
+- `.dsh/logs/` 是**文档目录**（更新日志与开发日志），不是临时输出目录；用户能感知的变化请写入 `.dsh/logs/changelog.md`。
 
 ## 安全
 

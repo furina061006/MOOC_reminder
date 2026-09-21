@@ -30,7 +30,7 @@ const assetPath = join(root, assetName);
 rmSync(join(root, 'dist'), { recursive: true, force: true });
 mkdirSync(stage, { recursive: true });
 
-// 显式清单：运行期只需要这些，tests/.claude/.github/tools 一律不进包
+// 显式清单：运行期只需要这些，tests/.dsh/.github/tools 一律不进包
 for (const file of ['manifest.json', 'README.md', 'LICENSE']) {
   cpSync(join(root, file), join(stage, file));
 }

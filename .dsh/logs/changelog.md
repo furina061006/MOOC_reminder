@@ -2,7 +2,7 @@
 
 > 面向用户的版本更新记录，按日期记录可感知的新增、变更和修复。
 >
-> 本文件位于 `.claude/logs/`，但定位与同目录开发日志不同：开发日志记录「为什么这么做」的实现过程与技术决策，本文件只做版本变更回顾。两者不要互相替代。
+> 本文件位于 `.dsh/logs/`，但定位与同目录开发日志不同：开发日志记录「为什么这么做」的实现过程与技术决策，本文件只做版本变更回顾。两者不要互相替代。
 
 ## 未发布
 
@@ -65,7 +65,7 @@
 - **SPOC 互评作业修复**：`apiDetectPhase` 添加 `node.contentType` 后备（SPOC 数据无 `node.type` 和 `node.test`，类型标识在 `contentType`）。
 - **`scorePubStatus:1` 时间检查**：不再看到 1 就直接判定完成，改为先验证 `evaluateEnd` 是否真正到期；到期才判完成，未到期按时间正常判断互评阶段。
 - **移除冗余 `scorePubStatus===0` 门控**：`inPeerReview` 和 `phaseDeadline` 中额外检查 `scorePubStatus===0` 导致 `apiDetectPhase` 正确返回 `peerreview` 后被否决，现已移除，直接信任相位检测。
-- **`.claude/logs/` 纳入版本管理**：开发日志解除 gitignore，供其他开发者追踪技术决策。
+- **`.claude/logs/` 纳入版本管理**：开发日志解除 gitignore，供其他开发者追踪技术决策。（该目录后于 2026-09-21 改名为 `.dsh/logs/`，项目主文档升到根目录 `AGENTS.md`。）
 
 ## 2026-06-27
 
