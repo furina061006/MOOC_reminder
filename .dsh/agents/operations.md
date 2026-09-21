@@ -120,15 +120,32 @@ npx web-ext run --source-dir . --target chromium
 解压后是 `MOOC_reminder/` 文件夹，小白可直接「加载已解压的扩展」。
 
 ```bash
-# 1. 改 manifest.json 的 version（例如 1.0.0 → 1.0.1）
-# 2. 合并 dsh → main（需用户许可，见文首约定）
-# 3. 在 main 上打同版本 tag 并推送
-git tag v1.0.1 && git push origin v1.0.1
+# 0. 确认在 dsh 且工作区干净：git branch --show-current / git status --short
+# 1. 改版本号：manifest.json 与 package.json **两处**（没有测试守着这两者的同步，见下）
+#    同时把 changelog 的「## 未发布」改成「## {version}（{date}）」
+# 2. 在 dsh 上提交 release: {version}，然后合并 dsh → main（需用户许可，见文首约定）
+# 3. 在 main 上打同版本 tag 并推送 —— 推 tag 这一步才触发发版
+git tag -a v1.0.1 -m "MOOC Reminder 1.0.1" && git push origin v1.0.1
 ```
 
 **tag 版本必须与 `manifest.json` 的 version 严格一致**，否则 workflow 会直接失败。
 用户在浏览器里看到的版本来自 `manifest.json`，而插件检查更新读的是 Release tag，两者一旦
 漂移，用户装了新包却会被反复提示「有新版本」。workflow 里那道校验就是为此存在的。
+
+**版本号要改两处，而且没有自动化守着它们**：`manifest.json`（用户在浏览器里看到的、也是 workflow
+校验的那一处）与 `package.json`（对齐用）。`tests/unit/manifest.test.mjs` 只断言 `manifest_version: 3`，
+workflow 也只比对 tag 与 manifest —— 漏改 `package.json` 不会报错，所以靠人记得。发版前可以先本地模拟
+一遍 workflow 的那道校验：`tag_version=v1.1.1; [ "${tag_version#v}" = "$(node -p "require('./manifest.json').version")" ]`。
+
+**tag 用 annotated（`git tag -a`）**，与既有的 `v1.1.0` 保持一致（`git cat-file -t v1.1.0` → `tag`）。
+tag 必须打在 **main 上那个含该版本号的提交**上，所以顺序只能是「改版本 → 合 main → 在 main 上打 tag」；
+打完之后这一版就不要再往 main 加提交（要改就删 tag 重打，见下）。
+
+发版 workflow 失败时（tag 已推上去）：修好 → 提交 → 合 main → **删掉旧 tag 再重打**，同一个版本号不要发第二次：
+
+```bash
+git tag -d v1.1.1 && git push origin :refs/tags/v1.1.1
+```
 
 **发版打成包用显式文件清单而不是 `zip -x` 通配**（`.dsh/logs/` 也会被 `logs/*` 之类的
 通配误伤或漏掉）。清单只写在 `tools/package-extension.mjs` 里，本地与 CI 共用：
@@ -136,3 +153,6 @@ git tag v1.0.1 && git push origin v1.0.1
 ```bash
 npm run package          # 产出 mooc-reminder-v{version}.zip（内层 MOOC_reminder/）
 ```
+
+本地包的字节数与 CI 的 Release 附件**逐字节同源**（`tools/package-extension.mjs` 一份配方），
+所以「本地打出来的包」可以当作发布产物的预览：1.1.1 两边都是 623398 字节。
