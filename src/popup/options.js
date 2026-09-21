@@ -286,7 +286,9 @@ function renderUpdateStatus(payload) {
   const body = $('update-status-body');
   if (!body) return;
   const status = (payload && payload.status) || null;
-  const current = (status && status.currentVersion) || (payload && payload.currentVersion) || '未知';
+  // 「当前版本」是**正在运行的那个实例**的属性，不是上次检查的快照：优先用响应里的实时值，
+  // 缓存里的 status.currentVersion 只作兜底（SW 侧已经用 reconcileStatus 对齐过一次，这是第二道保险）
+  const current = (payload && payload.currentVersion) || (status && status.currentVersion) || '未知';
 
   const rows = [['当前版本', 'v' + current]];
   if (status && status.latestVersion) rows.push(['最新版本', 'v' + status.latestVersion]);
@@ -300,17 +302,26 @@ function renderUpdateStatus(payload) {
   }
   html += '</div>';
 
-  if (status && status.updateAvailable) {
-    html += '<p style="font-size:12px;color:var(--accent,#2f6fed);margin:8px 0;">发现新版本 v'
-      + escapeHtml(status.latestVersion) + '，点击「前往下载」获取。</p>';
-  } else if (status && status.error) {
-    // 网络失败时保留上次成功的结果，只提示这次没查成
-    html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">本次检查失败：'
-      + escapeHtml(status.error) + '（上方显示的是上次成功的结果）</p>';
-  } else if (status) {
-    html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">已是最新版本。</p>';
+  const notice = (text, color) =>
+    '<p style="font-size:12px;color:' + (color || 'var(--text-faint)') + ';margin:8px 0;">'
+    + escapeHtml(text) + '</p>';
+
+  // 「本次没查成」与「有新版本」是两件独立的事，必须各自呈现。以前写成 if/else if，
+  // 于是只要上次的结论是「有更新」，失败提示就被吞掉，页面变成「当前版本 = 最新版本，
+  // 却让你点『前往下载』」且完全不解释原因（2026-09-22 真机截图）。
+  if (!status) {
+    html += notice('尚未检查过更新。');
   } else {
-    html += '<p style="font-size:12px;color:var(--text-faint);margin:8px 0;">尚未检查过更新。</p>';
+    if (status.updateAvailable) {
+      html += notice('发现新版本 v' + status.latestVersion + '，点击「前往下载」获取。', 'var(--accent,#2f6fed)');
+    }
+    if (status.error) {
+      // 网络失败时保留上次成功的结果，只提示这次没查成
+      html += notice('本次检查失败：' + status.error + '（上方显示的是上次成功的结果）');
+    }
+    if (!status.updateAvailable && !status.error) {
+      html += notice('已是最新版本。');
+    }
   }
   body.innerHTML = html;
 

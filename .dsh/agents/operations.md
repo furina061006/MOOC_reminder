@@ -23,7 +23,7 @@ badge-refresh alarm（12h）→ checkForUpdates()
   ├─ settings.autoCheckUpdates === false → 直接返回缓存，不发请求
   ├─ fetch RELEASES_API_URL → evaluateRelease(payload, 本机 version)
   │    （纯函数在 shared/update-check.js：版本比较 / 解析 / URL 白名单）
-  ├─ 写入 update_status（失败时用 ...previous 兜底，不覆盖成空）
+  ├─ 写入 update_status（失败时保留上次的「最新版本」，但「是否有更新」按当前版本重算，见不变量 16）
   └─ 更新可用且该版本没提醒过 → notifyUpdateAvailable()
        └─ create 成功才记 notifiedVersion（见不变量 13）
 
@@ -35,7 +35,9 @@ badge-refresh alarm（12h）→ checkForUpdates()
 **设计取舍**
 
 - **搭 12h `badge-refresh` 的便车**，不新增 alarm：更新检查不值得多唤醒 SW（与「降频」决策一致）。
-- **网络失败保留上次成功结果**，只把 `error` 写上：一次离线不应让「有新版本」的提示消失，也不应把 UI 清空。
+- **网络失败保留上次成功结果**，只把 `error` 写上：一次离线不应让「有新版本」的提示消失，也不应把 UI 清空。但保留的是**「最新版本」这个客观事实**，「是否有更新」必须按当前运行版本重算（`isNewerVersion`）——照抄上次的布尔值会让已升级的用户继续被提示更新（不变量 16）。
+- **缓存必须对齐到「正在运行的版本」再显示**（2026-09-22 真机发现）：`update_status` 是上次检查那一刻的快照，`currentVersion` 与 `updateAvailable` 都是**对着当时那个已加载实例**算的；而侧载扩展换版本只有「重新加载」一条路，`onInstalled` / `onStartup` **都不跑更新检查**（唯一自动调用点是 12h 的 `badge-refresh`，且重载会清掉并重建 alarm，所以重载后首次自动检查最长要等 12h）。于是刚装好 1.1.0 的用户会在设置页看到「当前版本 v1.0.0」——明明已经装上了。现在 `GET_UPDATE_STATUS` 先经 `reconcileStatus()`：保留「最新版本 / 上次检查时间」，把 `currentVersion` 换成运行版本并按它**重算** `updateAvailable`（装上了就不再是「有新版」）；拿不到运行版本时原样返回，不猜。只在读取时对齐、**不回写 storage**——真正的检查会自己刷新快照。设置页渲染也优先用响应里的实时 `currentVersion`，缓存值只作兜底（第二道保险）。
+- **「本次检查失败」与「有新版本」必须各自呈现**：设置页里两者曾是 `if / else if`，于是只要上次的结论是「有更新」，失败原因就被吞掉，页面呈现为「当前版本 = 最新版本，却让你点『前往下载』」且不给任何解释（2026-09-22 真机第二次截图）。现在两者可同时出现，失败原因照实显示。
 - **优先 ZIP 直链而非 Release 页面**：面向小白，少一次点击。
 - **设置开关 `autoCheckUpdates` 默认开、可关**：关掉后后台完全不发请求；但「检查更新」按钮仍可用（用户主动点击不受开关限制）。
 - 通知文案与设置页都写明「只发这一个请求，不含任何作业或账号数据」。
@@ -57,6 +59,7 @@ badge-refresh alarm（12h）→ checkForUpdates()
 - **被浏览器冻结/卸载（Memory Saver）的后台课程页无法参与任何环节**：它既不能上报课程，也不能接手抓取。此时插件会退到临时代理页，所以「刷新不出东西」不会再发生；但那门课若从未被登记过，仍需要它的页面被打开一次（切换回去即会自动重载并登记）
 - **无法自动更新**：开发者模式侧载的扩展 Chrome 不会更新，只能提醒用户去 Release 下载（见「更新检查」）。且更新检查依赖仓库里存在 Release —— 只打 tag 不发 Release 会让检查一直失败
 - **更新检查需要 `https://api.github.com/*` 的 host 权限**，用户在扩展详情页能看到这一条；未认证请求有 60 次/小时限流（12h 一次检查远够）。关闭 `autoCheckUpdates` 后后台不再发任何请求
+- **`api.github.com` 在部分网络下会偶发不通**（国内直连尤其常见），此时检查失败、设置页显示「本次检查失败：…」并保留上次成功的结果。这类失败**不会**被当成「已是最新」，也不会重复弹通知；失败原因同时写进 `update_status.error`，SW 控制台有 `[MOOC Reminder] Update check failed:` 一行可查
 
 ---
 

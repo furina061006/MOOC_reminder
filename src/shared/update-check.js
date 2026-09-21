@@ -95,6 +95,33 @@ export function evaluateRelease(payload, currentVersion) {
 }
 
 /**
+ * Align a cached check result with the version we are actually running.
+ *
+ * `update_status` is a snapshot taken by the last check: both `currentVersion` and
+ * `updateAvailable` were computed against whatever instance was loaded *then*.
+ * A side-loaded extension changes version in exactly one way — the user reloads it
+ * — and the 12h `badge-refresh` tick does not necessarily follow immediately. So
+ * without this, a user who just installed 1.1.0 keeps seeing "当前版本 v1.0.0 /
+ * 发现新版本 v1.1.0" on the options page (reported on a real machine 2026-09-22).
+ *
+ * Rule: when the running version differs from the snapshot, keep the objective
+ * facts (latest release version, when we last checked) but re-state the running
+ * version and re-derive `updateAvailable` from it — installing a build is exactly
+ * what makes it stop being "available". An unknown/unparseable running version
+ * leaves the snapshot untouched: showing nothing beats showing a wrong verdict.
+ */
+export function reconcileStatus(status, runningVersion) {
+  if (!status || typeof status !== 'object') return null;
+  const current = String(runningVersion == null ? '' : runningVersion);
+  if (!current || status.currentVersion === current) return status;
+  return {
+    ...status,
+    currentVersion: current,
+    updateAvailable: isNewerVersion(status.latestVersion, current)
+  };
+}
+
+/**
  * Only github.com links may be opened. The payload is served by api.github.com
  * over HTTPS, but a release field is still remote input — never hand an
  * arbitrary URL to chrome.tabs.create.

@@ -5,6 +5,7 @@ import {
   isNewerVersion,
   parseReleaseInfo,
   evaluateRelease,
+  reconcileStatus,
   isSafeReleaseUrl,
   resolveDownloadTarget
 } from '../../src/shared/update-check.js';
@@ -97,6 +98,52 @@ test('evaluateRelease pairs the parsed release with the running version', () => 
   assert.equal(same.updateAvailable, false);
 
   assert.equal(evaluateRelease({ tag_name: 'garbage' }, '1.0.0'), null);
+});
+
+// ── reconcileStatus ──────────────────────────────────────────────────────
+//
+// 真机现象（2026-09-22）：已经重新加载到 v1.1.0，设置页仍显示
+// 「当前版本 v1.0.0 / 发现新版本 v1.1.0」——因为整份 update_status 是对着
+// 上一次检查时那个实例算出来的快照，而重新加载后 12h 的 tick 未必马上跑。
+
+test('reconcileStatus 把「有更新」在装上之后收回，并保留客观事实', () => {
+  const stale = {
+    currentVersion: '1.0.0', latestVersion: '1.1.0', updateAvailable: true,
+    downloadUrl: 'https://github.com/o/r/releases/download/v1.1.0/x.zip',
+    checkedAt: '2026-09-22T00:13:41.000Z', error: null
+  };
+  const aligned = reconcileStatus(stale, '1.1.0');
+  assert.equal(aligned.currentVersion, '1.1.0');
+  assert.equal(aligned.updateAvailable, false, '已经装上的版本不该继续被提示为「有更新」');
+  assert.equal(aligned.latestVersion, '1.1.0', '最新版本仍是客观事实');
+  assert.equal(aligned.checkedAt, '2026-09-22T00:13:41.000Z', '上次检查时间仍是客观事实');
+  assert.equal(aligned.downloadUrl, stale.downloadUrl);
+  assert.notEqual(aligned, stale, '对齐后应返回新对象，不改动入参');
+  assert.equal(stale.updateAvailable, true, '入参不能被就地修改');
+});
+
+test('reconcileStatus 只在运行版本确实变了时才动手', () => {
+  const same = { currentVersion: '1.0.0', latestVersion: '1.2.0', updateAvailable: true };
+  assert.equal(reconcileStatus(same, '1.0.0'), same, '版本一致时原样返回（连对象都不换）');
+
+  // 运行版本仍低于最新版本 → 提示必须保留
+  const older = reconcileStatus({ currentVersion: '1.0.0', latestVersion: '1.2.0', updateAvailable: true }, '1.1.0');
+  assert.equal(older.currentVersion, '1.1.0');
+  assert.equal(older.updateAvailable, true, '只是对齐版本，不能把有效的更新提示一起清掉');
+});
+
+test('reconcileStatus 对无法判断的输入保守处理', () => {
+  assert.equal(reconcileStatus(null, '1.1.0'), null);
+  assert.equal(reconcileStatus(undefined, '1.1.0'), null);
+  assert.equal(reconcileStatus('nonsense', '1.1.0'), null);
+
+  const status = { currentVersion: '1.0.0', latestVersion: '1.1.0', updateAvailable: true };
+  assert.equal(reconcileStatus(status, ''), status, '拿不到运行版本时别猜，原样返回');
+  assert.equal(reconcileStatus(status, null), status);
+
+  // 快照里没有 latestVersion（上次检查失败且无历史）→ 不能误报有更新
+  const noLatest = reconcileStatus({ currentVersion: '1.0.0', updateAvailable: true }, '1.1.0');
+  assert.equal(noLatest.updateAvailable, false);
 });
 
 // ── URL safety ───────────────────────────────────────────────────────────

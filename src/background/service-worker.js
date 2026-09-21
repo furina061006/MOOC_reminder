@@ -60,6 +60,8 @@ import {
   RELEASES_API_URL,
   RELEASES_PAGE_URL,
   evaluateRelease,
+  isNewerVersion,
+  reconcileStatus,
   resolveDownloadTarget
 } from '../shared/update-check.js';
 
@@ -290,15 +292,19 @@ async function checkForUpdates({ manual = false } = {}) {
       publishedAt: evaluated.publishedAt
     };
   } catch (e) {
-    // Offline / rate-limited / API drift. Keep the last known good answer so a
-    // transient failure neither blanks the UI nor makes an existing "update
-    // available" indicator flip back to "up to date".
+    // Offline / rate-limited / API drift. Keep the last known *release* facts — a
+    // transient failure neither blanks the UI nor discards "a newer build exists" —
+    // but re-derive availability against the version we are running **now**. The
+    // cached flag was computed against whatever was loaded back then, and the user
+    // may have installed that build since. Copying it verbatim made a failed check
+    // report "发现新版本 v1.1.0" to a user already running 1.1.0 (real machine,
+    // 2026-09-22) — the release version is the fact, availability is a function of it.
     console.warn('[MOOC Reminder] Update check failed:', e.message);
     error = String(e && e.message ? e.message : e);
     result = {
       currentVersion,
       latestVersion: previous.latestVersion || '',
-      updateAvailable: !!(previous.latestVersion && previous.updateAvailable),
+      updateAvailable: isNewerVersion(previous.latestVersion, currentVersion),
       downloadUrl: previous.downloadUrl || '',
       releaseUrl: previous.releaseUrl || '',
       notes: previous.notes || '',
@@ -797,11 +803,16 @@ const MESSAGE_HANDLERS = {
   },
 
   // Options page: cached update state (no network — renders instantly).
+  // The cache is a snapshot from the last check, so align it with the version we are
+  // running right now before showing it: after reloading to a new build, the stale
+  // snapshot must not keep advertising that same build as "available" until the next
+  // 12h tick (real-machine report 2026-09-22). Pure computation, still zero requests.
   async GET_UPDATE_STATUS() {
+    const runningVersion = getRunningVersion();
     return {
       success: true,
-      status: await getUpdateStatus(),
-      currentVersion: chrome.runtime.getManifest().version
+      status: reconcileStatus(await getUpdateStatus(), runningVersion),
+      currentVersion: runningVersion
     };
   },
 
