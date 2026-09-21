@@ -23,7 +23,7 @@ Thumbs.db
 # Build output
 dist/
 build/
-mooc-reminder.zip
+mooc-reminder*.zip
 
 # Environment
 .env
@@ -35,8 +35,9 @@ mooc-reminder.zip
 # reference projects
 reference_projects/
 
-# zcode
-zcode/
+# zcode —— AI 规划工具的本地目录。这条规则以前写成 `zcode/`（少了点），
+# 挡不住真实目录，于是 `.zcode/plans/*.md` 曾被提交进仓库（2026-09-21 已 git rm）。
+.zcode/
 
 # Local diagnostic dumps — raw DOM snapshots and API captures contain the user's
 # own course/account data (userId, course ids, teacher content) and this repo is
