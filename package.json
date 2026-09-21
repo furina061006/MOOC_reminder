@@ -8,6 +8,7 @@
     "lint": "eslint .",
     "test": "node --test \"tests/unit/*.test.mjs\"",
     "validate": "npm run lint && npm test",
+    "logs:index": "node tools/gen-log-index.mjs",
     "package": "node tools/package-extension.mjs"
   },
   "devDependencies": {

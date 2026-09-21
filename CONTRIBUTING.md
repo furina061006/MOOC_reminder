@@ -38,8 +38,12 @@ npm ci                # 安装开发依赖
 
 ```bash
 npm run validate      # eslint + 全部单测，CI 跑的就是这个
+npm run logs:index    # 只在你写了 .dsh/logs/ 开发日志时需要：重新生成日志索引
 npm run package       # 可选：本地打一个「解压即可加载」的 zip，产物在仓库根目录
 ```
+
+`.dsh/logs/README.md` 是**生成物**（索引的主题就是各日志的首行 `# 标题`），别手改：
+`npm run validate` 会断言它和生成结果一致，漏跑 `logs:index` 会被 CI 打回。
 
 CI 会在每个 PR 上跑 `npm run validate`，并产出一个可下载的 zip（在该 run 页面的
 **Artifacts** 里，名字是 `mooc-reminder-build`）——审查浏览器扩展的代码门槛高，装上试最快。
@@ -71,10 +75,10 @@ MOOC_reminder/
 │   ├── popup/              # 弹出窗口（HTML/CSS/JS）
 │   └── shared/             # 共享模块（数据模型、存储、API 解析、设置）
 ├── tests/unit/             # 单测（含 SW 集成测试的 chrome.* stub）
-├── tools/                  # diagnostics/（排查脚本）、package-extension.mjs（打包配方）
+├── tools/                  # diagnostics/（排查脚本）、package-extension.mjs（打包配方）、gen-log-index.mjs（日志索引生成器）
 ├── docs/                   # 面向使用者的文档（功能、FAQ、隐私、贡献者）——不进发布 zip
 ├── .dsh/agents/            # 面向开发者的分主题事实 / 不变量 / 排查流程
-├── .dsh/logs/              # 更新日志与开发日志
+├── .dsh/logs/              # 更新日志与开发日志（README.md 是生成的索引，勿手改）
 ├── .github/                # Issue 模板、PR 模板、CI 与发布 workflow
 ├── AGENTS.md               # 索引：红线 + 路由表（指向 .dsh/agents/）
 └── README.md               # 面向使用者的精简入口
@@ -90,7 +94,7 @@ MOOC_reminder/
 
 - **项目事实的入口是仓库根目录的 `AGENTS.md`**（红线 + 路由表），细节在 `.dsh/agents/`；动抓取/解析/SPOC 相关代码前按路由表先读对应文档；
 - `src/shared/icourse163-api.js` 与 Service Worker 里内联的 `apiExtractHomework` 是**两份必须同步的拷贝**（见不变量 12），改一侧必须改另一侧；
-- `.dsh/` 是**开发者文档目录**（`agents/` = 知识库，`logs/` = 更新日志与开发日志），不是临时输出目录；用户能感知的变化请写入 `.dsh/logs/changelog.md`；
+- `.dsh/` 是**开发者文档目录**（`agents/` = 知识库，`logs/` = 更新日志与开发日志），不是临时输出目录；用户能感知的变化请写入 `.dsh/logs/changelog.md`；写了新日志跑一下 `npm run logs:index`（索引是生成的）；
 - **面向使用者的文档在 `docs/`**（功能、FAQ、隐私），`README.md` 是它的精简入口：改了用户能看到的行为/文案，记得同步这两处。注意 `docs/` **不会被打进发布 zip**，所以 README 只能用绝对链接指过去。
 
 ## 安全
