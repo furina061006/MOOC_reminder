@@ -1,0 +1,48 @@
+name: 💡 功能建议
+description: 想要一个新功能，或觉得某个地方可以更好
+title: "[建议] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请重点说清「你想解决什么问题」，而不只是「想加个按钮」——这样更容易找到更合适的做法。
+
+        另外一条前提：本插件刻意保持**无后端、只在你自己的浏览器里跑**，数据不外传。
+        涉及上传数据、云同步、账号登录的建议基本不会被采纳。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决的问题
+      description: 现在哪里不方便？大概多久遇到一次？
+      placeholder: "每次考试周我都要手动……，一周大概三次"
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的做法
+      description: 你希望插件表现成什么样（界面、触发时机、行为）。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你试过的替代办法
+      description: 现在你用什么办法绕过？为什么不够好？
+    validations:
+      required: false
+  - type: input
+    id: scenario
+    attributes:
+      label: 相关课程 / 场景
+      description: 如果和某类课程（MOOC / SPOC / 老师自己加的分组）有关，说一下。
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充说明
+      description: 截图、参考实现、别的平台上的类似功能等。
+    validations:
+      required: false

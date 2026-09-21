@@ -45,23 +45,16 @@ jobs:
             exit 1
           fi
 
-      # 显式列出运行期需要的文件，避免把 tests/.claude/.github 等开发资料
-      # 打进发布包（比 zip -x 的通配更可控）。
+      # 打包配方只有一份：tools/package-extension.mjs（CI 的 PR 产物也用它）。
+      # 脚本把人类可读日志写到 stderr、产物名写在 stdout 最后一行，所以这里
+      # 用 --silent 取到干净的一个值。
       - name: Package extension
         run: |
           set -euo pipefail
-          version="$(node -p "require('./manifest.json').version")"
-          stage="dist/MOOC_reminder"
-          mkdir -p "$stage"
-          cp manifest.json README.md LICENSE "$stage/"
-          cp -r src "$stage/"
-          # 防御：确认入口文件真的在包内
-          test -f "$stage/manifest.json"
-          test -f "$stage/src/background/service-worker.js"
-          test -f "$stage/src/popup/popup.html"
-          (cd dist && zip -r "../mooc-reminder-v${version}.zip" MOOC_reminder)
-          ls -lh "mooc-reminder-v${version}.zip"
-          echo "ASSET=mooc-reminder-v${version}.zip" >> "$GITHUB_ENV"
+          asset="$(npm run package --silent | tail -n 1)"
+          test -f "$asset"
+          echo "ASSET=$asset" >> "$GITHUB_ENV"
+          ls -lh "$asset"
 
       - name: Create release
         env:

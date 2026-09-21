@@ -8,6 +8,8 @@ Chrome/Edge Manifest V3 浏览器扩展，自动追踪中国大学MOOC (icourse1
 - **README.md** — 面向用户的项目说明：安装、使用、功能、限制和当前能力；保持精简，不放完整更新日志
 - **`.claude/logs/changelog.md`** — 面向用户的完整版本更新记录，按日期记录可感知的新增、变更和修复
 - **`.claude/logs/`** — 面向开发者的过程记录。写「踩过什么坑、试过哪些死路、为什么选方案 A 不选 B」以及实现细节，供想深挖的人追溯
+- **`CONTRIBUTING.md`** — 面向外部贡献者：本地加载扩展、`npm run validate`、**不得提交抓取产物**的红线、PR 流程
+- **`.github/ISSUE_TEMPLATE/`** — 外部反馈的唯一结构化入口（Bug / 功能建议表单 + `config.yml`）；空白 issue 已关闭，邮件只在「不方便公开」时兜底。模板里刻意写进了两条操作性陷阱，用来挡掉重复的「抓不到」
 - **Memory** — 仅用于快速回忆。不再重复存储 CLAUDE.md 已有的技术知识，只保留偏好、习惯等个人上下文
 - **每次重大技术变化后**：先更新本文件，再写开发日志；涉及用户可感知变化时同步更新 `.claude/logs/changelog.md`，最后更新 memory 索引
 
@@ -661,7 +663,21 @@ npx eslint src/
 
 # 校验（lint + 全部单测）
 npm run validate
+
+# 本地打一个「解压即可加载」的 zip（与 CI/发版共用同一份配方）
+npm run package
 ```
+
+### 仓库卫生（2026-09-21）
+
+- **私密抓取产物一律不进 git**：`element.txt`、`*.har`、`dto*.json`、`*-report.json`、`.claude/settings.local.json`
+  （它们含用户自己的课程/账号数据，而仓库是公开的）。`.gitignore` 挡一层，`tests/unit/repo-hygiene.test.mjs`
+  再检查 git 索引里没有这些文件——**不要用 `git add -f` 绕过**。
+- **反馈走 `.github/ISSUE_TEMPLATE/`**（空白 issue 已关闭）。改模板时记得它同时是排查分流器：
+  「重载扩展 + 刷新页面」和「后台页会被冻结」这两条陷阱写在表单里，能挡掉大半重复的「抓不到」。
+- **README 会被打进发布 zip，而 zip 里没有 `.claude/` 与 `CONTRIBUTING.md`**，所以 README 里指向这些
+  文件的链接必须用绝对 GitHub URL，相对链接在用户解压后是死链。
+- 打包清单只有一处：`tools/package-extension.mjs`（CI 的 PR 产物与发版都调它），别在 workflow 里另抄一份。
 
 ### 发版流程（.github/workflows/release.yml）
 
@@ -680,17 +696,17 @@ git tag v1.0.1 && git push origin v1.0.1
 漂移，用户装了新包却会被反复提示「有新版本」。workflow 里那道校验就是为此存在的。
 
 **发版打成包用显式文件清单而不是 `zip -x` 通配**（`.claude/logs/` 也会被 `logs/*` 之类的
-通配误伤或漏掉）；本地想手动打包可以复用同一套动作：
+通配误伤或漏掉）。清单只写在 `tools/package-extension.mjs` 里，本地与 CI 共用：
 
 ```bash
-stage=dist/MOOC_reminder
-mkdir -p "$stage" && cp manifest.json README.md LICENSE "$stage/" && cp -r src "$stage/"
-(cd dist && zip -r "../mooc-reminder-v$(node -p "require('./manifest.json').version").zip" MOOC_reminder)
+npm run package          # 产出 mooc-reminder-v{version}.zip（内层 MOOC_reminder/）
 ```
 
 ## 相关文档
 
 - `.claude/logs/changelog.md` — 面向用户的完整更新记录
 - `.claude/logs/architecture.md` — 完整架构文档
-- `.claude/logs/2026-06-27-development.md` — 最近开发日志（API 字段分析、互评判定、SPOC 支持）
+- `CONTRIBUTING.md` — 外部贡献者入门（本地加载扩展、`npm run validate`、隐私红线、PR 流程）
+- `.github/ISSUE_TEMPLATE/` — Bug / 功能建议表单；空白 issue 已关闭
+- `.claude/logs/2026-06-27-development.md` — API 字段分析、互评判定、SPOC 支持
 - `.claude/logs/2026-06-26-development.md` — 背景 API 代理、完成检测重写
