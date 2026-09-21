@@ -1,5 +1,15 @@
 注: 待追踪任务
-- [ ] **【未解决·最高优先】同一个课程页面只抓取一次，之后再也不抓，必须重新打开页面才行**（用户 2026-09-20 实测复现）。已知/已排除：内容脚本的消息监听器是可重复响应的（`main.js:43-67`，非一次性注册），故怀疑在 SW 侧 —— 候选：`periodicScrapeInFlight` 卡住、遗留的 `temporary_proxy_job` 让 `createTemporaryProxyJob` 直接返回失败、或某门课返回空结果触发 `MOOC proxy returned no course data` 而不走 fan-out。**尚未定位**：已请用户在「第二次失败时」提供 Service Worker Console 的 `[MOOC Reminder]` 日志（第一步就断 / 卡在 await / 还是明确报错），**拿到日志前不要再改代码猜**。另需澄清：popup 只在「一条数据都没有」时才自动抓取（`popup.js:150`），有数据后必须点刷新按钮 —— 用户的实际操作路径也要确认。
+- [ ] **【待确认·最高优先】同一个课程页面只抓取一次，之后再也不抓，必须重新打开页面才行**（用户 2026-09-20 实测）。
+  **当前最强解释：这是设计行为，不是 bug。** 证据（2026-09-20 核查）：
+  - `PAGE_OPENED` **只在 `main.js:115`（`init()` 内）发送** → 仅页面加载/重载时触发；SPA 内切换页签（课件/测验/考试）**不发**。
+  - `PAGE_OPENED` 的处理有 **30 分钟节流**（`service-worker.js:1285`，`EVENT_REFRESH_MIN_GAP_MS`）→ 即使重新打开页面，距上次成功同步不足 30 分钟也**不抓**。
+  - 兜底 alarm 默认 **12 小时**一次；`badge-refresh` 只重算徽章。
+  - 只有 popup 的**刷新按钮**（`TRIGGER_SCRAPE` → `performPeriodicScrape('manual')`）无节流、必定执行。
+  → 因此「停在页面上不动就再也不抓」是预期的；「必须重新打开页面」也是预期的。
+  **待确认（一次就能区分）**：点 popup 刷新按钮 —— 能更新 = 设计行为；也不能更新 = 真 bug，需 SW Console 的 `[MOOC Reminder]` 日志定位（候选：`periodicScrapeInFlight` 被未 settle 的 await 占住 / 遗留 `temporary_proxy_job` 让代理创建直接失败 / 某课返回空触发错误却不 fan-out）。
+  **若确认为设计行为，可选的产品改动**（尚未实现）：① 打开 popup 时触发一次带短节流（如 2 分钟）的刷新；② SPA hash 变化时也发 `PAGE_OPENED`；③ 放宽 30 分钟节流。需先明确「多久算新鲜」的取舍——每次全量刷新约 = 课程数 × 200KB。
+  **⚠️ 拿到日志前不要改代码猜。**
+
 - [ ] `course-discovery.js` 会把 SPOC 页面上的「源课程」链接也登记成课程（用户反馈：打开 SPOC 大学物理二后，没选过的「大学物理（力学、电磁学）」被自动抓取了）—— 需要区分「我的课程」链接与页面内的推荐/源课程链接
 - [ ] `main.js` 的 `checkPageHookData` 仍丢弃路由 term 的页面钩子数据（`entryTid === urlTid` 时 `continue`）。批量抓取已覆盖两个 term，故只是首次打开页面的即时性问题；修它必须同时修 `sendTid`，否则会把路由 term 数据错误归属到 active term
 - [ ] 若遇到「同一 courseId 的两个 term 镜像同一批作业」，并集抓取会产生重复条目；届需放宽 `isSameHomeworkCandidate` 的 `termId` 相等要求（改为 courseId + type + 名字 + 截止全等才合并）
