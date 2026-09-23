@@ -20,6 +20,20 @@
 
   var reported = {}; // schoolCourseId|termId -> true, dedup within this page
 
+  // 学习页不采集锚点。两个理由，都是实测踩出来的：
+  //  1. 课程页上的 `/learn/` 锚点不是「我的课程」——它们是**源课程**与**章节内容**链接
+  //     （SPOC 页尤其明显，页面把源课程内容并排渲染出来）。采集它们会把用户根本没选的
+  //     课程登记进来，甚至把**章节名当成课程名**（2026-09-20 用户报「没选过的大学物理
+  //     （力学、电磁学）被自动抓取」；2026-09-23 又出现 courseId=大学物理、
+  //     name=『牛顿第二定律』、类型=普通的幽灵课程）。
+  //  2. 学习页上 main.js 也在监听 REQUEST_COURSE_LINKS，而且**谁先 sendResponse 谁赢**。
+  //     这里同步应答会抢走 main.js 的「自报本页身份」，让那条通路（清空数据后唯一的
+  //     自救路径）失效。所以这里必须**完全不参与**学习页，连探测都不回。
+  // 本页自己的课程由 main.js 自报；其它课程靠「我的课程」页这类锚点最全的页面采集。
+  function isLearnPage() {
+    try { return /\/(?:spoc\/)?learn\//i.test(location.pathname); } catch { return false; }
+  }
+
   function parseLearnHref(href) {
     if (!href || typeof href !== 'string') return null;
     var m = href.match(/\/(?:spoc\/)?learn\/([^/?#]+)/i);
@@ -29,11 +43,24 @@
     if (!/^[^-\s]+-[^-\s]+/.test(schoolCourseId)) return null;
     var tid = href.match(/[?&]tid=(\d+)/);
     if (!tid) return null;
+    if (isContentDetailHref(href)) return null;
     return {
       schoolCourseId: schoolCourseId,
       termId: tid[1],
       isSpoc: /\/spoc\/learn\//i.test(href)
     };
+  }
+
+  // 内容详情链接不是课程链接：`#/learn/forumdetail?pid=…`（论坛帖）、`#/learn/forum?cid=…`
+  // 等指向课程内部的某条内容，**锚点文本一定是那条内容的名字**。
+  // 2026-09-23 真实 DOM（/home.htm#/home/spocCourse）：页面右侧「最近发表」的 5 条帖子链接
+  // 全部带 ?tid=1476735472 并指向 /learn/NEU-1474956162，于是被登记成一条
+  // courseId=SPOC 大学物理、名字=帖子标题「牛顿第二定律」、类型=普通的幽灵课程
+  // （按 courseId|termId 去重，所以名字取了 DOM 里第一条帖子）。
+  // 这个守卫与 src/shared/icourse163-api.js 的同名函数保持一致。
+  function isContentDetailHref(href) {
+    var fragment = String(href).split('#')[1] || '';
+    return /forum|detail/i.test(fragment);
   }
 
   // force=true 会清掉本次页面加载的去重记录，用于 SW 要求重新上报
@@ -83,9 +110,13 @@
   // 数据被清空后，SW 会要求已打开的学习页重新上报课程链接（见 service-worker
   // 的 askOpenPagesToReport，每轮抓取都会问一次）。没有这个入口，用户就必须手动
   // 刷新页面。
+  //
+  // 学习页上**故意不处理**这条消息（返回 false 且不应答）：那里的课程由 main.js
+  // 自报（见 isLearnPage 的注释）；在这里应答只会抢走它的 sendResponse。
   try {
     chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       if (!msg || msg.type !== 'REQUEST_COURSE_LINKS') return false;
+      if (isLearnPage()) return false;
       try { harvest(true); } catch { /* ignore */ }
       try { sendResponse({ success: true }); } catch { /* ignore */ }
       return false;
@@ -93,6 +124,7 @@
   } catch { /* ignore */ }
 
   function start() {
+    if (isLearnPage()) return; // 学习页交给 main.js，连 MutationObserver 都不装
     harvest();
     // The homepage renders the course panel asynchronously; re-harvest as the
     // DOM settles, then stop after a short window to stay cheap.

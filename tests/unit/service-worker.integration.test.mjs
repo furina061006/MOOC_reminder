@@ -1056,6 +1056,47 @@ test('BATCH_API_FETCH derives SPOC from activeTermId when courseType was demoted
   assert.equal(course.termId, SPOC_API_TERM_ID);
 });
 
+test('锚点采集（弱信号）不能给已有课程改名，课程页自报可以', async () => {
+  // 2026-09-23 用户报的幽灵课程：courseId=NEU-1474956162（SPOC 大学物理）的名字被页面
+  // 锚点文本写成了「牛顿第二定律」，类型还留在 'mooc'（0 条作业）。锚点文本可以是章节名
+  // 或推荐位标题，所以弱信号只能填空名字，不能覆盖已有名字；课程页自报（main.js）才是权威。
+  seedCourses([{ courseId: 'NEU-1474956162', termId: '1488001444', courseName: '大学物理', courseType: 'mooc' }]);
+  const record = () => (h.storageData.get('courses') || []).find(c => c && c.courseId === 'NEU-1474956162');
+  const homeSender = { tab: { id: 9, url: 'https://www.icourse163.org/' } };
+  const learnSender = { tab: { id: 10, url: 'https://www.icourse163.org/learn/NEU-1474956162?tid=1488001444' } };
+
+  // 1) 非学习页来的锚点：不改名，但仍更新 termId（「我的课程」页是 termId 的正当来源）
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'NEU-1474956162', termId: '999999', courseName: '牛顿第二定律', courseType: 'mooc' }]
+  }, homeSender);
+  assert.equal(record().courseName, '大学物理');
+  assert.equal(record().termId, '999999');
+
+  // 2) 课程页自报：名字权威，允许修正
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'NEU-1474956162', termId: '1488001444', courseName: '大学物理（力学、电磁学）', courseType: 'mooc' }]
+  }, learnSender);
+  assert.equal(record().courseName, '大学物理（力学、电磁学）');
+
+  // 3) 新课程仍能从锚点拿到名字（否则「我的课程」页就白采集了）
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'BIT-268001', termId: '555', courseName: '数据结构', courseType: 'mooc' }]
+  }, homeSender);
+  assert.equal((h.storageData.get('courses') || []).find(c => c && c.courseId === 'BIT-268001').courseName, '数据结构');
+
+  // 4) 课程页自报但一时读不到名字（courseName 为空）→ 不能清掉已有课程名。
+  //    upsertCourse 是浅合并，早先这条路径会把名字写成空串（列表里变成「未知课程」），
+  //    而 main.js 的注释一直声称「SW 不会用空名字覆盖非空名字」。
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'NEU-1474956162', termId: '1488001444', courseName: '', courseType: 'mooc' }]
+  }, learnSender);
+  assert.equal(record().courseName, '大学物理（力学、电磁学）');
+});
+
 test('COURSE_UPDATE rejects a non-learn routeUrl instead of storing it', async () => {
   seedCourses([]);
   await sendMessage({

@@ -60,7 +60,9 @@ test('every learn tab the SW messages is a page main.js actually runs on', async
   }
 
   // main.js is the only script that can answer "who am I" on a course page
-  // (course-discovery only harvests /learn/ anchors, which course pages lack).
+  // (course-discovery deliberately stays out of learn pages: source-course /
+  // chapter links there would register courses the user never enrolled in, and
+  // its synchronous reply would steal main.js's sendResponse).
   const mainSource = await readFile(new URL('../../src/content/main.js', import.meta.url), 'utf8');
   assert.match(mainSource, /REQUEST_COURSE_LINKS/, 'main.js must answer the rediscovery request');
   assert.match(mainSource, /COURSE_UPDATE/, 'and must re-send the SPOC active term');

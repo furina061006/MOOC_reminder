@@ -27,6 +27,17 @@ test('parseLearnHref rejects non-course links and links without tid', () => {
   assert.equal(parseLearnHref('/learn/BIT-268001'), null);       // no tid
 });
 
+test('parseLearnHref rejects links into a course\'s content, not the course', () => {
+  // 2026-09-23 真实 DOM（/home.htm#/home/spocCourse）：首页「最近发表」的 5 条论坛帖链接
+  // 全部带 ?tid= 且指向 /learn/NEU-1474956162，锚点文本是帖子标题（如「牛顿第二定律」）——
+  // 采进来就变成一条名字=帖子标题、类型=普通的幽灵课程。内容详情链接不是课程链接。
+  assert.equal(parseLearnHref('https://www.icourse163.org/learn/NEU-1474956162?tid=1476735472#/learn/forumdetail?pid=1353455440'), null);
+  assert.equal(parseLearnHref('/learn/BIT-268001?tid=1460270441#/learn/forum?cid=1'), null);
+  // 课程级路由不受影响（拿到真实锚点后确认这些仍然要收）
+  assert.ok(parseLearnHref('/learn/BIT-268001?tid=1460270441#/learn/content'));
+  assert.ok(parseLearnHref('/learn/BIT-268001?tid=1460270441'));
+});
+
 test('coerceJson parses objects, strings, and junk-prefixed payloads', () => {
   assert.deepEqual(coerceJson({ a: 1 }), { a: 1 });
   assert.deepEqual(coerceJson('{"a":1}'), { a: 1 });

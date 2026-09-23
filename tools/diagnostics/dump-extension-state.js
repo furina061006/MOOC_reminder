@@ -55,7 +55,13 @@
         activeTermId: c.activeTermId,
         courseType: c.courseType,
         name: c.courseName,
-        pageUrl: c.pageUrl
+        schoolName: c.schoolName,
+        pageUrl: c.pageUrl,
+        // 幽灵课程的取证字段：discovered=true 说明来自 COURSE_LINKS（锚点采集或课程页自报），
+        // firstSeen/lastSeen 能看出它是「新冒出来的」还是「早就被改过名」。
+        discovered: c.discovered,
+        firstSeen: c.firstSeen,
+        lastSeen: c.lastSeen
       };
     });
   }
