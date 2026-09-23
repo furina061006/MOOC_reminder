@@ -463,27 +463,46 @@ const MESSAGE_HANDLERS = {
   },
 
   // Content script (course-discovery) reports harvested course links.
-  async COURSE_LINKS(msg) {
+  async COURSE_LINKS(msg, sender) {
     if (!Array.isArray(msg.courses)) return { success: false, error: 'Invalid payload' };
     const existing = await getCourses();
     const known = new Set(existing.map(c => c && c.courseId));
+    const byId = new Map(existing.filter(Boolean).map(c => [c.courseId, c]));
+    // 学习页发来的 COURSE_LINKS 只可能是 main.js 的「自报本页身份」（course-discovery
+    // 已不在学习页采集），它的名字读自真实课程页，是权威的；其它页面来的都是锚点采集，
+    // 而锚点文本可以是一个**章节名**或推荐位标题——属弱信号，见下面的改名保护。
+    const fromCoursePage = isIcCourseLearnUrl(sender && sender.tab && sender.tab.url);
     let registered = 0;
     let newCourses = 0;
     let spocCount = 0;
+    const seen = [];
     for (const c of msg.courses) {
       if (!c || !c.courseId || !c.termId) continue;
       if (c.courseType === 'spoc') spocCount++;
       if (!known.has(c.courseId)) newCourses++;
-      await upsertCourse({
+      const prev = byId.get(c.courseId);
+      const patch = {
         courseId: c.courseId,
         termId: c.termId,
-        courseName: c.courseName || '',
         courseType: c.courseType || 'mooc',
         discovered: true
-      });
+      };
+      // 弱信号不得给已有课程改名。2026-09-23 用户报的幽灵课程就是这个：
+      // courseId=NEU-1474956162（SPOC 大学物理）被锚点文本写成了「牛顿第二定律」。
+      // 只有课程页自报、或记录本来没有名字时才接受这次的名字。
+      //
+      // 另外**空名字一律不写**：`upsertCourse` 是浅合并，写空等于把已有课程名清掉
+      // （列表里变成「未知课程」）——`main.js` 的注释此前声称 SW 不会这么做，实际会。
+      const incomingName = c.courseName || '';
+      if (incomingName && (fromCoursePage || !prev || !prev.courseName)) patch.courseName = incomingName;
+      await upsertCourse(patch);
+      byId.set(c.courseId, Object.assign({}, prev, patch));
       registered++;
+      seen.push(c.courseId + '="' + String(c.courseName || '').slice(0, 24) + '"(' + (c.courseType || 'mooc') + ')');
     }
-    console.log('[MOOC Reminder] COURSE_LINKS: registered', registered, 'courses, new:', newCourses, 'SPOC:', spocCount);
+    // 带上名字：幽灵课程「是谁登记的」全靠这一行才能一眼看出来。
+    console.log('[MOOC Reminder] COURSE_LINKS: registered', registered, 'courses, new:', newCourses,
+      'SPOC:', spocCount, 'fromCoursePage:', fromCoursePage, '→', seen.join(', '));
     // Only kick a (heavy) background refresh when a genuinely new course appeared.
     // During a scrape the SW is already fetching everything through the content
     // script (and it now asks every open page to report on every pass), so the

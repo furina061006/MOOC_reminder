@@ -7,7 +7,7 @@
 打开[中国大学MOOC](https://www.icourse163.org/)做线上作业时，插件自动抓取「测验与作业」和「考试」板块的未完成项，在扩展图标上显示数量，点开就是清单。**无后端**：所有数据只存在你自己的浏览器里。适用于 Chrome、Edge、夸克等 Chromium 内核浏览器。
 
 > [!TIP]
-> 遇到问题或想提建议？→ **[新建 Issue](https://github.com/furina061006/MOOC_reminder/issues/new/choose)**（有模板，会问你要日志）。
+> 遇到问题或想提建议？→ **[新建 Issue](https://github.com/furina061006/MOOC_reminder/issues/new/choose)**~~（有模板，会问你要日志）~~。
 > 在此之前请先做一次「在 `chrome://extensions` 重新加载扩展 **+** 刷新已打开的课程页面」——大部分「抓不到」都是漏了这一步，详见[常见问题](https://github.com/furina061006/MOOC_reminder/blob/main/docs/faq.md)。
 
 ## 下载与安装
@@ -30,11 +30,11 @@
    > [!IMPORTANT]
    > **第一次必须打开一次课程页面**——插件要靠它保存你的课程路由，光装好扩展是抓不到东西的。
    >
-   > ![课程学习页](https://raw.githubusercontent.com/furina061006/MOOC_reminder/main/docs/images/course-page.png)
+   > <img src="https://raw.githubusercontent.com/furina061006/MOOC_reminder/main/docs/images/course-page.png" alt="课程学习页" width="720">
 
 3. 扩展图标上显示未完成数量，点击查看详细清单。
 
-   ![popup 页面](https://raw.githubusercontent.com/furina061006/MOOC_reminder/main/docs/images/popup.png)
+   <img src="https://raw.githubusercontent.com/furina061006/MOOC_reminder/main/docs/images/popup.png" alt="popup 页面" width="320">
 
 4. 之后点 popup 里的刷新按钮可手动刷新；打开任意课程页也会自动刷新（30 分钟内不重复，另有 12 小时周期兜底）。
 5. 完成状态自动检测；但**互评中的作业与考试需要你手动确认。**
@@ -57,6 +57,7 @@
 
 ## 局限性
 
+- **仅支持 PC 端浏览器**：插件依赖 Chromium 内核浏览器。
 - **首次仍需载入课程页面**：插件依赖你已登录的页面保存课程路由；之后没有课程标签页时，会临时开一个非激活代理页去抓取。
 - **仅支持中国大学MOOC**：不支持学堂在线、超星等其他平台。
 - **不跨设备同步**：数据存在浏览器本地。

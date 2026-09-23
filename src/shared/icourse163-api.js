@@ -61,8 +61,19 @@ export function parseLearnHref(href) {
   const tidMatch = href.match(/[?&]tid=(\d+)/);
   const termId = tidMatch ? tidMatch[1] : '';
   if (!termId) return null;
+  // 内容详情链接不是课程链接：`#/learn/forumdetail?pid=…`（论坛帖）、`#/learn/forum?cid=…`
+  // 等指向课程内部的某条内容，锚点文本一定是那条内容的名字。2026-09-23 真实 DOM：
+  // 首页「最近发表」的 5 条帖子链接都带 ?tid=，被合并登记成 courseId=SPOC 大学物理、
+  // 名字=「牛顿第二定律」（帖子标题）、类型=普通的幽灵课程。
+  if (isContentDetailHref(href)) return null;
   const isSpoc = /\/spoc\/learn\//i.test(href);
   return { schoolCourseId, termId, isSpoc };
+}
+
+/** 链接指向课程内部的某条具体内容（帖子 / 条目详情），而不是课程本身。 */
+export function isContentDetailHref(href) {
+  const fragment = String(href || '').split('#')[1] || '';
+  return /forum|detail/i.test(fragment);
 }
 
 /** Coerce a fetch body (string or object) into JSON, tolerating junk prefixes. */

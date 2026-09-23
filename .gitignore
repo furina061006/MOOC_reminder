@@ -55,3 +55,5 @@ mooc-dto-report.json
 dto*.json
 *-report.json
 *.har
+# Windows「另存为」留下的 Mark-of-the-Web 备用数据流，会在 WSL 里落成一个独立文件
+*:Zone.Identifier

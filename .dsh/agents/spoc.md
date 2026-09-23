@@ -82,6 +82,16 @@ var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
 
 **为什么必须用真实 URL 而不是拼**：SPOC 的 `item.termId` 是 **API id**（如 1476504498），而路由 `?tid=` 需要 **路由壳 id**（如 1476735472）。前缀与 `tid` 只有用户浏览器真实打开过的那个 URL 能同时给对，所以 `resolveItemUrl` 的 pageUrl 优先级最高。**旧数据恢复**：升级后打开一次 SPOC 课程页即可冻结正确的 `pageUrl`。
 
+### 页面钩子数据里的假 tid（刻意跳过，别再「修」）
+
+`main.js` 的 `checkPageHookData` 有一条**刻意**的跳过：
+
+```js
+if (realTid && realTid !== urlTid && entryTid === urlTid) continue;
+```
+
+xhr-hook 从请求体捕获到的是**假路由 tid**（与 URL 相同），真实 term 在 `realTid`。这条数据会把老师内容错误归属到 active term，所以留给 `batchApiFetch` 去抓：批量抓取本来就对两个 term 各发一条，功能上没有缺口。丢掉它只影响「首次打开该页那一瞬间」的即时性。**若要改，必须同时改 `sendTid`**（让路由 term 的数据带自己的 tid 入库），否则会构造出错误的 UID。
+
 ### 涉及文件
 
 - `src/content/spoc-tid-bridge.js` — WAR 脚本，页面上下文读 window.moocTermDto.id

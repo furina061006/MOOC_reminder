@@ -35,7 +35,7 @@ badge-refresh alarm（12h）→ checkForUpdates()
 **设计取舍**
 
 - **搭 12h `badge-refresh` 的便车**，不新增 alarm：更新检查不值得多唤醒 SW（与「降频」决策一致）。
-- **网络失败保留上次成功结果**，只把 `error` 写上：一次离线不应让「有新版本」的提示消失，也不应把 UI 清空。但保留的是**「最新版本」这个客观事实**，「是否有更新」必须按当前运行版本重算（`isNewerVersion`）——照抄上次的布尔值会让已升级的用户继续被提示更新（不变量 16）。
+- **网络失败保留上次成功结果**，只把 `error` 写上：一次离线不应让「有新版本」的提示消失，也不应把 UI 清空。但保留的是「**最新版本**」这个客观事实，「是否有更新」必须按当前运行版本重算（`isNewerVersion`）——照抄上次的布尔值会让已升级的用户继续被提示更新（不变量 16）。
 - **缓存必须对齐到「正在运行的版本」再显示**（2026-09-22 真机发现）：`update_status` 是上次检查那一刻的快照，`currentVersion` 与 `updateAvailable` 都是**对着当时那个已加载实例**算的；而侧载扩展换版本只有「重新加载」一条路，`onInstalled` / `onStartup` **都不跑更新检查**（唯一自动调用点是 12h 的 `badge-refresh`，且重载会清掉并重建 alarm，所以重载后首次自动检查最长要等 12h）。于是刚装好 1.1.0 的用户会在设置页看到「当前版本 v1.0.0」——明明已经装上了。现在 `GET_UPDATE_STATUS` 先经 `reconcileStatus()`：保留「最新版本 / 上次检查时间」，把 `currentVersion` 换成运行版本并按它**重算** `updateAvailable`（装上了就不再是「有新版」）；拿不到运行版本时原样返回，不猜。只在读取时对齐、**不回写 storage**——真正的检查会自己刷新快照。设置页渲染也优先用响应里的实时 `currentVersion`，缓存值只作兜底（第二道保险）。
 - **「本次检查失败」与「有新版本」必须各自呈现**：设置页里两者曾是 `if / else if`，于是只要上次的结论是「有更新」，失败原因就被吞掉，页面呈现为「当前版本 = 最新版本，却让你点『前往下载』」且不给任何解释（2026-09-22 真机第二次截图）。现在两者可同时出现，失败原因照实显示。
 - **优先 ZIP 直链而非 Release 页面**：面向小白，少一次点击。
@@ -120,15 +120,32 @@ npx web-ext run --source-dir . --target chromium
 解压后是 `MOOC_reminder/` 文件夹，小白可直接「加载已解压的扩展」。
 
 ```bash
-# 1. 改 manifest.json 的 version（例如 1.0.0 → 1.0.1）
-# 2. 合并 dsh → main（需用户许可，见文首约定）
-# 3. 在 main 上打同版本 tag 并推送
-git tag v1.0.1 && git push origin v1.0.1
+# 0. 确认在 dsh 且工作区干净：git branch --show-current / git status --short
+# 1. 改版本号：manifest.json 与 package.json **两处**（没有测试守着这两者的同步，见下）
+#    同时把 changelog 的「## 未发布」改成「## {version}（{date}）」
+# 2. 在 dsh 上提交 release: {version}，然后合并 dsh → main（需用户许可，见文首约定）
+# 3. 在 main 上打同版本 tag 并推送 —— 推 tag 这一步才触发发版
+git tag -a v1.0.1 -m "MOOC Reminder 1.0.1" && git push origin v1.0.1
 ```
 
 **tag 版本必须与 `manifest.json` 的 version 严格一致**，否则 workflow 会直接失败。
 用户在浏览器里看到的版本来自 `manifest.json`，而插件检查更新读的是 Release tag，两者一旦
 漂移，用户装了新包却会被反复提示「有新版本」。workflow 里那道校验就是为此存在的。
+
+**版本号要改两处，而且没有自动化守着它们**：`manifest.json`（用户在浏览器里看到的、也是 workflow
+校验的那一处）与 `package.json`（对齐用）。`tests/unit/manifest.test.mjs` 只断言 `manifest_version: 3`，
+workflow 也只比对 tag 与 manifest —— 漏改 `package.json` 不会报错，所以靠人记得。发版前可以先本地模拟
+一遍 workflow 的那道校验：`tag_version=v1.1.1; [ "${tag_version#v}" = "$(node -p "require('./manifest.json').version")" ]`。
+
+**tag 用 annotated（`git tag -a`）**，与既有的 `v1.1.0` 保持一致（`git cat-file -t v1.1.0` → `tag`）。
+tag 必须打在 **main 上那个含该版本号的提交**上，所以顺序只能是「改版本 → 合 main → 在 main 上打 tag」；
+打完之后这一版就不要再往 main 加提交（要改就删 tag 重打，见下）。
+
+发版 workflow 失败时（tag 已推上去）：修好 → 提交 → 合 main → **删掉旧 tag 再重打**，同一个版本号不要发第二次：
+
+```bash
+git tag -d v1.1.1 && git push origin :refs/tags/v1.1.1
+```
 
 **发版打成包用显式文件清单而不是 `zip -x` 通配**（`.dsh/logs/` 也会被 `logs/*` 之类的
 通配误伤或漏掉）。清单只写在 `tools/package-extension.mjs` 里，本地与 CI 共用：
@@ -136,3 +153,6 @@ git tag v1.0.1 && git push origin v1.0.1
 ```bash
 npm run package          # 产出 mooc-reminder-v{version}.zip（内层 MOOC_reminder/）
 ```
+
+本地包的字节数与 CI 的 Release 附件**逐字节同源**（`tools/package-extension.mjs` 一份配方），
+所以「本地打出来的包」可以当作发布产物的预览：1.1.1 两边都是 623398 字节。

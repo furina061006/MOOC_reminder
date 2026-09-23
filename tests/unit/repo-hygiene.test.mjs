@@ -121,7 +121,7 @@ test('根 AGENTS.md 是索引，细节在 .dsh/agents/（且都在 DSH 找得到
 
   const agentDocs = [
     'architecture', 'platform', 'spoc', 'extraction', 'troubleshooting',
-    'scheduling', 'invariants', 'data-model', 'operations'
+    'scheduling', 'invariants', 'data-model', 'operations', 'writing'
   ];
   for (const name of agentDocs) {
     const rel = '.dsh/agents/' + name + '.md';

@@ -4,7 +4,7 @@ Chrome / Edge（Chromium 内核）Manifest V3 扩展，自动追踪中国大学M
 **无后端**：所有数据只存在于用户自己的 `chrome.storage.local`，不外传。
 
 > [!IMPORTANT]
-> 1. 所有代码开发在 **`dsh` 分支**进行，**经用户允许**才能合并到 `main`；
+> 1. 所有代码开发在 **`dsh` 分支**进行，**经用户允许**才能合并到 `main`。**提交前先 `git branch --show-current` 确认在 `dsh`**：工作区是与用户共享的，HEAD 可能被另一个终端切走（2026-09-22 就这样把一个提交落到过 `main`）；
 > 2. **本文件只是索引 + 红线 + 路由表**，分主题的项目事实在 `.dsh/agents/` 下——动手改代码前，按下面的路由表读对应文档，改完再回来更新它。
 
 ## 红线（不翻文档也必须记住）
@@ -22,7 +22,7 @@ Chrome / Edge（Chromium 内核）Manifest V3 扩展，自动追踪中国大学M
 | 我要做的事 | 先读 |
 | --- | --- |
 | 改抓取、解析、完成判定、状态标签 | [`.dsh/agents/extraction.md`](.dsh/agents/extraction.md) |
-| 排查「某门课抓不到 / 少几条 / 一条都没有」 | [`.dsh/agents/troubleshooting.md`](.dsh/agents/troubleshooting.md) |
+| 排查「某门课抓不到 / 少几条 / 一条都没有 / 多出没选过的课」 | [`.dsh/agents/troubleshooting.md`](.dsh/agents/troubleshooting.md) |
 | 动 SPOC、termId、作业跳转链接 | [`.dsh/agents/spoc.md`](.dsh/agents/spoc.md) |
 | 动调度、临时代理页、通知、每日摘要 | [`.dsh/agents/scheduling.md`](.dsh/agents/scheduling.md) |
 | 调 icourse163 API、查字段含义、加端点 | [`.dsh/agents/platform.md`](.dsh/agents/platform.md) |
@@ -30,6 +30,7 @@ Chrome / Edge（Chromium 内核）Manifest V3 扩展，自动追踪中国大学M
 | 改代码前逐条核对不变量 | [`.dsh/agents/invariants.md`](.dsh/agents/invariants.md) |
 | 发版、打包、CI、Issue/PR 模板、已知限制 | [`.dsh/agents/operations.md`](.dsh/agents/operations.md) |
 | 改用户能看到的文档 / 文案 | [`docs/`](docs/)（功能、FAQ、隐私、贡献者）+ 必要时 `.dsh/logs/changelog.md` |
+| 写 / 改 Markdown 文档（加粗、引号、行内代码等写法） | [`.dsh/agents/writing.md`](.dsh/agents/writing.md) |
 | 想知道「为什么这么改」「踩过什么坑」 | [`.dsh/logs/README.md`](.dsh/logs/README.md)（日志索引；用户可感知的变化在 `changelog.md`） |
 
 ## 知识管理约定（每次会话遵守）
@@ -48,7 +49,7 @@ Chrome / Edge（Chromium 内核）Manifest V3 扩展，自动追踪中国大学M
 
 ## 相关文档
 
-- `.dsh/agents/` — 架构与消息协议、平台与 API、SPOC、提取判定、排查、调度、不变量、数据模型、工程与发版
+- `.dsh/agents/` — 架构与消息协议、平台与 API、SPOC、提取判定、排查、调度、不变量、数据模型、工程与发版、文档写法
 - `.dsh/logs/README.md` — 开发日志索引（**生成物**：`npm run logs:index`；`validate` 会校验它没过期）
 - `.dsh/logs/changelog.md` — 面向用户的完整更新记录
 - `.dsh/logs/architecture.md` — 2026-09-01 的完整架构快照（**历史存档**；现行事实见 `.dsh/agents/`）
