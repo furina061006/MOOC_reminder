@@ -1,6 +1,44 @@
-# 排查：抓不到 / 抓不全
+# 排查：课程与条目的异常（抓不到 / 抓不全 / 多出幽灵课程）
 
 > 入口索引与工作约定在仓库根目录 [`AGENTS.md`](../../AGENTS.md)；本文件是 `.dsh/agents/` 知识库的一部分。
+
+### 幽灵课程：出现了你根本没选的课（或课名是章节名）
+
+症状：设置页「已追踪课程」里出现没选过的课，常见两种长相：
+
+- **课名不是课程名**（章节名 / 帖子标题 / 推荐位标题），0 项作业。已确认实例（2026-09-23）：`NEU-1474956162 · 普通 · 牛顿第二定律` —— courseId 实际是 **SPOC 大学物理**，名字却是论坛帖标题，类型还成了「普通」；
+- 类型与事实不符（同一 courseId 的 SPOC 显示成普通），或名字在两次打开之间变来变去。
+
+**已确认的根因（2026-09-23，用真实页面 DOM 定案）**：`course-discovery` 把**课程内部某条内容的链接**当成了课程链接。用户保存的 `/home.htm#/home/spocCourse` DOM 里，右侧「最近发表」的 5 条论坛帖链接长这样：
+
+```html
+<a href="https://www.icourse163.org/learn/NEU-1474956162?tid=1476735472#/learn/forumdetail?pid=1353455440">
+  <span class="f-thide c-ro-posts_span49">牛顿第二定律</span>
+</a>
+```
+
+它们**带 `?tid=`**，所以通过了原来的「学习链接」检查；而锚点文本就是**帖子标题**。又因为采集按 `courseId|termId` 去重，5 条帖子被合并成**一条**记录，名字取了 DOM 里的第一条 → 「牛顿第二定律」。该 tid 是 SPOC 的**路由壳** term（空壳），所以 0 条作业；href 不含 `/spoc/`，所以类型判成「普通」。
+
+已修（2026-09-23，三层）：
+
+1. **内容详情链接一律拒绝**：`parseLearnHref` 拒绝 fragment 含 `forum` / `detail` 的链接（`#/learn/forumdetail?pid=`、`#/learn/forum?cid=` 等）。两份拷贝同步改（`src/content/course-discovery.js` 是运行时、`src/shared/icourse163-api.js` 有单测）；
+2. **学习页不采集、也不应答探测**（学习页交给 `main.js` 自报；顺带修掉「它同步应答会抢走 main.js 的 sendResponse」）；
+3. **弱信号不得给已有课程改名**：只有课程页自报、或记录本来没有名字时才接受这次的名字（`COURSE_LINKS` handler）。
+
+**仍存在的风险**：锚点文本本身不是权威课程名。第 1 条是**拒绝清单**（保守，不会漏课），若将来出现别的「课程内部链接」形态（例如指向某节课时的详情），仍可能新建一条错名记录——正解是给课程名找权威来源（课程页自报 / API），届时按下一条处理。
+
+取证：
+
+1. 在**扩展的** SW Console 跑 `tools/diagnostics/dump-extension-state.js`，看那门课的 `discovered` / `firstSeen` / `lastSeen` / `activeTermId` / `pageUrl`；
+2. SW Console 搜 `COURSE_LINKS: registered` —— 这行现在带每门课的 `id="名字"(类型)` 与 `fromCoursePage:`，能直接看出是谁登记的；
+3. 怀疑某个页面上的锚点，就在那个页面 Console 跑：
+
+   ```js
+   [...document.querySelectorAll('a[href*="/learn/"]')]
+     .map(a => ({ text: a.textContent.trim().slice(0, 30), href: a.getAttribute('href') }))
+   ```
+
+清理：设置页「已追踪课程」→ **删除**（清掉课程 + 它的作业 + tombstone）。注意**删除不会自动加入忽略列表**，所以根因修好前它可能被同一页面重新登记；「忽略」是另一回事 —— 不再抓取、不计徽章，但列表里仍显示（标注为已忽略）。
 
 ### 抓不到 / 抓不全条目（排查流程）
 

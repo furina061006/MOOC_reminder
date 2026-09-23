@@ -7,10 +7,10 @@
 按顺序做这三步，能解决绝大多数情况：
 
 1. **确认已登录**中国大学MOOC（浏览器里打开 `icourse163.org` 是登录状态）。
-2. 到 `chrome://extensions/` 找到 MOOC Reminder，点一下**「重新加载」**；
+2. 到 `chrome://extensions/` 找到 MOOC Reminder，点一下「**重新加载**」；
    然后**把已经打开的 icourse163 页面刷新一遍**（或重新打开）。
    > 只重载扩展、不刷新页面的话，页面里就没有插件的代码，什么都不会工作——这是最常见的原因。
-3. 打开一次**「我的课程」页**（`icourse163.org` 登录后的课程列表），或任意一门课的学习页，让插件认识你的课程。
+3. 打开一次「**我的课程**」页（`icourse163.org` 登录后的课程列表），或任意一门课的学习页，让插件认识你的课程。
 
 还是不行？[新建 Issue](https://github.com/furina061006/MOOC_reminder/issues/new?template=bug_report.yml)，
 模板会让你附上插件版本、浏览器版本和日志；照着填通常一轮就能定位。
