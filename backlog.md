@@ -6,6 +6,8 @@
 
 - [ ] 部分图标太丑了，比如`issue`提交模板那块的, 我有空找找
 
+- [ ] github上好像不支持markdown的[!IMPORTANT] 语法, `readme.md`得改改语法
+
 已修复或已论证放弃的历史问题不再保留在这里，记录位置：
 
 - `.dsh/logs/changelog.md` — 面向用户的版本变更记录

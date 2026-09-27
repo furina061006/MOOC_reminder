@@ -154,5 +154,9 @@ git tag -d v1.1.1 && git push origin :refs/tags/v1.1.1
 npm run package          # 产出 mooc-reminder-v{version}.zip（内层 MOOC_reminder/）
 ```
 
-本地包的字节数与 CI 的 Release 附件**逐字节同源**（`tools/package-extension.mjs` 一份配方），
-所以「本地打出来的包」可以当作发布产物的预览：1.1.1 两边都是 623398 字节。
+本地包与 CI 的 Release 附件**内容完全一致**（`tools/package-extension.mjs` 一份配方），可以当作发布产物的预览：
+1.1.1 两边都是 623398 字节；1.1.2 两边都是 625924 字节，解压后 32 个文件 `diff -r` 无差异。
+
+**但 sha256 不会相同** —— zip 会把每个文件的 mtime 写进头部，而 CI 的时间戳来自 checkout。
+2026-09-23 差点因此误判成「包不对」。正确的校验方式是**先比大小、再解压 `diff -r`**，
+别拿 sha256 对比（GitHub API 给的 `digest` 同理，只对同一次构建有意义）。
