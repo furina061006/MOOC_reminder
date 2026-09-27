@@ -7,7 +7,7 @@
 打开[中国大学MOOC](https://www.icourse163.org/)做线上作业时，插件自动抓取「测验与作业」和「考试」板块的未完成项，在扩展图标上显示数量，点开就是清单。**无后端**：所有数据只存在你自己的浏览器里。适用于 Chrome、Edge、夸克等 Chromium 内核浏览器。
 
 > [!TIP]
-> 遇到问题或想提建议？→ **[新建 Issue](https://github.com/furina061006/MOOC_reminder/issues/new/choose)**~~（有模板，会问你要日志）~~。
+> 遇到问题或想提建议？→ **[新建 Issue](https://github.com/furina061006/MOOC_reminder/issues/new/choose)**<sub>（有模板，会问你要日志）</sub>。
 > 在此之前请先做一次「在 `chrome://extensions` 重新加载扩展 **+** 刷新已打开的课程页面」——大部分「抓不到」都是漏了这一步，详见[常见问题](https://github.com/furina061006/MOOC_reminder/blob/main/docs/faq.md)。
 
 ## 下载与安装
@@ -16,6 +16,8 @@
 2. 打开浏览器扩展管理页 `chrome://extensions/`，开启右上角「开发者模式」。
 3. 点击左上角「加载已解压的扩展」。
 4. 选择解压出来的 `MOOC_reminder` 文件夹。
+5. 确定启用后，回到浏览器主页面，点击右上角的拼图（拓展）图标，将本插件固定到工具栏，以便观看`未完成`和`即将截止`的作业个数.
+  <img src="https://raw.githubusercontent.com/furina061006/MOOC_reminder/main/docs/images/extension.png" alt="插件固定" width="720">
 
 > [!WARNING]
 > 本插件未上架 Chrome 网上应用店，需通过「开发者模式」加载；也正因为如此，**Chrome 不会自动更新它**。
