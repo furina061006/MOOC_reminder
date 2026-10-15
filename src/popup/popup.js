@@ -535,32 +535,50 @@ function sortItemsByDeadline(items) {
   return (Array.isArray(items) ? items.slice() : []).sort((a, b) => deadlineMs(a) - deadlineMs(b));
 }
 
-// Where clicking an item should take you: its own page, else a reconstructed
-// course learn URL (API-discovered items may not carry a pageUrl). SPOC courses
-// live under /spoc/learn/, so the course type must be supplied by the caller.
-function resolveItemUrl(item, courseType) {
+// Where clicking an item should take you: its own page, else the Course record's
+// frozen route (items stored before the route was captured have none of their
+// own), else a reconstructed course learn URL. Two route families must both keep
+// working: the legacy /learn/… + `#/learn/…` hash route, and the new
+// /mooc/learn/{id}/{section} route whose section lives in the path.
+//
+// 与 src/shared/item-url.js 保持一致（那份是 SW 通知点击用的）——两处必须同改。
+function hasPathSection(pageUrl) {
+  try {
+    var match = new URL(pageUrl).pathname.match(/^\/(?:(?:mooc|spoc)\/)?learn\/[^/?#]+(\/.+)?$/);
+    return !!(match && match[1]);
+  } catch { return false; }
+}
+
+function applyLearnHashRoute(pageUrl, route) {
+  // 新路由的栏目在 path 里，再挂旧 SPA 的 hash 路由没有意义 → 原样打开
+  if (hasPathSection(pageUrl)) return pageUrl;
+  var hashIdx = pageUrl.indexOf('#');
+  if (hashIdx >= 0) return pageUrl.slice(0, hashIdx) + '#' + route;
+  return pageUrl + '#' + route;
+}
+
+function resolveItemUrl(item, courseType, coursePageUrl) {
   if (!item) return null;
   var type = courseType || item.courseType || '';
   var base = item.courseId && item.termId
     ? (type === 'spoc' ? 'https://www.icourse163.org/spoc/learn/' : 'https://www.icourse163.org/learn/') + item.courseId + '?tid=' + item.termId
     : null;
-  // pageUrl 可能有错误的 hash（如 /learn/content），按类型修正
   var route = item.type === 'exam' ? '/learn/examlist' : '/learn/testlist';
-  if (item.pageUrl) {
-    // 如果 pageUrl 的 hash 不匹配类型，修正它
-    var hashIdx = item.pageUrl.indexOf('#');
-    if (hashIdx >= 0) return item.pageUrl.slice(0, hashIdx) + '#' + route;
-    return item.pageUrl + '#' + route;
-  }
+  var pageUrl = item.pageUrl || coursePageUrl || '';
+  if (pageUrl) return applyLearnHashRoute(pageUrl, route);
   if (base) return base + '#' + route;
   return null;
 }
 
 // Course metadata lookup so items stored before courseType was persisted still
 // resolve to the right (SPOC vs normal) route prefix.
+function courseRecordFor(courseId) {
+  if (!courseId || !Array.isArray(state.courses)) return null;
+  return state.courses.find(function (c) { return c && c.courseId === courseId; }) || null;
+}
+
 function courseTypeFor(courseId) {
-  if (!courseId || !Array.isArray(state.courses)) return '';
-  var course = state.courses.find(function (c) { return c && c.courseId === courseId; });
+  var course = courseRecordFor(courseId);
   if (!course) return '';
   // activeTermId is written only from a genuine SPOC page (COURSE_UPDATE), so it
   // outranks courseType: course-discovery labels every href without /spoc/ as
@@ -732,7 +750,8 @@ function createHomeworkItem(item) {
   content.appendChild(meta);
 
   // Clicking the item (anywhere but the checkbox) opens its page.
-  const url = resolveItemUrl(item, courseTypeFor(item.courseId));
+  var courseRecord = courseRecordFor(item.courseId);
+  const url = resolveItemUrl(item, courseTypeFor(item.courseId), courseRecord && courseRecord.pageUrl);
   if (url) {
     content.classList.add('clickable');
     content.setAttribute('role', 'button');

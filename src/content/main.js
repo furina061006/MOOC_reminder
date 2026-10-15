@@ -97,7 +97,13 @@
           termId: meta.termId,
           courseName: courseName,
           courseType: isSpoc ? 'spoc' : 'mooc'
-        }]
+        }],
+        // The route this page is actually on (/learn/… or /mooc/learn/…). The SW
+        // freezes it as course.pageUrl, so clicking the course later reopens the
+        // same route family the user really uses: old courses keep the old URL,
+        // new-route courses get the new one. The SW only accepts it from a real
+        // course page and only after isIcCourseLearnUrl validation.
+        routeUrl: window.location.href
       });
     } catch { /* SW asleep — the scrape that asked for this is retried by the user */ }
 

@@ -54,7 +54,7 @@ import {
   notificationIdFor,
   nextQuietEndWhen
 } from '../shared/reminder.js';
-import { resolveItemUrl } from '../shared/item-url.js';
+import { resolveItemUrl, applyLearnHashRoute } from '../shared/item-url.js';
 import { createSerializedStore } from '../shared/items-mutex.js';
 import {
   RELEASES_API_URL,
@@ -472,6 +472,19 @@ const MESSAGE_HANDLERS = {
     // 已不在学习页采集），它的名字读自真实课程页，是权威的；其它页面来的都是锚点采集，
     // 而锚点文本可以是一个**章节名**或推荐位标题——属弱信号，见下面的改名保护。
     const fromCoursePage = isIcCourseLearnUrl(sender && sender.tab && sender.tab.url);
+    // 真实课程页自报的地址 = 用户此刻打开的那条路由。冻结成 `pageUrl` 之后，点击这门课
+    // 就会回到同一族路由：旧路由的课继续跳旧地址，新路由（2026-10 的 /mooc/learn/…）
+    // 的课跳新地址——不做任何前缀猜测。
+    //
+    // 只接受「学习页自报 + 通过 isIcCourseLearnUrl 校验」的地址（不变量 10 的收紧版：
+    // 页面的链接采集永远写不了它）。临时代理页要排除：它的地址是插件自己拼的旧路由，
+    // 不是用户的选择，允许它写会把用户真实打开过的新地址覆盖回去。
+    let routeUrl = '';
+    if (fromCoursePage && isIcCourseLearnUrl(msg.routeUrl)) {
+      const job = await getTemporaryProxyJob();
+      const fromProxyTab = !!(job && sender && sender.tab && sender.tab.id === job.tabId);
+      if (!fromProxyTab) routeUrl = String(msg.routeUrl);
+    }
     let registered = 0;
     let newCourses = 0;
     let spocCount = 0;
@@ -495,6 +508,11 @@ const MESSAGE_HANDLERS = {
       // （列表里变成「未知课程」）——`main.js` 的注释此前声称 SW 不会这么做，实际会。
       const incomingName = c.courseName || '';
       if (incomingName && (fromCoursePage || !prev || !prev.courseName)) patch.courseName = incomingName;
+      // 路由地址跟着这次自报一起冻结（旧前缀 / 新前缀都可能是「用户真实打开过的」）。
+      // 课程记录仍然只按 courseId 建索引（不变量 11），所以新旧路由各报一次也只会
+      // 更新同一条记录，不会多出一门课；作业条目的 uid 只含 courseId+termId，
+      // 与路由无关，因此也不会重复计数。
+      if (routeUrl) patch.pageUrl = routeUrl;
       await upsertCourse(patch);
       byId.set(c.courseId, Object.assign({}, prev, patch));
       registered++;
@@ -1286,19 +1304,21 @@ chrome.notifications?.onClicked?.addListener(async (notificationId) => {
   try {
     const items = await getHomeworkItems();
     const item = items.find(i => i && i.uid === uid);
-    // API 抓取的条目常没有 pageUrl——与 popup 相同的兜底：按 courseId+termId
-    // 重建课程学习页 URL，并按条目类型修正 hash 路由。课程类型决定是
-    // /learn/ 还是 /spoc/learn/，所以显式传入 Course 元数据。
+    // API 抓取的条目常没有 pageUrl——与 popup 相同的兜底：先用 Course 记录里冻结的
+    // 路由地址（旧课程=旧地址、新路由课程=新地址），再退回按 courseId+termId 重建。
+    // 课程类型决定是 /learn/ 还是 /spoc/learn/，所以显式传入 Course 元数据。
     let courseType = item && item.courseType;
+    let coursePageUrl = '';
     if (item) {
       const courses = await getCourses();
       const course = courses.find(c => c && c.courseId === item.courseId);
       if (course) {
         // activeTermId outranks courseType — see isProvenSpocCourse.
         courseType = isProvenSpocCourse(course) ? 'spoc' : (course.courseType || courseType);
+        coursePageUrl = course.pageUrl || '';
       }
     }
-    const url = item ? resolveItemUrl(item, courseType) : null;
+    const url = item ? resolveItemUrl(item, courseType, coursePageUrl) : null;
     if (url) {
       await chrome.tabs.create({ url });
     }
@@ -1436,13 +1456,10 @@ function buildTemporaryProxyUrl(course) {
 
   const storedUrl = course.pageUrl || course.courseUrl || '';
   if (isIcCourseLearnUrl(storedUrl)) {
-    const url = new URL(storedUrl);
     // Keep the prefix the user actually opened; only normalize the hash route.
-    // The hash is the legacy SPA's section router (/learn/…, /spoc/learn/…). The
-    // 2026-10 MOOC shell (…/mooc/learn/{id}/assessments) routes by path and
-    // ignores it, so this stays correct on both.
-    url.hash = '/learn/testlist';
-    return url.toString();
+    // Path-routed URLs (2026-10 new route, …/mooc/learn/{id}/assessments) come back
+    // untouched — see applyLearnHashRoute.
+    return applyLearnHashRoute(storedUrl, '/learn/testlist');
   }
 
   // Legacy MOOC path on purpose (2026-10): the platform still serves it and

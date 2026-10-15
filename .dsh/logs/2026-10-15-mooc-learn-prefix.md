@@ -3,8 +3,8 @@
 用户报：普通 MOOC 的课程页路径从 `https://www.icourse163.org/learn/{课程号}?tid=…` 变成
 `https://www.icourse163.org/mooc/learn/{课程号}…` 之后，这些课程抓不到。
 
-**范围（与用户确认后）**：只让普通 MOOC 的抓取多认一条 `mooc/learn` 路径。
-SPOC 的 `/spoc/learn/…` 没有变化，点击跳转链接本版不动。
+**范围（与用户确认后）**：先让普通 MOOC 的抓取多认一条 `mooc/learn` 路径。SPOC 的
+`/spoc/learn/…` 没有变化。抓取恢复后，同一天又补上了"点击也按课程自己的路径走"（见第 4 节）。
 
 ---
 
@@ -25,7 +25,7 @@ SPOC 的 `/spoc/learn/…` 没有变化，点击跳转链接本版不动。
 好消息：`parseCourseUrl` / `parseLearnHref` / `isIcCourseLearnUrl` 三处解析都取
 **`learn/` 之后那一段**当课程 key，所以新路径**天然解析正确**，一行解析逻辑都不用改。
 
-## 2. 改动清单
+## 2. 改动清单（抓取）
 
 | 文件 | 改动 |
 | --- | --- |
@@ -45,21 +45,38 @@ SPOC 的 `/spoc/learn/…` 没有变化，点击跳转链接本版不动。
 
 ## 3. 刻意**没有**动的东西
 
-- **点击作业的跳转目标**（`item-url.js` / `popup.js` / `buildTemporaryProxyUrl`）：仍按旧
-  `/learn/…` + hash 生成。旧地址现在仍然可用，本版不引入前缀猜测。已记入 `backlog.md`。
-- **`isIcCourseLearnUrl` 的正则**：它一直不锚定，因此本来就接受新路径；收紧它是另一次改动
-  （有自己的风险面），本次只补注释说明。
 - **SPOC 判定**：`isSpoc` 仍只看 `/spoc/` 前缀（不变量 9）。SPOC 路径未变，所以不允许用
   "真实 term 与路由 term 不同"之类推理去升级 SPOC 证据 —— 那会让普通 MOOC 被误判成 SPOC。
 - **数据源**：仍在页面上发同源 XHR 抓取，抓取逻辑一行未改。
+- **`isIcCourseLearnUrl` 的正则**：它一直不锚定，因此本来就接受新路径；收紧它是另一次改动
+  （有自己的风险面），本次只补注释说明。
 
-## 4. 验证
+## 4. 后续：点击也按课程自己的路径走
 
-- `npm run validate`：lint 0 error（18 条既有 warning 未新增），148 个单测全绿（含本次新增断言）。
+抓取恢复后补上了原本缓办的那半件事。做法不是"猜哪门课属于新路径"，而是**记住用户真实打开过的那条**：
+
+- **课程页自报它此刻所在的地址**：`main.js` 的 `COURSE_LINKS` 带上 `routeUrl`，SW 校验后冻结成
+  `course.pageUrl`。于是点击这门课回到同一族路由 —— 旧路径的课跳旧地址，新路径的课跳新地址。
+  **临时代理页的自报被排除**：它的地址是插件自己拼的旧路由，允许它写会把用户真实打开过的新地址
+  覆盖回去。
+- **老条目也能享受**：`resolveItemUrl(item, courseType, coursePageUrl)` 增加第三个参数，
+  popup 与通知点击都传课程记录里冻结的那条路由；没有它，升级前存下的条目只会回到旧地址。
+- **栏目位置分两族**：旧路由的栏目在 `#/learn/…` hash 里（按条目类型重写 hash），新路由的栏目在
+  **path** 里（`/mooc/learn/{id}/assessments`）→ 这类地址**原样打开**，不挂 hash。
+- **防重**：课程身份仍只按 `courseId`（不变量 11），作业 uid 只含 `courseId`+`termId`，都与路由
+  无关。同一门课在新旧路径下各上报一次仍然只有一条记录（只是 `pageUrl` 更新为最近打开的那条），
+  抓取条目也只按 termId 生成一份，不会新旧各抓一遍、也不会重复计数。
+- 涉及文件：`src/content/main.js`、`src/background/service-worker.js`（COURSE_LINKS /
+  通知点击 / `buildTemporaryProxyUrl`）、`src/shared/item-url.js`、`src/popup/popup.js`（镜像）、
+  `tests/unit/item-url.test.mjs`、`tests/unit/service-worker.integration.test.mjs`。
+
+## 5. 验证
+
+- `npm run validate`：lint 0 error（未新增 warning），154 个单测全绿（含本次新增断言）。
 - **真机**：用户确认"完全可用"——重载扩展并刷新课程页后，新路径下的作业照常抓取。
+  （点击跳转的真机确认：待用户按新路径打开一次课程页后再点条目复核。）
 
-## 5. 遗留
+## 6. 遗留
 
-- 点击 / 代理链接是否切到新前缀：`backlog.md`（当时刻意缓办）。
 - 新架构把栏目放进网址路径后，幽灵课程守卫（`isContentDetailHref`）只查 `#` 后面的部分：
   `backlog.md`（无证据前不动）。

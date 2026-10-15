@@ -80,7 +80,26 @@ var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
 | 条目继承 `pageUrl`，`resolveItemUrl` 优先用它（前缀与 `tid` 都来自真实 URL） | `apiExtractHomework` / `item-url.js` |
 | reconcile **不写** `pageUrl` 和 `termId`（见不变量 10） | `reconcileHomeworkData` |
 
-**为什么必须用真实 URL 而不是拼**：SPOC 的 `item.termId` 是 **API id**（如 1476504498），而路由 `?tid=` 需要 **路由壳 id**（如 1476735472）。前缀与 `tid` 只有用户浏览器真实打开过的那个 URL 能同时给对，所以 `resolveItemUrl` 的 pageUrl 优先级最高。**旧数据恢复**：升级后打开一次 SPOC 课程页即可冻结正确的 `pageUrl`。
+### 点击跳转目标（新旧路由并存，2026-10）
+
+**规则：条目指向哪条路由，取决于「用户真实打开过的那条」。不猜前缀。**
+
+| 来源 | 点击目标 |
+|---|---|
+| 条目自带 `pageUrl` | 直接用它（路由形态见下） |
+| 课程记录的 `pageUrl`（第三个参数兜底） | 老条目自身没有 pageUrl 时用它，所以升级后不需要重建条目 |
+| 都没有 | 按 courseId+termId 重建，SPOC 走 `/spoc/learn/`，普通课程走 `/learn/` |
+
+两族路由的栏目位置不同，处理方式也不同（`item-url.js` 的 `applyLearnHashRoute` / `hasPathSection`，popup.js 有必须同步的镜像）：
+
+- **旧路由**：`/learn/{id}?tid=…`、`/spoc/learn/{id}?tid=…`，栏目在 `#/learn/…` hash 里 → 按条目类型重写 hash（`/learn/testlist`、`/learn/examlist`）；
+- **新路由**（普通课程，2026-10）：`/mooc/learn/{id}/{section}`（镜像 `/learn/{id}/{section}`），栏目在 **path** 里 → **原样打开**，绝不挂 hash。
+
+`pageUrl` 的来源与写入规则见不变量 10：SPOC 由 `COURSE_UPDATE` 冻结；普通课程由课程页自报的
+`COURSE_LINKS.routeUrl` 冻结（临时代理页的自报被排除，否则插件自己拼的旧地址会把新地址覆盖回去）。
+课程身份仍只按 `courseId`（不变量 11），所以新旧路由并存不会多出课程或条目。
+
+**为什么必须用真实 URL 而不是拼**：SPOC 的 `item.termId` 是 **API id**（如 1476504498），而路由 `?tid=` 需要 **路由壳 id**（如 1476735472）。前缀与 `tid` 只有用户浏览器真实打开过的那个 URL 能同时给对，所以 pageUrl 优先级最高。**旧数据恢复**：升级后打开一次该课程页即可冻结正确的 `pageUrl`。
 
 ### 页面钩子数据里的假 tid（刻意跳过，别再「修」）
 
