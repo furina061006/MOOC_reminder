@@ -1414,6 +1414,11 @@ function getProxyRouteTermId(course) {
 // A usable icourse163 learn route: right origin, /learn/ or /spoc/learn/ path, and
 // a `tid`. Anything else (homepage links, user-typed junk) must never be stored as
 // a course route, because it would be handed straight to chrome.tabs.create.
+//
+// The path test is deliberately unanchored, so it already covers /mooc/learn/… —
+// the MOOC route the platform introduced in 2026-10 (optionally with a section
+// segment, e.g. /mooc/learn/{courseId}/assessments). This is left as-is on
+// purpose: tightening it is a separate change with its own risk surface.
 function isIcCourseLearnUrl(value) {
   try {
     const url = new URL(String(value || ''));
@@ -1432,10 +1437,17 @@ function buildTemporaryProxyUrl(course) {
   const storedUrl = course.pageUrl || course.courseUrl || '';
   if (isIcCourseLearnUrl(storedUrl)) {
     const url = new URL(storedUrl);
+    // Keep the prefix the user actually opened; only normalize the hash route.
+    // The hash is the legacy SPA's section router (/learn/…, /spoc/learn/…). The
+    // 2026-10 MOOC shell (…/mooc/learn/{id}/assessments) routes by path and
+    // ignores it, so this stays correct on both.
     url.hash = '/learn/testlist';
     return url.toString();
   }
 
+  // Legacy MOOC path on purpose (2026-10): the platform still serves it and
+  // redirects it to the new shell, and both landing routes now carry main.js
+  // (see LEARN_TAB_URLS), so the proxy works either way.
   const path = course.courseType === 'spoc' ? '/spoc/learn/' : '/learn/';
   return 'https://www.icourse163.org' + path + encodeURIComponent(course.courseId) +
     '?tid=' + encodeURIComponent(routeTermId) + '#/learn/testlist';
@@ -1714,8 +1726,18 @@ async function runTemporaryProxyBatch(job) {
   return outcome;
 }
 
+// Every route a course page can live on. Must stay a subset of the manifest's
+// main.js matches (tests/unit/manifest.test.mjs guards that): a pattern listed
+// here but missing there would answer nothing and get reported as "no content
+// script" for a page that should have worked.
+//   /learn/*        legacy MOOC route — the platform still serves (and redirects)
+//                   it, and it is what buildTemporaryProxyUrl still constructs
+//   /mooc/learn/*   current MOOC route since 2026-10 (may add a section segment,
+//                   e.g. /mooc/learn/{courseId}/assessments)
+//   /spoc/learn/*   SPOC route — unchanged by that migration
 const LEARN_TAB_URLS = [
   'https://www.icourse163.org/learn/*',
+  'https://www.icourse163.org/mooc/learn/*',
   'https://www.icourse163.org/spoc/learn/*'
 ];
 

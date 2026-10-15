@@ -1113,6 +1113,22 @@ test('COURSE_UPDATE rejects a non-learn routeUrl instead of storing it', async (
   assert.equal(spocCourseRecord().pageUrl, undefined);
 });
 
+test('a 2026-10 /mooc/learn/ tab counts as a course page, so its self-report is authoritative', async () => {
+  // isIcCourseLearnUrl 决定 COURSE_LINKS 是「课程页自报」（名字权威、可改名）还是
+  // 「锚点弱信号」（只能填空名字）。普通 MOOC 的课程页搬到 /mooc/learn/ 之后，这条
+  // 判定必须仍然成立——否则新前缀页面报上来的课程名永远纠正不了。
+  seedCourses([{ courseId: 'BIT-268001', termId: '1460270441', courseName: '某个章节名', courseType: 'mooc' }]);
+  const sender = {
+    tab: { id: 12, url: 'https://www.icourse163.org/mooc/learn/BIT-268001?tid=1460270441#/learn/testlist' }
+  };
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'BIT-268001', termId: '1460270441', courseName: '数据结构', courseType: 'mooc' }]
+  }, sender);
+  const record = (h.storageData.get('courses') || []).find(c => c && c.courseId === 'BIT-268001');
+  assert.equal(record.courseName, '数据结构', 'a course-page self-report may correct the name');
+});
+
 // ── near-miss diagnostics in the RUNTIME copy ────────────────────────────
 // The SPOC bug happened because the inlined runtime extractor had drifted from
 // the tested shared copy. This pins the near-miss reporting on the copy that

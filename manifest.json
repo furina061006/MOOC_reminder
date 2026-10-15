@@ -34,6 +34,7 @@
     {
       "matches": [
         "https://www.icourse163.org/learn/*",
+        "https://www.icourse163.org/mooc/learn/*",
         "https://www.icourse163.org/spoc/learn/*"
       ],
       "js": ["src/content/xhr-hook.js"],
@@ -42,6 +43,7 @@
     {
       "matches": [
         "https://www.icourse163.org/learn/*",
+        "https://www.icourse163.org/mooc/learn/*",
         "https://www.icourse163.org/spoc/learn/*"
       ],
       "js": ["src/content/main.js"],

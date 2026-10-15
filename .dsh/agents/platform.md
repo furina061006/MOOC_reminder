@@ -5,12 +5,17 @@
 ## icourse163.org 平台
 
 ### URL 模式
-- MOOC 课程: `https://www.icourse163.org/learn/{school}-{courseId}?tid={termId}#/learn/content`
-- SPOC 课程: `https://www.icourse163.org/spoc/learn/{school}-{courseId}?tid={termId}#/learn/content`
+- MOOC 课程（旧路径）: `https://www.icourse163.org/learn/{school}-{courseId}?tid={termId}#/learn/content`
+- MOOC 课程（2026-10 起）: `https://www.icourse163.org/mooc/learn/{school}-{courseId}?tid={termId}` —— 平台更新架构后普通课程页换了路径，且会把栏目放进**网址路径**（如 `/mooc/learn/{courseId}/assessments`）
+- SPOC 课程: `https://www.icourse163.org/spoc/learn/{school}-{courseId}?tid={termId}#/learn/content`（**未随普通课程迁移**）
 - Hash 路由: `#/learn/content`, `#/learn/quiz`, `#/learn/exam` 等
 
+**三条 learn 路径必须同时出现在两处**：`manifest.json` 的 `main.js` / `xhr-hook.js` matches，以及 SW 的 `LEARN_TAB_URLS`。少一处就会出现"页面里没有插件"或"页面应答了却永远不会被选中抓取"——`tests/unit/manifest.test.mjs` 双向锁住了这个耦合。平台会在两种前缀之间跳转，所以都得覆盖。
+
+**课程 key 永远是 `learn/` 之后的那一段**，所以 `parseCourseUrl` / `parseLearnHref` 一套解析器覆盖全部三种路径；`isSpoc` 仍然只看 `/spoc/` 前缀（不变量 9）。
+
 ### SPA 特征
-- Hash-based routing，无页面重载
+- Hash-based routing，无页面重载（旧 SPA）；新路径的页面结构另有变化，本项目只依赖 URL 与 API，不依赖新版 DOM
 - XHR/fetch 动态加载内容，异步渲染
 - DOM 类名: `j-` (JS hooks), `m-` (modules), `u-` (utilities)
 
