@@ -61,8 +61,10 @@
   覆盖回去。
 - **老条目也能享受**：`resolveItemUrl(item, courseType, coursePageUrl)` 增加第三个参数，
   popup 与通知点击都传课程记录里冻结的那条路由；没有它，升级前存下的条目只会回到旧地址。
-- **栏目位置分两族**：旧路由的栏目在 `#/learn/…` hash 里（按条目类型重写 hash），新路由的栏目在
-  **path** 里（`/mooc/learn/{id}/assessments`）→ 这类地址**原样打开**，不挂 hash。
+- **栏目位置分两族**：旧路由的栏目在 `#/learn/…` hash 里（按条目类型重写 hash）；新路由的栏目在
+  **path** 里（`/mooc/learn/{id}/assessments` = 测验/作业、`/mooc/learn/{id}/exams` = 考试）→
+  把课程 key 之后的路径**替换**成对应栏目。**不能"原样打开"**：冻结下来的地址常常是
+  `content`（课程内容页），那会让作业/考试都点到内容页上。
 - **防重**：课程身份仍只按 `courseId`（不变量 11），作业 uid 只含 `courseId`+`termId`，都与路由
   无关。同一门课在新旧路径下各上报一次仍然只有一条记录（只是 `pageUrl` 更新为最近打开的那条），
   抓取条目也只按 termId 生成一份，不会新旧各抓一遍、也不会重复计数。

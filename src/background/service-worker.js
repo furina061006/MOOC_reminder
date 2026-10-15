@@ -54,7 +54,7 @@ import {
   notificationIdFor,
   nextQuietEndWhen
 } from '../shared/reminder.js';
-import { resolveItemUrl, applyLearnHashRoute } from '../shared/item-url.js';
+import { resolveItemUrl, applyLearnRoute } from '../shared/item-url.js';
 import { createSerializedStore } from '../shared/items-mutex.js';
 import {
   RELEASES_API_URL,
@@ -1456,10 +1456,12 @@ function buildTemporaryProxyUrl(course) {
 
   const storedUrl = course.pageUrl || course.courseUrl || '';
   if (isIcCourseLearnUrl(storedUrl)) {
-    // Keep the prefix the user actually opened; only normalize the hash route.
-    // Path-routed URLs (2026-10 new route, …/mooc/learn/{id}/assessments) come back
-    // untouched — see applyLearnHashRoute.
-    return applyLearnHashRoute(storedUrl, '/learn/testlist');
+    // Keep the prefix the user actually opened and land on a real section page:
+    // legacy URLs get their hash route, path-routed URLs (2026-10 new route,
+    // …/mooc/learn/{id}/{section}) get the section replaced — see applyLearnRoute.
+    // The proxy tab is excluded from freezing pageUrl, so this never rewrites the
+    // route the user's own tabs reported.
+    return applyLearnRoute(storedUrl, 'quiz');
   }
 
   // Legacy MOOC path on purpose (2026-10): the platform still serves it and

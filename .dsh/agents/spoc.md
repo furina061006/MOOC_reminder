@@ -90,10 +90,10 @@ var courseIsSpoc = isSpocPage || (c.courseType === 'spoc');
 | 课程记录的 `pageUrl`（第三个参数兜底） | 老条目自身没有 pageUrl 时用它，所以升级后不需要重建条目 |
 | 都没有 | 按 courseId+termId 重建，SPOC 走 `/spoc/learn/`，普通课程走 `/learn/` |
 
-两族路由的栏目位置不同，处理方式也不同（`item-url.js` 的 `applyLearnHashRoute` / `hasPathSection`，popup.js 有必须同步的镜像）：
+两族路由的栏目位置不同，但都必须落到与条目类型相符的那一栏（`item-url.js` 的 `applyLearnRoute` / `sectionForType`，popup.js 有必须同步的镜像）：
 
-- **旧路由**：`/learn/{id}?tid=…`、`/spoc/learn/{id}?tid=…`，栏目在 `#/learn/…` hash 里 → 按条目类型重写 hash（`/learn/testlist`、`/learn/examlist`）；
-- **新路由**（普通课程，2026-10）：`/mooc/learn/{id}/{section}`（镜像 `/learn/{id}/{section}`），栏目在 **path** 里 → **原样打开**，绝不挂 hash。
+- **旧路由**：`/learn/{id}?tid=…`、`/spoc/learn/{id}?tid=…`，栏目在 `#/learn/…` hash 里 → 按条目类型重写 hash（测验/作业 `/learn/testlist`、考试 `/learn/examlist`）；
+- **新路由**（普通课程，2026-10）：`/mooc/learn/{id}/{栏目}`（镜像 `/learn/{id}/{栏目}`），栏目在 **path** 里 → 把课程 key 之后的路径**替换**成对应栏目：**测验/作业 `assessments`、考试 `exams`**，并去掉 hash。冻结下来的地址常常是 `content`（课程内容页），对作业条目来说是错的栏目，所以不能"原样打开"。
 
 `pageUrl` 的来源与写入规则见不变量 10：SPOC 由 `COURSE_UPDATE` 冻结；普通课程由课程页自报的
 `COURSE_LINKS.routeUrl` 冻结（临时代理页的自报被排除，否则插件自己拼的旧地址会把新地址覆盖回去）。

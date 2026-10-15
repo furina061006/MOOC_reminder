@@ -1,28 +1,59 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveItemUrl, applyLearnHashRoute, hasPathSection } from '../../src/shared/item-url.js';
+import { resolveItemUrl, applyLearnRoute, hasPathSection, sectionForType, hashRouteForType } from '../../src/shared/item-url.js';
 
-test('a new-route pageUrl is opened as-is: its section lives in the path', () => {
-  // 2026-10 起普通课程页换到 /mooc/learn/{id}/{section}，栏目在 path 里。
-  // 再往上挂旧 SPA 的 hash 路由没有意义，而且会把 hash 一路带进新页面。
-  const quiz = {
-    courseId: 'NEU-1002822009', termId: '1488060444', type: 'quiz',
-    pageUrl: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1488060444'
-  };
+test('a new-route pageUrl is re-pointed at the section that matches the item type', () => {
+  const quiz = { courseId: 'NEU-1002822009', termId: '1488060444', type: 'quiz' };
+  // 2026-10 起普通课程页换到 /mooc/learn/{id}/{section}，栏目在 path 里：
+  // 测验/作业 = assessments，考试 = exams。冻结下来的地址常常是 …/content，
+  // 对作业条目来说是错的栏目，必须换掉。
+  const frozen = 'https://www.icourse163.org/mooc/learn/NEU-1002822009/content?tid=1488060444';
   assert.equal(
-    resolveItemUrl(quiz),
+    resolveItemUrl({ ...quiz, pageUrl: frozen }),
     'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1488060444'
   );
-  // 考试同样原样打开（新路由的分类在 path 里，不由 hash 决定）
   assert.equal(
-    resolveItemUrl({ ...quiz, type: 'exam' }),
-    'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1488060444'
+    resolveItemUrl({ ...quiz, pageUrl: frozen, type: 'exam' }),
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/exams?tid=1488060444'
   );
-  // /learn/{id}/{section} 是新路由的镜像写法，同样不动
+  // 冻结在 assessments 上、点的是考试 → 仍然要换到 exams
   assert.equal(
-    applyLearnHashRoute('https://www.icourse163.org/learn/NEU-1002822009/assessments?tid=1', '/learn/testlist'),
+    resolveItemUrl({ ...quiz, type: 'exam', pageUrl: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1' }),
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/exams?tid=1'
+  );
+  // /learn/{id}/{section} 是新路由的镜像写法，同样按类型换栏目
+  assert.equal(
+    resolveItemUrl({ ...quiz, pageUrl: 'https://www.icourse163.org/learn/NEU-1002822009/content?tid=1' }),
     'https://www.icourse163.org/learn/NEU-1002822009/assessments?tid=1'
+  );
+  // 冻结的地址可能比一层更深（…/content-unit/{id}）→ 收敛成目标栏目
+  assert.equal(
+    resolveItemUrl({ ...quiz, pageUrl: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/content-unit/abc123?tid=1' }),
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1'
+  );
+  // 旧 hash 不会被带到新路由上
+  assert.equal(
+    resolveItemUrl({ ...quiz, pageUrl: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/content?tid=1#/learn/testlist' }),
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1'
+  );
+});
+
+test('sectionForType / hashRouteForType map the two item families', () => {
+  assert.equal(sectionForType('exam'), 'exams');
+  assert.equal(sectionForType('quiz'), 'assessments');
+  assert.equal(sectionForType('homework'), 'assessments');
+  assert.equal(sectionForType(undefined), 'assessments');
+  assert.equal(hashRouteForType('exam'), '/learn/examlist');
+  assert.equal(hashRouteForType('homework'), '/learn/testlist');
+  // 临时代理页用的就是这条：只需要一个能跑 content script 的栏目页
+  assert.equal(
+    applyLearnRoute('https://www.icourse163.org/mooc/learn/BIT-1/content?tid=2', 'quiz'),
+    'https://www.icourse163.org/mooc/learn/BIT-1/assessments?tid=2'
+  );
+  assert.equal(
+    applyLearnRoute('https://www.icourse163.org/learn/BIT-1?tid=2#/learn/content', 'quiz'),
+    'https://www.icourse163.org/learn/BIT-1?tid=2#/learn/testlist'
   );
 });
 

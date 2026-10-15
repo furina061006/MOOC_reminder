@@ -537,9 +537,14 @@ function sortItemsByDeadline(items) {
 
 // Where clicking an item should take you: its own page, else the Course record's
 // frozen route (items stored before the route was captured have none of their
-// own), else a reconstructed course learn URL. Two route families must both keep
-// working: the legacy /learn/… + `#/learn/…` hash route, and the new
-// /mooc/learn/{id}/{section} route whose section lives in the path.
+// own), else a reconstructed course learn URL.
+//
+// 两族路由都要落到与条目类型相符的栏目上：
+//   旧路由（/learn/…、/spoc/learn/…）：栏目在 `#/learn/…` hash 里 → 重写 hash
+//     （测验/作业 testlist、考试 examlist）；
+//   新路由（/mooc/learn/{id}/{section}，镜像 /learn/{id}/{section}）：栏目在
+//     **path** 里 → 替换成对应栏目（测验/作业 assessments、考试 exams）。冻结下来
+//     的地址常常是 …/content，对作业条目来说是错的栏目。
 //
 // 与 src/shared/item-url.js 保持一致（那份是 SW 通知点击用的）——两处必须同改。
 function hasPathSection(pageUrl) {
@@ -549,12 +554,30 @@ function hasPathSection(pageUrl) {
   } catch { return false; }
 }
 
-function applyLearnHashRoute(pageUrl, route) {
-  // 新路由的栏目在 path 里，再挂旧 SPA 的 hash 路由没有意义 → 原样打开
-  if (hasPathSection(pageUrl)) return pageUrl;
+function sectionForType(itemType) {
+  return itemType === 'exam' ? 'exams' : 'assessments';
+}
+
+function hashRouteForType(itemType) {
+  return itemType === 'exam' ? '/learn/examlist' : '/learn/testlist';
+}
+
+function applyLearnRoute(pageUrl, itemType) {
+  if (hasPathSection(pageUrl)) {
+    var url = new URL(pageUrl);
+    // 课程 key 之后的路径全部收敛成我们要的那个栏目（冻结的地址可能更深，
+    // 如 …/content-unit/{id}）
+    url.pathname = url.pathname.replace(
+      /^(\/(?:(?:mooc|spoc)\/)?learn\/[^/?#]+)\/.*$/,
+      '$1/' + sectionForType(itemType)
+    );
+    url.hash = '';
+    return url.toString();
+  }
+  var hash = '#' + hashRouteForType(itemType);
   var hashIdx = pageUrl.indexOf('#');
-  if (hashIdx >= 0) return pageUrl.slice(0, hashIdx) + '#' + route;
-  return pageUrl + '#' + route;
+  if (hashIdx >= 0) return pageUrl.slice(0, hashIdx) + hash;
+  return pageUrl + hash;
 }
 
 function resolveItemUrl(item, courseType, coursePageUrl) {
@@ -563,10 +586,9 @@ function resolveItemUrl(item, courseType, coursePageUrl) {
   var base = item.courseId && item.termId
     ? (type === 'spoc' ? 'https://www.icourse163.org/spoc/learn/' : 'https://www.icourse163.org/learn/') + item.courseId + '?tid=' + item.termId
     : null;
-  var route = item.type === 'exam' ? '/learn/examlist' : '/learn/testlist';
   var pageUrl = item.pageUrl || coursePageUrl || '';
-  if (pageUrl) return applyLearnHashRoute(pageUrl, route);
-  if (base) return base + '#' + route;
+  if (pageUrl) return applyLearnRoute(pageUrl, item.type);
+  if (base) return base + '#' + hashRouteForType(item.type);
   return null;
 }
 

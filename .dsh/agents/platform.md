@@ -6,7 +6,7 @@
 
 ### URL 模式
 - MOOC 课程（旧路径）: `https://www.icourse163.org/learn/{school}-{courseId}?tid={termId}#/learn/content`
-- MOOC 课程（2026-10 起）: `https://www.icourse163.org/mooc/learn/{school}-{courseId}?tid={termId}` —— 平台更新架构后普通课程页换了路径，且会把栏目放进**网址路径**（如 `/mooc/learn/{courseId}/assessments`）
+- MOOC 课程（2026-10 起）: `https://www.icourse163.org/mooc/learn/{school}-{courseId}/{栏目}?tid={termId}` —— 平台更新架构后普通课程页换了路径，**栏目在网址路径里**：`assessments` = 测验 / 作业，`exams` = 考试（`content` 等是课程内容页）。`/learn/{courseId}/{栏目}` 是同一套页面的镜像写法
 - SPOC 课程: `https://www.icourse163.org/spoc/learn/{school}-{courseId}?tid={termId}#/learn/content`（**未随普通课程迁移**）
 - Hash 路由: `#/learn/content`, `#/learn/quiz`, `#/learn/exam` 等
 
