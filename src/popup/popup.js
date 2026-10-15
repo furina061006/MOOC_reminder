@@ -535,32 +535,72 @@ function sortItemsByDeadline(items) {
   return (Array.isArray(items) ? items.slice() : []).sort((a, b) => deadlineMs(a) - deadlineMs(b));
 }
 
-// Where clicking an item should take you: its own page, else a reconstructed
-// course learn URL (API-discovered items may not carry a pageUrl). SPOC courses
-// live under /spoc/learn/, so the course type must be supplied by the caller.
-function resolveItemUrl(item, courseType) {
+// Where clicking an item should take you: its own page, else the Course record's
+// frozen route (items stored before the route was captured have none of their
+// own), else a reconstructed course learn URL.
+//
+// 两族路由都要落到与条目类型相符的栏目上：
+//   旧路由（/learn/…、/spoc/learn/…）：栏目在 `#/learn/…` hash 里 → 重写 hash
+//     （测验/作业 testlist、考试 examlist）；
+//   新路由（/mooc/learn/{id}/{section}，镜像 /learn/{id}/{section}）：栏目在
+//     **path** 里 → 替换成对应栏目（测验/作业 assessments、考试 exams）。冻结下来
+//     的地址常常是 …/content，对作业条目来说是错的栏目。
+//
+// 与 src/shared/item-url.js 保持一致（那份是 SW 通知点击用的）——两处必须同改。
+function hasPathSection(pageUrl) {
+  try {
+    var match = new URL(pageUrl).pathname.match(/^\/(?:(?:mooc|spoc)\/)?learn\/[^/?#]+(\/.+)?$/);
+    return !!(match && match[1]);
+  } catch { return false; }
+}
+
+function sectionForType(itemType) {
+  return itemType === 'exam' ? 'exams' : 'assessments';
+}
+
+function hashRouteForType(itemType) {
+  return itemType === 'exam' ? '/learn/examlist' : '/learn/testlist';
+}
+
+function applyLearnRoute(pageUrl, itemType) {
+  if (hasPathSection(pageUrl)) {
+    var url = new URL(pageUrl);
+    // 课程 key 之后的路径全部收敛成我们要的那个栏目（冻结的地址可能更深，
+    // 如 …/content-unit/{id}）
+    url.pathname = url.pathname.replace(
+      /^(\/(?:(?:mooc|spoc)\/)?learn\/[^/?#]+)\/.*$/,
+      '$1/' + sectionForType(itemType)
+    );
+    url.hash = '';
+    return url.toString();
+  }
+  var hash = '#' + hashRouteForType(itemType);
+  var hashIdx = pageUrl.indexOf('#');
+  if (hashIdx >= 0) return pageUrl.slice(0, hashIdx) + hash;
+  return pageUrl + hash;
+}
+
+function resolveItemUrl(item, courseType, coursePageUrl) {
   if (!item) return null;
   var type = courseType || item.courseType || '';
   var base = item.courseId && item.termId
     ? (type === 'spoc' ? 'https://www.icourse163.org/spoc/learn/' : 'https://www.icourse163.org/learn/') + item.courseId + '?tid=' + item.termId
     : null;
-  // pageUrl 可能有错误的 hash（如 /learn/content），按类型修正
-  var route = item.type === 'exam' ? '/learn/examlist' : '/learn/testlist';
-  if (item.pageUrl) {
-    // 如果 pageUrl 的 hash 不匹配类型，修正它
-    var hashIdx = item.pageUrl.indexOf('#');
-    if (hashIdx >= 0) return item.pageUrl.slice(0, hashIdx) + '#' + route;
-    return item.pageUrl + '#' + route;
-  }
-  if (base) return base + '#' + route;
+  var pageUrl = item.pageUrl || coursePageUrl || '';
+  if (pageUrl) return applyLearnRoute(pageUrl, item.type);
+  if (base) return base + '#' + hashRouteForType(item.type);
   return null;
 }
 
 // Course metadata lookup so items stored before courseType was persisted still
 // resolve to the right (SPOC vs normal) route prefix.
+function courseRecordFor(courseId) {
+  if (!courseId || !Array.isArray(state.courses)) return null;
+  return state.courses.find(function (c) { return c && c.courseId === courseId; }) || null;
+}
+
 function courseTypeFor(courseId) {
-  if (!courseId || !Array.isArray(state.courses)) return '';
-  var course = state.courses.find(function (c) { return c && c.courseId === courseId; });
+  var course = courseRecordFor(courseId);
   if (!course) return '';
   // activeTermId is written only from a genuine SPOC page (COURSE_UPDATE), so it
   // outranks courseType: course-discovery labels every href without /spoc/ as
@@ -732,7 +772,8 @@ function createHomeworkItem(item) {
   content.appendChild(meta);
 
   // Clicking the item (anywhere but the checkbox) opens its page.
-  const url = resolveItemUrl(item, courseTypeFor(item.courseId));
+  var courseRecord = courseRecordFor(item.courseId);
+  const url = resolveItemUrl(item, courseTypeFor(item.courseId), courseRecord && courseRecord.pageUrl);
   if (url) {
     content.classList.add('clickable');
     content.setAttribute('role', 'button');

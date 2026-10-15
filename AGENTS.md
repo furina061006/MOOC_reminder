@@ -32,6 +32,7 @@ Chrome / Edge（Chromium 内核）Manifest V3 扩展，自动追踪中国大学M
 | 改用户能看到的文档 / 文案 | [`docs/`](docs/)（功能、FAQ、隐私、贡献者）+ 必要时 `.dsh/logs/changelog.md` |
 | 写 / 改 Markdown 文档（加粗、引号、行内代码等写法） | [`.dsh/agents/writing.md`](.dsh/agents/writing.md) |
 | 想知道「为什么这么改」「踩过什么坑」 | [`.dsh/logs/README.md`](.dsh/logs/README.md)（日志索引；用户可感知的变化在 `changelog.md`） |
+| 排查「整个扩展在某个页面上失效」（注入 / 挂载 / 路由 / 显隐）、想借鉴历史教训 | [`.dsh/agents/ginsmooc.md`](.dsh/agents/ginsmooc.md)（**教训文档**，非本项目功能事实） |
 
 ## 知识管理约定（每次会话遵守）
 

@@ -1,7 +1,94 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveItemUrl } from '../../src/shared/item-url.js';
+import { resolveItemUrl, applyLearnRoute, hasPathSection, sectionForType, hashRouteForType } from '../../src/shared/item-url.js';
+
+test('a new-route pageUrl is re-pointed at the section that matches the item type', () => {
+  const quiz = { courseId: 'NEU-1002822009', termId: '1488060444', type: 'quiz' };
+  // 2026-10 起普通课程页换到 /mooc/learn/{id}/{section}，栏目在 path 里：
+  // 测验/作业 = assessments，考试 = exams。冻结下来的地址常常是 …/content，
+  // 对作业条目来说是错的栏目，必须换掉。
+  const frozen = 'https://www.icourse163.org/mooc/learn/NEU-1002822009/content?tid=1488060444';
+  assert.equal(
+    resolveItemUrl({ ...quiz, pageUrl: frozen }),
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1488060444'
+  );
+  assert.equal(
+    resolveItemUrl({ ...quiz, pageUrl: frozen, type: 'exam' }),
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/exams?tid=1488060444'
+  );
+  // 冻结在 assessments 上、点的是考试 → 仍然要换到 exams
+  assert.equal(
+    resolveItemUrl({ ...quiz, type: 'exam', pageUrl: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1' }),
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/exams?tid=1'
+  );
+  // /learn/{id}/{section} 是新路由的镜像写法，同样按类型换栏目
+  assert.equal(
+    resolveItemUrl({ ...quiz, pageUrl: 'https://www.icourse163.org/learn/NEU-1002822009/content?tid=1' }),
+    'https://www.icourse163.org/learn/NEU-1002822009/assessments?tid=1'
+  );
+  // 冻结的地址可能比一层更深（…/content-unit/{id}）→ 收敛成目标栏目
+  assert.equal(
+    resolveItemUrl({ ...quiz, pageUrl: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/content-unit/abc123?tid=1' }),
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1'
+  );
+  // 旧 hash 不会被带到新路由上
+  assert.equal(
+    resolveItemUrl({ ...quiz, pageUrl: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/content?tid=1#/learn/testlist' }),
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1'
+  );
+});
+
+test('sectionForType / hashRouteForType map the two item families', () => {
+  assert.equal(sectionForType('exam'), 'exams');
+  assert.equal(sectionForType('quiz'), 'assessments');
+  assert.equal(sectionForType('homework'), 'assessments');
+  assert.equal(sectionForType(undefined), 'assessments');
+  assert.equal(hashRouteForType('exam'), '/learn/examlist');
+  assert.equal(hashRouteForType('homework'), '/learn/testlist');
+  // 临时代理页用的就是这条：只需要一个能跑 content script 的栏目页
+  assert.equal(
+    applyLearnRoute('https://www.icourse163.org/mooc/learn/BIT-1/content?tid=2', 'quiz'),
+    'https://www.icourse163.org/mooc/learn/BIT-1/assessments?tid=2'
+  );
+  assert.equal(
+    applyLearnRoute('https://www.icourse163.org/learn/BIT-1?tid=2#/learn/content', 'quiz'),
+    'https://www.icourse163.org/learn/BIT-1?tid=2#/learn/testlist'
+  );
+});
+
+test('hasPathSection only matches a learn URL with a section segment', () => {
+  assert.equal(hasPathSection('https://www.icourse163.org/mooc/learn/BIT-1/assessments?tid=2'), true);
+  assert.equal(hasPathSection('https://www.icourse163.org/learn/BIT-1/exams?tid=2'), true);
+  assert.equal(hasPathSection('https://www.icourse163.org/mooc/learn/BIT-1?tid=2'), false);
+  assert.equal(hasPathSection('https://www.icourse163.org/learn/BIT-1?tid=2#/learn/testlist'), false);
+  assert.equal(hasPathSection('https://www.icourse163.org/spoc/learn/BIT-1?tid=2'), false);
+  assert.equal(hasPathSection('https://www.icourse163.org/home.htm'), false);
+  assert.equal(hasPathSection(''), false);
+});
+
+test('coursePageUrl is the fallback for items stored before the route was captured', () => {
+  // 老条目自身没有 pageUrl，但课程记录里有「用户真实打开过」的路由地址。
+  const item = { courseId: 'BIT-268001', termId: '1460270441', type: 'homework' };
+  assert.equal(
+    resolveItemUrl(item, 'mooc', 'https://www.icourse163.org/mooc/learn/BIT-268001/assessments?tid=1460270441'),
+    'https://www.icourse163.org/mooc/learn/BIT-268001/assessments?tid=1460270441'
+  );
+  // 旧路由课程仍然落到旧地址 + 类型对应的 hash
+  assert.equal(
+    resolveItemUrl(item, 'mooc', 'https://www.icourse163.org/learn/BIT-268001?tid=1460270441'),
+    'https://www.icourse163.org/learn/BIT-268001?tid=1460270441#/learn/testlist'
+  );
+  // 条目自己的 pageUrl 优先于课程记录的兜底值
+  assert.equal(
+    resolveItemUrl(
+      { ...item, pageUrl: 'https://www.icourse163.org/learn/BIT-268001?tid=1460270441' },
+      'mooc',
+      'https://www.icourse163.org/mooc/learn/BIT-268001/assessments?tid=1460270441'
+    ),
+    'https://www.icourse163.org/learn/BIT-268001?tid=1460270441#/learn/testlist'
+  );
+});
 
 test('resolveItemUrl reuses pageUrl but fixes a mismatched hash route', () => {
   const quiz = { pageUrl: 'https://www.icourse163.org/learn/BIT-268001?tid=1#/learn/content', type: 'quiz' };

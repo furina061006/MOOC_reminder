@@ -31,6 +31,21 @@ test('parseCourseUrl handles normal learn URLs', () => {
   assert.equal(meta.isSpoc, false);
 });
 
+test('parseCourseUrl handles the 2026-10 /mooc/learn/ MOOC route', () => {
+  // 普通 MOOC 课程页从 /learn/ 搬到了 /mooc/learn/；课程 key 仍是 `learn/` 之后的
+  // 那一段，tid 仍在 query 里。新版 shell 还会再带一个 section（如 /assessments）。
+  const meta = parseCourseUrl('https://www.icourse163.org/mooc/learn/BIT-268001?tid=1460270441#/learn/testlist');
+  assert.equal(meta.courseId, 'BIT-268001');
+  assert.equal(meta.school, 'BIT');
+  assert.equal(meta.termId, '1460270441');
+  assert.equal(meta.isSpoc, false, '/mooc/learn/ is a MOOC route, not SPOC');
+
+  const withSection = parseCourseUrl('https://www.icourse163.org/mooc/learn/BIT-268001/assessments?tid=1460270441');
+  assert.equal(withSection.courseId, 'BIT-268001');
+  assert.equal(withSection.termId, '1460270441');
+  assert.equal(withSection.isSpoc, false);
+});
+
 test('parseCourseUrl handles SPOC URLs', () => {
   const meta = parseCourseUrl('https://www.icourse163.org/spoc/learn/BIT-268001?tid=1460270441#/learn/quiz');
   assert.equal(meta.courseId, 'BIT-268001');

@@ -39,8 +39,30 @@ test('manifest registers the course-discovery content script site-wide', () => {
   assert.ok(main);
   assert.deepEqual(main.matches, [
     'https://www.icourse163.org/learn/*',
+    // MOOC course pages moved to /mooc/learn/ in 2026-10; the SPOC route did not move.
+    'https://www.icourse163.org/mooc/learn/*',
     'https://www.icourse163.org/spoc/learn/*'
   ]);
+  // The page-context API hook must be injected on exactly the same routes: without
+  // it the SPOC real-termId bridge and the page-hook fast path silently disappear.
+  const xhrHook = scripts.find(s => (s.js || []).includes('src/content/xhr-hook.js'));
+  assert.deepEqual(xhrHook.matches, main.matches);
+});
+
+test('every learn route is both injected and messaged (2026-10 /mooc/learn/ migration)', async () => {
+  const sw = await readFile(new URL('../../src/background/service-worker.js', import.meta.url), 'utf8');
+  const block = /const LEARN_TAB_URLS = \[([\s\S]*?)\]/.exec(sw);
+  const patterns = [...block[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+  // Guards the coupling in the other direction: the manifest test above only proves
+  // LEARN_TAB_URLS ⊆ main.matches, so a new route added to the manifest but not to
+  // the SW (or vice versa) would otherwise go unnoticed — and a tab the SW never
+  // queries can never serve a scrape, it just silently falls back to the proxy.
+  for (const route of ['learn', 'mooc/learn', 'spoc/learn']) {
+    assert.ok(
+      patterns.includes(`https://www.icourse163.org/${route}/*`),
+      `LEARN_TAB_URLS must query the ${route} route`
+    );
+  }
 });
 
 test('every learn tab the SW messages is a page main.js actually runs on', async () => {

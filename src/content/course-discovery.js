@@ -30,10 +30,22 @@
   //     这里同步应答会抢走 main.js 的「自报本页身份」，让那条通路（清空数据后唯一的
   //     自救路径）失效。所以这里必须**完全不参与**学习页，连探测都不回。
   // 本页自己的课程由 main.js 自报；其它课程靠「我的课程」页这类锚点最全的页面采集。
+  //
+  // 这个正则要覆盖三种学习路由：/learn/{key}（旧 MOOC 路由）、/mooc/learn/{key}
+  // （2026-10 起的 MOOC 新路由，可能还带 /assessments 之类的 section）、
+  // /spoc/learn/{key}。三者都必须由 main.js 负责——manifest 也把 main.js 注入到
+  // 这三个前缀，所以「学习页交给 main.js」这个约定才成立。
+  // 注：`mooc/` 这一支与旧写法**行为等价**（`/learn/` 本来就能匹配 `/mooc/learn/`），
+  // 写出来是为了让「哪些页面算学习页」在这里自证完整——它一旦漏掉某个前缀，
+  // 页面就会既没有 main.js、又因为这里返回 true 而连探测都不回，整页静默失灵。
   function isLearnPage() {
-    try { return /\/(?:spoc\/)?learn\//i.test(location.pathname); } catch { return false; }
+    try { return /\/(?:mooc\/|spoc\/)?learn\//i.test(location.pathname); } catch { return false; }
   }
 
+  // 这个正则不必列出 `mooc/`：它匹配的是 `/learn/` 这一段，而课程 key 就是它
+  // 后面那一段，因此 /learn/{key}、/mooc/learn/{key}[/{section}]、/spoc/learn/{key}
+  // 三种路由天然都认。`isSpoc` 仍只看前缀——只有 /spoc/learn/ 是 SPOC。
+  // 与 src/shared/icourse163-api.js 的同名函数保持一致。
   function parseLearnHref(href) {
     if (!href || typeof href !== 'string') return null;
     var m = href.match(/\/(?:spoc\/)?learn\/([^/?#]+)/i);

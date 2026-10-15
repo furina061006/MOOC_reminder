@@ -46,8 +46,13 @@ export function buildTermDtoRequest(csrfKey, termId) {
 }
 
 /**
- * Parse a /learn/ or /spoc/learn/ href into the canonical identity used
- * everywhere else: { schoolCourseId: "BIT-268001", termId: "1460270441" }.
+ * Parse a learn href into the canonical identity used everywhere else:
+ * { schoolCourseId: "BIT-268001", termId: "1460270441" }.
+ *
+ * The course key is the segment right after `learn/`, which is why one pattern
+ * covers every route the platform has served: /learn/{key} (legacy MOOC),
+ * /mooc/learn/{key}(/{section}) (MOOC route since 2026-10) and /spoc/learn/{key}.
+ * `isSpoc` stays a pure prefix test — only /spoc/learn/ is SPOC.
  * Returns null if the href isn't a learn link with a tid.
  */
 export function parseLearnHref(href) {

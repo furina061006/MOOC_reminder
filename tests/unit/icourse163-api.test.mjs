@@ -21,6 +21,19 @@ test('parseLearnHref handles absolute SPOC links', () => {
   assert.equal(meta.isSpoc, true);
 });
 
+test('parseLearnHref handles the 2026-10 /mooc/learn/ MOOC links', () => {
+  // 「我的课程」等页面的锚点现在长这样；课程 key 仍是 `learn/` 之后那段，
+  // 新版 shell 还会再带 section（/assessments 之类），isSpoc 必须仍是 false。
+  assert.deepEqual(
+    parseLearnHref('https://www.icourse163.org/mooc/learn/BIT-268001?tid=1460270441#/learn/testlist'),
+    { schoolCourseId: 'BIT-268001', termId: '1460270441', isSpoc: false }
+  );
+  assert.deepEqual(
+    parseLearnHref('/mooc/learn/BIT-268001/assessments?tid=1460270441'),
+    { schoolCourseId: 'BIT-268001', termId: '1460270441', isSpoc: false }
+  );
+});
+
 test('parseLearnHref rejects non-course links and links without tid', () => {
   assert.equal(parseLearnHref('/about.htm'), null);
   assert.equal(parseLearnHref('/learn/explore'), null);          // no dash, no tid

@@ -1,7 +1,7 @@
 /**
  * Content Script — MOOC Reminder
  *
- * Injected into icourse163.org/learn/* and /spoc/learn/* pages.
+ * Injected into icourse163.org/learn/*, /mooc/learn/* and /spoc/learn/* pages.
  * Responsibilities:
  *   1. Handle BATCH_API_FETCH requests from background SW
  *   2. Page-context API proxy (same-origin XHR bypasses CSRF origin check)
@@ -20,6 +20,11 @@
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  // Course key = the path segment right after `learn/`, on every route the
+  // platform has served: /learn/{key}, /mooc/learn/{key}[/{section}] (2026-10
+  // MOOC shell), /spoc/learn/{key}. `isSpoc` stays a pure prefix test — the SPOC
+  // route did not move, so a /mooc/learn/ page is a MOOC page and must keep being
+  // registered as one (invariant 9: only a real SPOC page may prove SPOC).
   function parseCourseUrl(url) {
     try {
       const urlObj = new URL(url);
@@ -72,7 +77,8 @@
    * `data-mooc-real-termid` bridge attribute is NOT proof: it is injected on
    * every learn page and a MOOC page exposes `window.moocTermDto` too, so using
    * its presence here would register a MOOC course as SPOC and send its clicks
-   * to /spoc/learn/.
+   * to /spoc/learn/. `/mooc/learn/` (the 2026-10 MOOC route) is likewise NOT
+   * SPOC — only `/spoc/learn/` is.
    */
   async function reportOwnCourseIdentity() {
     var meta = parseCourseUrl(window.location.href);
@@ -91,7 +97,13 @@
           termId: meta.termId,
           courseName: courseName,
           courseType: isSpoc ? 'spoc' : 'mooc'
-        }]
+        }],
+        // The route this page is actually on (/learn/… or /mooc/learn/…). The SW
+        // freezes it as course.pageUrl, so clicking the course later reopens the
+        // same route family the user really uses: old courses keep the old URL,
+        // new-route courses get the new one. The SW only accepts it from a real
+        // course page and only after isIcCourseLearnUrl validation.
+        routeUrl: window.location.href
       });
     } catch { /* SW asleep — the scrape that asked for this is retried by the user */ }
 

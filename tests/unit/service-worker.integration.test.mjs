@@ -1113,6 +1113,100 @@ test('COURSE_UPDATE rejects a non-learn routeUrl instead of storing it', async (
   assert.equal(spocCourseRecord().pageUrl, undefined);
 });
 
+test('a 2026-10 /mooc/learn/ tab counts as a course page, so its self-report is authoritative', async () => {
+  // isIcCourseLearnUrl 决定 COURSE_LINKS 是「课程页自报」（名字权威、可改名）还是
+  // 「锚点弱信号」（只能填空名字）。普通 MOOC 的课程页搬到 /mooc/learn/ 之后，这条
+  // 判定必须仍然成立——否则新前缀页面报上来的课程名永远纠正不了。
+  seedCourses([{ courseId: 'BIT-268001', termId: '1460270441', courseName: '某个章节名', courseType: 'mooc' }]);
+  const sender = {
+    tab: { id: 12, url: 'https://www.icourse163.org/mooc/learn/BIT-268001?tid=1460270441#/learn/testlist' }
+  };
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'BIT-268001', termId: '1460270441', courseName: '数据结构', courseType: 'mooc' }]
+  }, sender);
+  const record = (h.storageData.get('courses') || []).find(c => c && c.courseId === 'BIT-268001');
+  assert.equal(record.courseName, '数据结构', 'a course-page self-report may correct the name');
+});
+
+test('a self-reported route is frozen, and old/new route reports stay one course', async () => {
+  // 「新路由的课跳新地址，旧路由的课跳旧地址」靠的就是这里：课程页自报它此刻所在的
+  // 地址，SW 冻结成 pageUrl。同时课程记录仍只按 courseId 建索引——同一门课先后以
+  // 新旧两种路由上报，必须还是**一条**记录（否则 popup 会出现两门课、条目重复）。
+  seedCourses([]);
+  const oldSender = { tab: { id: 21, url: 'https://www.icourse163.org/learn/NEU-1002822009?tid=1488060444#/learn/testlist' } };
+  const newSender = { tab: { id: 22, url: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1488060444' } };
+
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'NEU-1002822009', termId: '1488060444', courseName: '概率论与数理统计', courseType: 'mooc' }],
+    routeUrl: 'https://www.icourse163.org/learn/NEU-1002822009?tid=1488060444#/learn/testlist'
+  }, oldSender);
+  let courses = h.storageData.get('courses') || [];
+  assert.equal(courses.length, 1);
+  assert.equal(courses[0].pageUrl, 'https://www.icourse163.org/learn/NEU-1002822009?tid=1488060444#/learn/testlist');
+
+  // 同一门课换到新路由打开：还是一条记录，route 更新为新地址
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'NEU-1002822009', termId: '1488060444', courseName: '概率论与数理统计', courseType: 'mooc' }],
+    routeUrl: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1488060444'
+  }, newSender);
+  courses = h.storageData.get('courses') || [];
+  assert.equal(courses.filter(c => c && c.courseId === 'NEU-1002822009').length, 1, 'one record per courseId, regardless of route');
+  assert.equal(courses[0].pageUrl, 'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1488060444');
+  assert.equal(courses[0].termId, '1488060444');
+});
+
+test('only a real course page may freeze a route', async () => {
+  // 锚点采集页（首页/我的课程）与插件的临时代理页都不得写 pageUrl：
+  // 前者地址不是课程路由，后者的地址是插件自己拼的旧路由，都不是用户的选择。
+  seedCourses([]);
+  const homeSender = { tab: { id: 23, url: 'https://www.icourse163.org/' } };
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'BIT-268001', termId: '1460270441', courseName: '数据结构', courseType: 'mooc' }],
+    routeUrl: 'https://www.icourse163.org/mooc/learn/BIT-268001/assessments?tid=1460270441'
+  }, homeSender);
+  let record = (h.storageData.get('courses') || []).find(c => c && c.courseId === 'BIT-268001');
+  assert.equal(record.pageUrl, undefined, 'a harvested anchor page cannot freeze a route');
+
+  // 临时代理页：SW 自己拥有这个 tab，它的自报不能覆盖用户真实打开过的路由
+  h.storageData.set('temporary_proxy_job', {
+    kind: 'temporary-proxy', id: 'proxy-test-1', tabId: 31, temporary: true, phase: 'waiting_ready'
+  });
+  const proxySender = { tab: { id: 31, url: 'https://www.icourse163.org/learn/BIT-268001?tid=1460270441#/learn/testlist' } };
+  await sendMessage({
+    type: 'COURSE_LINKS',
+    courses: [{ courseId: 'BIT-268001', termId: '1460270441', courseName: '数据结构', courseType: 'mooc' }],
+    routeUrl: 'https://www.icourse163.org/learn/BIT-268001?tid=1460270441#/learn/testlist'
+  }, proxySender);
+  record = (h.storageData.get('courses') || []).find(c => c && c.courseId === 'BIT-268001');
+  assert.equal(record.pageUrl, undefined, 'the temporary proxy must not freeze its own legacy URL');
+  h.storageData.delete('temporary_proxy_job');
+});
+
+test('notification click prefers the frozen new-route URL over the legacy fallback', async () => {
+  h.notificationsCreated.clear();
+  h.tabsCreated.length = 0;
+  h.storageData.delete('temporary_proxy_job');
+  seedCourses([{
+    courseId: 'NEU-1002822009', termId: '1488060444', courseName: '概率论与数理统计', courseType: 'mooc',
+    pageUrl: 'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1488060444'
+  }]);
+  // 老条目自身没有 pageUrl —— 兜底用的是课程记录里冻结的那条路由
+  seedItem({ uid: 'NEU-1002822009_tid1488060444_ch1_le2_hw5', courseId: 'NEU-1002822009', termId: '1488060444', pageUrl: '' });
+
+  const id = `mooc-reminder:${encodeURIComponent('NEU-1002822009_tid1488060444_ch1_le2_hw5')}:due_24h`;
+  await fireClick(id);
+
+  assert.equal(h.tabsCreated.length, 1);
+  assert.equal(
+    h.tabsCreated[0].url,
+    'https://www.icourse163.org/mooc/learn/NEU-1002822009/assessments?tid=1488060444'
+  );
+});
+
 // ── near-miss diagnostics in the RUNTIME copy ────────────────────────────
 // The SPOC bug happened because the inlined runtime extractor had drifted from
 // the tested shared copy. This pins the near-miss reporting on the copy that
