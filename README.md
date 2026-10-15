@@ -17,7 +17,7 @@
 3. 点击左上角「加载已解压的扩展」。
 4. 选择解压出来的 `MOOC_reminder` 文件夹。
 5. 确定启用后，回到浏览器主页面，点击右上角的拼图（拓展）图标，将本插件固定到工具栏，以便观看`未完成`和`即将截止`的作业个数.
-  <img src="https://raw.githubusercontent.com/furina061006/MOOC_reminder/main/docs/images/extension.png" alt="插件固定" width="720">
+  <img src="https://raw.githubusercontent.com/furina061006/MOOC_reminder/main/docs/images/extension.png" alt="插件固定" width="320">
 
 > [!WARNING]
 > 本插件未上架 Chrome 网上应用店，需通过「开发者模式」加载；也正因为如此，**Chrome 不会自动更新它**。
