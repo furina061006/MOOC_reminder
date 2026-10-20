@@ -110,3 +110,11 @@ API 提供 `contentType` 字段作为类型标识，优先级高于名字正则�
 **注意**：部分 SPOC 课程的数据是反过来的——**没有 `node.test`，所有字段平铺在节点顶层**（如大学物理使用 `node.type` 而非 `node.contentType`）。此时顶层优先规则自然生效，`apiDetectPhase` 也通过 `node.contentType` 后备来兼容这种结构。
 
 详细实现见 `.dsh/logs/2026-06-28-completion-logic.md`。
+
+## 同名条目的去重（只在同一章内生效）
+
+提取的最后一步会合并「名字几乎相同且共前缀」的噪音项（如「期末测试题」vs「期末测试」，长度差 ≤2）。**合并只在同一个 `chapterId + lessonId` 容器内进行**，跨章节的同名条目必须保留；没有 `chapterId` 的节点不参与合并（宁可留重复，也不丢真实条目）。
+
+2026-10-21 的真实案例：`NEU-1002123005`「高级语言程序设计」（智慧慕课，`/mooc/learn/…/assessments?tid=1488158441`）把八周的作业都命名为「本周作业」、测验都叫「本周测验」。DTO 里 16 个节点**全部带 deadline**，旧的纯名字去重把后七周整批删掉，界面只剩 3 条（每章第一次出现的那个名字）。改为按容器合并后 16 条全部提取。
+
+两份拷贝同步：`src/shared/icourse163-api.js` 与 SW 内联的 `apiExtractHomework`（不变量 12）；`tests/unit/icourse163-api.test.mjs` 与 `tests/unit/service-worker.integration.test.mjs` 各有一条回归测试。

@@ -11,12 +11,13 @@
 | [`changelog.md`](changelog.md) | 面向用户的版本更新记录（可感知的新增 / 变更 / 修复） |
 | [`architecture.md`](architecture.md) | 2026-09-01 的完整架构快照 —— **历史存档**，现行事实见 [`../agents/`](../agents/) |
 
-## 按日期（共 28 篇）
+## 按日期（共 29 篇）
 
-### 2026-10（2 篇）
+### 2026-10（3 篇）
 
 | 日期 | 主题 |
 | --- | --- |
+| 2026-10-21 | [智慧慕课「只抓到几条」：同名去重跨章误删](2026-10-21-smart-mooc-same-name-dedup.md) |
 | 2026-10-19 | [v1.2.0 的 Release 晚了三天：裸 `git push` 不推 tag](2026-10-19-release-1.2.0-tag-not-pushed.md) |
 | 2026-10-15 | [支持普通 MOOC 的新路径 `/mooc/learn/`](2026-10-15-mooc-learn-prefix.md) |
 
