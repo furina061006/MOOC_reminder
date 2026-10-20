@@ -14,6 +14,8 @@
 
 **能力边界**：本扩展以「开发者模式」侧载，manifest 没有 `update_url`/`key`，**Chrome 永远不会自动更新它**，`chrome.runtime.requestUpdateCheck()` 也是空操作。所以这里只能做到「发现新版 → 通知 + 给出下载直链」，真正的更新由用户重新下载解压完成。若将来要真正的自动更新，只有两条路：上架 Chrome 网上应用店，或自建签名 CRX + `update.xml` 托管。
 
+**数据与扩展 ID（2026-10 补充）**：所有状态在 `chrome.storage.local`，按扩展 ID 隔离，存在浏览器 profile 的 `Local Extension Settings/<id>/`（LevelDB），**不在扩展目录里**。侧载扩展没有 `key` 时 ID 由**加载目录的绝对路径**派生：覆盖同一文件夹 = ID 不变 = 数据保留；换文件夹 / 改名 / 移动目录 = 新 ID = 数据看起来丢失；点「移除」= 卸载，Chrome 会清空该 ID 的 storage。所以所有面向用户的更新说明都必须是「覆盖原文件夹 + 重新加载」，设置页与 README/FAQ 三处口径一致。将来若要彻底消除路径依赖，可以加 manifest `key`，但那会让现有用户换一次 ID，必须先提供导出/导入。
+
 **版本来源**：仓库最新 GitHub Release（`api.github.com/.../releases/latest`）。Release 由 `.github/workflows/release.yml` 从 `v*` tag 生成，且该 workflow **强制 tag 与 `manifest.json` 的 version 一致**，所以 tag 可以放心当作「用户能下载到的版本」。tag 里非数字的内容（如 `1.0.0-beta`）一律判为「不是更新」，避免一直骚扰用户。
 
 **数据流**：
