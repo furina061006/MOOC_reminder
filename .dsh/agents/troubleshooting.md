@@ -91,6 +91,19 @@ hasSignal（有 deadline 或 分数）
    `window.moocTermDto`，2026-09 实测）。改为 DevTools → Network → 筛 `rpc` → 刷新页面 →
    找响应最大的请求 → Copy response，拿原始响应离线分析。
 
+### 只抓到几条，而且名字很通用（「本周作业」这类）
+
+症状：DTO 里节点数明显多于界面条数，而留下的名字是「本周作业 / 本周测验 / 本周测试」这种通用名。2026-10-21 的实例：智慧慕课 `NEU-1002123005`（`/mooc/learn/…/assessments?tid=1488158441`）八周共 16 条，界面只剩 3 条。
+
+根因：提取末尾的同名去重。平台按周复用同一个作业名，旧的纯名字比较把跨章节的同名条目当噪音删掉。已修：合并只在同一 `chapterId + lessonId` 容器内生效，见 [extraction.md](extraction.md) 的「同名条目的去重」。
+
+取证（不需要 popup）：
+
+1. 课程页 Console 复现 `getLastLearnedMocTermDto`（`termId` 取地址栏 `?tid=`），按章列出 `homeworks` / `quizs` 的 `name` / `deadline` / `totalScore`；
+2. 比较三个数：**节点总数 / 有信号 / 不同名字**。不同名字数 == 界面条数，就是命中。
+
+它和「类型门槛」一样表现为「少几条」，区别是**留下的条目名字重复度高**、且「有信号」数远大于界面数。不要因此去放宽 contentType 门槛。
+
 ### 两个操作性陷阱（先确认，再怀疑代码）
 
 1. **重载扩展不会给已打开的页面补注入 content script。** 在 `chrome://extensions` 点刷新后，

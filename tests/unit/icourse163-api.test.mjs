@@ -215,3 +215,43 @@ test('a node.test sub-object never becomes a second item', () => {
   assert.deepEqual(items.map((i) => i.title), ['第一章 测验']);
 });
 
+// ── cross-chapter same-name items (2026-10 智慧慕课) ───────────────────────
+// NEU-1002123005（高级语言程序设计，/mooc/learn/…/assessments）把八周的作业都叫
+// 「本周作业」、测验都叫「本周测验」。DTO 里 16 个节点全部带 deadline，但旧的纯名字
+// 去重把后七周整批删掉，界面只剩 3 条。同名不等于同一条 —— 不同章必须都保留。
+
+test('same-named assessments in different chapters are not deduped', () => {
+  const deadline = new Date('2026-10-12T23:59:00').getTime();
+  const chapters = [];
+  for (let w = 0; w < 8; w++) {
+    chapters.push({
+      id: 1252615054 + w, name: '第' + (w + 1) + '周', type: 'chapter',
+      lessons: [{ id: 9000 + w, name: '课时', type: 'lesson', units: [] }],
+      homeworks: [{ id: 1278713336 + w, name: '本周作业', contentType: 3, deadline, totalScore: 30 }],
+      quizs: [{ id: 1278713335 + w, name: '本周测验', contentType: 2, deadline, totalScore: 10 }]
+    });
+  }
+  const payload = { result: { mocTermDto: { chapters } } };
+
+  const items = extractHomeworkFromTermDto(payload, { courseId: 'NEU-1002123005', termId: '1488158441' });
+
+  assert.equal(items.length, 16, 'every week keeps its homework and quiz');
+  assert.equal(new Set(items.map((i) => i.chapterId)).size, 8);
+  assert.equal(items.filter((i) => i.title === '本周作业').length, 8);
+  assert.equal(items.filter((i) => i.title === '本周测验').length, 8);
+});
+
+test('near-duplicate names inside one chapter still collapse', () => {
+  const deadline = new Date('2026-10-12T23:59:00').getTime();
+  const dto = dtoWithUnits([
+    { id: 301, name: '期末测试', contentType: 2, test: { deadline } },
+    { id: 302, name: '期末测试题', contentType: 2, test: { deadline } }
+  ]);
+
+  const items = extractHomeworkFromTermDto(dto, { courseId: 'NEU-1', termId: '1' });
+
+  assert.equal(items.length, 1, 'the longer variant is noise, not a second assessment');
+  assert.equal(items[0].title, '期末测试');
+});
+
+

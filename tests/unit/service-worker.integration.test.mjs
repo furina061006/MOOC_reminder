@@ -1256,6 +1256,34 @@ test('the runtime extractor reports content-type near misses (copies stay in syn
   assert.match(line, /"contentType":"9"/);
 });
 
+// Same-name dedup must be scoped to one chapter in the RUNTIME copy too — the
+// 2026-10 智慧慕课 course names every week's homework 「本周作业」.
+test('the runtime extractor keeps same-named items from different chapters', async () => {
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('dismissed_completed_uids');
+  seedCourses([{ courseId: 'NEU-1002123005', termId: '1488158441', courseName: '高级语言程序设计', courseType: 'mooc' }]);
+
+  const deadline = Date.now() + 86400000;
+  const chapters = [];
+  for (let w = 0; w < 8; w++) {
+    chapters.push({
+      id: 1252615054 + w, name: '第' + (w + 1) + '周', type: 'chapter',
+      lessons: [{ id: 9000 + w, name: '课时', type: 'lesson', units: [] }],
+      homeworks: [{ id: 1278713336 + w, name: '本周作业', contentType: 3, deadline, totalScore: 30 }],
+      quizs: [{ id: 1278713335 + w, name: '本周测验', contentType: 2, deadline, totalScore: 10 }]
+    });
+  }
+
+  const res = await sendMessage({
+    type: 'COURSE_API_DATA',
+    course: { courseId: 'NEU-1002123005', termId: '1488158441', courseName: '高级语言程序设计', schoolName: '东北大学', courseType: 'mooc' },
+    rawData: { result: { mocTermDto: { chapters } } }
+  });
+
+  assert.equal(res.success, true);
+  assert.equal(res.itemCount, 16, 'the inline copy must not name-dedup across chapters');
+});
+
 // ── update check (backlog: 客户端插件提醒有更新) ──────────────────────────
 //
 // The running version in the harness stub is 1.0.0 (chrome.runtime.getManifest).

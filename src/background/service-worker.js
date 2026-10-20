@@ -2327,21 +2327,42 @@ function apiExtractHomework(input, course) {
       }
     }
   }
-  // 去重：名字几乎相同且共前缀的噪音项（如 "期末测试题" vs "期末测试"）
-  for (var i = out.length - 1; i >= 0; i--) {
-    var nameA = out[i].title || '';
-    for (var j = 0; j < i; j++) {
-      var nameB = out[j].title || '';
-      if (nameB.length > 0 && nameA.indexOf(nameB) === 0 && nameA.length - nameB.length <= 2) {
-        // nameA 是 nameB 的扩大版（如 "期末测试题" vs "期末测试"），去掉 nameA
-        out.splice(i, 1);
-        break;
+  // 去重：名字几乎相同且共前缀的噪音项（如 "期末测试题" vs "期末测试"）。
+  //
+  // 只能在**同一个 chapter + lesson 容器内**合并。2026-10 智慧慕课
+  // （NEU-1002123005 高级语言程序设计）把八周的作业都叫「本周作业」、测验都叫
+  // 「本周测验」：DTO 里 16 个节点全部带 deadline，纯名字比较把后七周整批删掉，
+  // 界面只剩 3 条。跨章节的同名条目是不同的作业，不能当噪音。
+  // 没有 chapterId 的节点不敢合并 —— 宁可留重复，也不丢真实条目。
+  const byContainer = new Map();
+  out.forEach((item) => {
+    if (!item.chapterId) return;
+    const key = item.chapterId + '|' + String(item.lessonId || '');
+    if (!byContainer.has(key)) byContainer.set(key, []);
+    byContainer.get(key).push(item);
+  });
+  const dropped = new Set();
+  byContainer.forEach((group) => {
+    if (group.length < 2) return;
+    // 从短到长：长名字若是某个短名字的扩大版（差 ≤2 字），丢掉长的那个。
+    const sorted = group.slice().sort((a, b) => a.title.length - b.title.length);
+    for (let i = 1; i < sorted.length; i++) {
+      const longer = sorted[i];
+      if (dropped.has(longer)) continue;
+      for (let j = 0; j < i; j++) {
+        const shorter = sorted[j];
+        if (dropped.has(shorter)) continue;
+        if (shorter.title && longer.title.indexOf(shorter.title) === 0 &&
+            longer.title.length - shorter.title.length <= 2) {
+          dropped.add(longer);
+          break;
+        }
       }
-      if (nameA.length > 0 && nameB.indexOf(nameA) === 0 && nameB.length - nameA.length <= 2) {
-        // nameB 是 nameA 的扩大版，去掉 nameB
-        out.splice(j, 1);
-        j--;
-      }
+    }
+  });
+  if (dropped.size > 0) {
+    for (let i = out.length - 1; i >= 0; i--) {
+      if (dropped.has(out[i])) out.splice(i, 1);
     }
   }
 

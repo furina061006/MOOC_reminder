@@ -14,6 +14,8 @@
 
 **能力边界**：本扩展以「开发者模式」侧载，manifest 没有 `update_url`/`key`，**Chrome 永远不会自动更新它**，`chrome.runtime.requestUpdateCheck()` 也是空操作。所以这里只能做到「发现新版 → 通知 + 给出下载直链」，真正的更新由用户重新下载解压完成。若将来要真正的自动更新，只有两条路：上架 Chrome 网上应用店，或自建签名 CRX + `update.xml` 托管。
 
+**数据与扩展 ID（2026-10 补充）**：所有状态在 `chrome.storage.local`，按扩展 ID 隔离，存在浏览器 profile 的 `Local Extension Settings/<id>/`（LevelDB），**不在扩展目录里**。侧载扩展没有 `key` 时 ID 由**加载目录的绝对路径**派生：覆盖同一文件夹 = ID 不变 = 数据保留；换文件夹 / 改名 / 移动目录 = 新 ID = 数据看起来丢失；点「移除」= 卸载，Chrome 会清空该 ID 的 storage。所以所有面向用户的更新说明都必须是「覆盖原文件夹 + 重新加载」，设置页与 README/FAQ 三处口径一致。将来若要彻底消除路径依赖，可以加 manifest `key`，但那会让现有用户换一次 ID，必须先提供导出/导入。
+
 **版本来源**：仓库最新 GitHub Release（`api.github.com/.../releases/latest`）。Release 由 `.github/workflows/release.yml` 从 `v*` tag 生成，且该 workflow **强制 tag 与 `manifest.json` 的 version 一致**，所以 tag 可以放心当作「用户能下载到的版本」。tag 里非数字的内容（如 `1.0.0-beta`）一律判为「不是更新」，避免一直骚扰用户。
 
 **数据流**：
@@ -57,7 +59,7 @@ badge-refresh alarm（12h）→ checkForUpdates()
 - **SPOC 课程需要至少打开过一次学习页**，才能把真实路由 URL 冻结进 `course.pageUrl`；否则旧的 SPOC 条目只能退回用 `courseType` + 抓取 termId 拼 URL（前缀对，`?tid=` 是 API id）。从旧版本升级后请打开一次 SPOC 课程页
 - **「清除数据 / 删除课程」后只能靠当时打开着的页面恢复课程列表**：SW 每轮抓取都会问所有已打开的 icourse163 页面（学习页自报身份、其他页面报锚点，见「两个操作性陷阱 2」），所以**没打开的课程不会自动回来**——要完整恢复就打开一次「我的课程」页（`home.htm#/home/course`），或逐门重新打开课程页
 - **被浏览器冻结/卸载（Memory Saver）的后台课程页无法参与任何环节**：它既不能上报课程，也不能接手抓取。此时插件会退到临时代理页，所以「刷新不出东西」不会再发生；但那门课若从未被登记过，仍需要它的页面被打开一次（切换回去即会自动重载并登记）
-- **无法自动更新**：开发者模式侧载的扩展 Chrome 不会更新，只能提醒用户去 Release 下载（见「更新检查」）。且更新检查依赖仓库里存在 Release —— 只打 tag 不发 Release 会让检查一直失败
+- **无法自动更新**：开发者模式侧载的扩展 Chrome 不会更新，只能提醒用户去 Release 下载（见「更新检查」）。且更新检查依赖仓库里存在 Release —— **只打 tag 不推 tag**（Release 永远不会生成）、或推了 tag 但发版失败，都会让检查一直失败。判断发版是否真的成功，只看远端 tag + Release 附件，不看 `git push` 的退出码（见「发版流程」）
 - **更新检查需要 `https://api.github.com/*` 的 host 权限**，用户在扩展详情页能看到这一条；未认证请求有 60 次/小时限流（12h 一次检查远够）。关闭 `autoCheckUpdates` 后后台不再发任何请求
 - **`api.github.com` 在部分网络下会偶发不通**（国内直连尤其常见），此时检查失败、设置页显示「本次检查失败：…」并保留上次成功的结果。这类失败**不会**被当成「已是最新」，也不会重复弹通知；失败原因同时写进 `update_status.error`，SW 控制台有 `[MOOC Reminder] Update check failed:` 一行可查
 
@@ -124,9 +126,30 @@ npx web-ext run --source-dir . --target chromium
 # 1. 改版本号：manifest.json 与 package.json **两处**（没有测试守着这两者的同步，见下）
 #    同时把 changelog 的「## 未发布」改成「## {version}（{date}）」
 # 2. 在 dsh 上提交 release: {version}，然后合并 dsh → main（需用户许可，见文首约定）
-# 3. 在 main 上打同版本 tag 并推送 —— 推 tag 这一步才触发发版
-git tag -a v1.0.1 -m "MOOC Reminder 1.0.1" && git push origin v1.0.1
+# 3. 在 main 上打同版本 tag，并把「分支 + tag」一起推 —— 推 tag 这一步才触发发版
+git tag -a v1.0.1 -m "MOOC Reminder 1.0.1"
+git push origin main v1.0.1        # 显式带上 tag；裸 git push 只推分支
+
+# 4. 推完立刻自检：远端确实有 tag（空输出 = 没推上去）
+git ls-remote --tags origin | grep v1.0.1
 ```
+
+**2026-10-19 的教训：`git push` 不会推 tag。** v1.2.0 的 tag 10-16 就在本地建好了，但当时只
+`git push` 了 main —— 远端一直没有 `v1.2.0`，`on: push: tags` 从未触发，Release 停在 v1.1.2，
+三天后才发现。所以「分支推成功」不等于「发版成功」，判断标准只能是**远端 tag 与 Release 两样都在**。
+`git push --follow-tags` 也只推「推送时已存在、且从被推提交可达」的 annotated tag；tag 是在 push
+之后才补建的话，它同样不会带上。根因与完整时间线见
+[`.dsh/logs/2026-10-19-release-1.2.0-tag-not-pushed.md`](../logs/2026-10-19-release-1.2.0-tag-not-pushed.md)。
+
+**发版后核对，别只看 Actions 的 run 状态**：
+
+- `git ls-remote --tags origin | grep v1.2.0` —— 远端 tag；
+- `gh release view v1.2.0` 或 Release 页面 —— 附件 `mooc-reminder-v1.2.0.zip` 在不在；
+- 2026-10-19 当天 GitHub Actions 处于 `degraded_performance`，发版 workflow 的 run 在 API 里
+  一直显示 `queued`、job 没有 runner，但 Release 其实在推 tag 后 33 秒就建好了（附件已上传）。
+  **run 状态会骗人，Release 不会**；
+- Release 的 `created_at` 取的是 **tag 的日期**（v1.2.0 显示 10-16），不是发布时刻；判断什么时候
+  真正发出去看 `published_at`（v1.2.0 是 10-19T15:42:32Z）。
 
 **tag 版本必须与 `manifest.json` 的 version 严格一致**，否则 workflow 会直接失败。
 用户在浏览器里看到的版本来自 `manifest.json`，而插件检查更新读的是 Release tag，两者一旦
@@ -155,7 +178,8 @@ npm run package          # 产出 mooc-reminder-v{version}.zip（内层 MOOC_rem
 ```
 
 本地包与 CI 的 Release 附件**内容完全一致**（`tools/package-extension.mjs` 一份配方），可以当作发布产物的预览：
-1.1.1 两边都是 623398 字节；1.1.2 两边都是 625924 字节，解压后 32 个文件 `diff -r` 无差异。
+1.1.1 两边都是 623398 字节；1.1.2 两边都是 625924 字节，解压后 32 个文件 `diff -r` 无差异；
+1.2.0 两边都是 629897 字节，解压后 40 个条目 `diff -r` 无差异（2026-10-19 补发 Release 时下载附件实测）。
 
 **但 sha256 不会相同** —— zip 会把每个文件的 mtime 写进头部，而 CI 的时间戳来自 checkout。
 2026-09-23 差点因此误判成「包不对」。正确的校验方式是**先比大小、再解压 `diff -r`**，
