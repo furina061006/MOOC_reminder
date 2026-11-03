@@ -64,6 +64,7 @@ import {
   reconcileStatus,
   resolveDownloadTarget
 } from '../shared/update-check.js';
+import { extractLearnOutlines, hasUsableExam } from '../shared/next-flight.js';
 
 // homework_items has many concurrent read-modify-write writers (reconcile,
 // notification bookkeeping, popup actions). All RMW mutations must go through
@@ -438,6 +439,43 @@ const MESSAGE_HANDLERS = {
     await updateBadgeFromStorage();
     if (found) return { success: true };
     return { success: false, error: 'Item not found' };
+  },
+
+  // The 2026-10 learn shell renders its term outline (including exams) as
+  // server-side React Flight data; main.js forwards the raw inline scripts here.
+  // This is a fallback: it only adds items, and reconcile dedups them by UID with
+  // anything the termDto RPC already returned.
+  async PAGE_RSC_DATA(msg) {
+    if (!msg.course || typeof msg.text !== 'string') {
+      return { success: false, error: 'Invalid payload' };
+    }
+    // Only accept data belonging to the page the content script is on. A
+    // prefetched Flight payload can carry a different course's outline, so
+    // search all of them instead of trusting the first one.
+    const courseId = String(msg.course.courseId || '');
+    const numericId = courseId.slice(courseId.lastIndexOf('-') + 1);
+    const termId = msg.course.termId != null ? String(msg.course.termId) : '';
+    const outlines = extractLearnOutlines(msg.text);
+    const outline = outlines.find((entry) => {
+      if (!entry || !hasUsableExam(entry)) return false;
+      if (entry.courseId != null && numericId && String(entry.courseId) !== numericId) return false;
+      if (entry.termId != null && termId && String(entry.termId) !== termId) return false;
+      return true;
+    });
+    if (!outline) {
+      return { success: true, found: false, itemCount: 0, outlines: outlines.length };
+    }
+    const rawData = JSON.stringify({
+      result: {
+        mocTermDto: {
+          termId: outline.termId,
+          courseId: outline.courseId,
+          exams: outline.exams
+        }
+      }
+    });
+    const result = await MESSAGE_HANDLERS.COURSE_API_DATA({ course: msg.course, rawData });
+    return { ...result, found: true };
   },
 
   // Content script (main.js) persists SPOC real termId so background refreshes
@@ -2132,6 +2170,30 @@ function apiFirstNumber(obj, fields) {
   return null;
 }
 
+// Keep in sync with src/shared/icourse163-api.js (invariant 12).
+function apiFirstPartNumber(node, fields) {
+  if (!node || !Array.isArray(node.parts)) return null;
+  for (const part of node.parts) {
+    if (!part || typeof part !== 'object') continue;
+    const v = apiFirstNumber(part, fields);
+    if (v != null) return v;
+  }
+  return null;
+}
+
+function apiIsExplicitExam(node) {
+  if (!node || typeof node !== 'object') return false;
+  const task = String(node.taskType || '').toLowerCase();
+  if (task === 'exam') return true;
+  const nodeType = String(node.nodeType || '').toLowerCase();
+  if (nodeType === 'exam' || nodeType === 'legacy-exam') return true;
+  const eid = node.examId;
+  // 测验/内容节点的占位值是 -1 或 0；只认真实的正整数 exam id。
+  if (typeof eid === 'number' && eid > 0) return true;
+  if (typeof eid === 'string' && /^\d+$/.test(eid) && eid !== '0') return true;
+  return false;
+}
+
 function apiMsToLocalIso(ms) {
   const n = typeof ms === 'string' ? parseInt(ms, 10) : ms;
   if (typeof n !== 'number' || !isFinite(n) || n <= 0) return null;
@@ -2214,16 +2276,25 @@ function apiExtractHomework(input, course) {
     visited++;
     if (Array.isArray(node)) { for (const c of node) visit(c, chapterId, lessonId); return; }
     const name = node.name || node.title || node.unitName || '';
-    // deadline/score 可能在 node.test 子对象中（SPOC 课程常见）
-    const deadlineMs = apiFirstNumber(node, API_DEADLINE_FIELDS) || (node.test ? apiFirstNumber(node.test, API_DEADLINE_FIELDS) : null);
-    const score = apiFirstNumber(node, API_SCORE_FIELDS) || (node.test ? apiFirstNumber(node.test, API_SCORE_FIELDS) : null);
-    const totalScore = apiFirstNumber(node, API_TOTAL_FIELDS) || (node.test ? apiFirstNumber(node.test, API_TOTAL_FIELDS) : null);
+    // deadline/score 可能在 node.test 子对象中（SPOC 课程常见），也可能在
+    // node.parts[] 里（2026-10 新版学习页的考试）。与 shared 副本保持一致。
+    const deadlineMs = apiFirstNumber(node, API_DEADLINE_FIELDS)
+      || (node.test ? apiFirstNumber(node.test, API_DEADLINE_FIELDS) : null)
+      || apiFirstPartNumber(node, API_DEADLINE_FIELDS);
+    const score = apiFirstNumber(node, API_SCORE_FIELDS)
+      || (node.test ? apiFirstNumber(node.test, API_SCORE_FIELDS) : null)
+      || apiFirstPartNumber(node, API_SCORE_FIELDS);
+    const totalScore = apiFirstNumber(node, API_TOTAL_FIELDS)
+      || (node.test ? apiFirstNumber(node.test, API_TOTAL_FIELDS) : null)
+      || apiFirstPartNumber(node, API_TOTAL_FIELDS);
     const hasSignal = deadlineMs != null || (score != null && totalScore != null);
-    // contentType 是权威字段：2=测验, 3=作业, 6=考试；名字正则作为后备
+    // contentType 是权威字段：2=测验, 3=作业, 6=考试；新版学习页还会用
+    // taskType/nodeType/examId 明确标注考试；名字正则只在 contentType 缺失时兜底。
     var ct = String(node.contentType || '');
     var ctIsAssessed = ct === '2' || ct === '3' || ct === '6';
+    var explicitExam = apiIsExplicitExam(node);
     var isAssessed = typeof name === 'string' && name.trim() && hasSignal &&
-        (ctIsAssessed || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)));
+        (ctIsAssessed || explicitExam || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)));
     if (isAssessed) {
 
       const homeworkId = String(node.id || node.jobId || node.quizId || node.testId || node.homeworkId || '') || ('h' + (out.length + 1));
@@ -2239,8 +2310,11 @@ function apiExtractHomework(input, course) {
         }
         const deadline = phaseDeadline != null ? apiMsToLocalIso(phaseDeadline) : null;
         // 完成判定：有分数 OR 已提交（互评中除外）OR 节点含完成文本
-        var nType = parseInt(node.type || nt2.type || node.contentType, 10);
-        var submitted = parseInt(node.usedTryCount || nt2.usedTryCount,10) > 0 && (nType === 3 || nType === 6);
+        var nType = explicitExam ? 6 : (parseInt(node.type || nt2.type || node.contentType, 10) || NaN);
+        // 新版考试的 usedTryCount 在 parts[] 上；用 0 兜底，避免 NaN 被当成「已用次数」
+        var usedTryCount = parseInt(node.usedTryCount || nt2.usedTryCount,10)
+          || (explicitExam ? parseInt(apiFirstPartNumber(node, ['usedTryCount']), 10) : 0) || 0;
+        var submitted = usedTryCount > 0 && (nType === 3 || nType === 6);
         // 互评中不算完成（等待评分），互评期结束后回到已提交则算完成
         var inPeerReview = apiDetectPhase(node) === 'peerreview';
         var done = (score != null && totalScore != null && score > 0)
@@ -2249,7 +2323,7 @@ function apiExtractHomework(input, course) {
         out.push({
           uid, courseId: course.courseId, termId: course.termId,
           chapterId: chapterId || '', lessonId: lessonId || '', homeworkId,
-          title: name.trim(), type: apiClassifyType(name, node.contentType || nt2.type || null),
+          title: name.trim(), type: apiClassifyType(name, explicitExam ? '6' : (node.contentType || nt2.type || null)),
           courseName: course.courseName || '', schoolName: course.schoolName || '',
           // Kept in sync with src/shared/icourse163-api.js extractHomeworkFromTermDto:
           // items must self-describe their route type, otherwise a demoted Course
@@ -2288,6 +2362,8 @@ function apiExtractHomework(input, course) {
       // 才没露出）。所需字段都通过 node.test 显式读取，故跳过该子树。
       // 与 src/shared/icourse163-api.js 保持一致（不变量 12）。
       if (key === 'test') continue;
+      // `parts` 是考试的客观题/主观题子试卷，不是独立条目。
+      if (explicitExam && key === 'parts') continue;
       const v = node[key];
       if (v && typeof v === 'object') {
         visit(v, nextChapter, nextLesson);

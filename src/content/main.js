@@ -124,6 +124,98 @@
     return true;
   }
 
+  // ─── New learn shell: server-rendered term outline ──────
+  // 2026-10 起普通课程改用 Next.js 外壳，考试数据不再可靠地出现在
+  // getLastLearnedMocTermDto 的 DTO 里，而是作为 React Flight 数据内联在页面
+  // <script> 里（`self.__next_f.push([1,"…"])`）。把原始脚本文本转给 SW 解析：
+  // 解析器与 chrome/DOM 无关，可单测（src/shared/next-flight.js）。
+  var embeddedOutlineReported = false;
+  var embeddedOutlineFetchTried = false;
+
+  function collectNextFlightText(root) {
+    var chunks = [];
+    var scripts = root.querySelectorAll('script');
+    for (var i = 0; i < scripts.length; i++) {
+      var text = scripts[i].textContent || '';
+      if (text.indexOf('self.__next_f.push') !== -1) chunks.push(text);
+    }
+    return chunks.join('\n');
+  }
+
+  function readNextFlightScriptText() {
+    return collectNextFlightText(document);
+  }
+
+  // 内容页/作业页自己的 Flight 数据不一定带 outline.exams；考试列表页才是权威
+  // 来源。仅在当前页解析不到时，同源拉一次考试路由的 HTML（服务端已渲染好
+  // Flight 数据），不导航用户标签页。
+  function buildExamsRouteUrl() {
+    try {
+      var url = new URL(window.location.href);
+      var m = url.pathname.match(/^(\/(?:mooc\/)?learn\/[^/]+)\//);
+      if (!m) return '';
+      url.pathname = m[1] + '/exams';
+      url.hash = '';
+      return url.toString();
+    } catch { return ''; }
+  }
+
+  async function fetchExamsOutlineText() {
+    if (embeddedOutlineFetchTried) return '';
+    embeddedOutlineFetchTried = true;
+    var target = buildExamsRouteUrl();
+    if (!target || target === window.location.href) return '';
+    try {
+      var resp = await fetch(target, { credentials: 'include' });
+      if (!resp || !resp.ok) return '';
+      var html = await resp.text();
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      return collectNextFlightText(doc);
+    } catch (e) {
+      console.debug('[MOOC Reminder] Exams-route Flight fetch failed:', e.message);
+      return '';
+    }
+  }
+
+  async function sendEmbeddedOutline(text, meta) {
+    if (!text) return null;
+    try {
+      return await chrome.runtime.sendMessage({
+        type: 'PAGE_RSC_DATA',
+        course: {
+          courseId: meta.courseId,
+          termId: meta.termId,
+          courseName: readCourseName(),
+          schoolName: '',
+          courseType: 'mooc',
+          pageUrl: window.location.href
+        },
+        text: text
+      });
+    } catch (e) {
+      console.debug('[MOOC Reminder] Embedded outline report failed:', e.message);
+      return null;
+    }
+  }
+
+  async function reportEmbeddedOutline() {
+    if (embeddedOutlineReported) return false;
+    var meta = parseCourseUrl(window.location.href);
+    if (!meta || !meta.courseId || !meta.termId || meta.isSpoc) return false;
+
+    var resp = await sendEmbeddedOutline(readNextFlightScriptText(), meta);
+    if (!resp || !resp.found) {
+      var remoteText = await fetchExamsOutlineText();
+      if (remoteText) resp = await sendEmbeddedOutline(remoteText, meta);
+    }
+    if (resp && resp.found) {
+      embeddedOutlineReported = true;
+      console.log('[MOOC Reminder] Embedded learn-shell outline reported, exam items:', resp.itemCount);
+      return true;
+    }
+    return false;
+  }
+
   // ─── Initialization ─────────────────────────────────────
 
   async function init() {
@@ -153,6 +245,9 @@
       }
       if (msg.type === 'REQUEST_COURSE_LINKS') {
         reportOwnCourseIdentity()
+          // 每次被抓取询问时都顺带试一次：用户可能在扩展重载前就打开了页面，
+          // 页面加载时的首次上报已经错过。
+          .then(function (reported) { return reportEmbeddedOutline().then(function () { return reported; }); })
           .then(function (reported) { try { sendResponse({ success: reported }); } catch { /* port closed */ } })
           .catch(function () { try { sendResponse({ success: false }); } catch { /* port closed */ } });
         return true;
@@ -196,6 +291,9 @@
         }
       }
     } catch(e) { console.debug('[MOOC Reminder] tid injection error:', e.message); }
+
+    // ═══ 新版学习页：把内联的 React Flight 数据交给 SW ═══
+    reportEmbeddedOutline().catch(function () { /* non-fatal */ });
 
     // ═══ 检查 xhr-hook.js 拦截到的页面 API 响应 ═══
     checkPageHookData();

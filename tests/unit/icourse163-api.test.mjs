@@ -254,4 +254,67 @@ test('near-duplicate names inside one chapter still collapse', () => {
   assert.equal(items[0].title, '期末测试');
 });
 
+// ── 2026-10 新版学习页的考试（issue #15） ─────────────────────────────
+// 新版页面的 exams[] 用 taskType:'exam' / nodeType:'legacy-exam' / examId 明确
+// 标注考试，可能没有 contentType，或 contentType 被复用；截止时间也可能只在
+// parts[]（客观题/主观题）里。这些是显式类型字段，不属于「放宽名字门槛」。
+
+test('exams declared by taskType/nodeType/examId are extracted', () => {
+  const deadline = new Date('2026-11-06T22:00:00').getTime();
+  const payload = {
+    result: { mocTermDto: { chapters: [], exams: [
+      // 真实 RSC 形状：没有 type/contentType，只有 taskType + deadline
+      { id: 1233326285, name: '期末考试', deadline, totalScore: 100, taskType: 'exam', examKind: 'legacy' },
+      // legacy-exam 伪章节节点
+      { id: 1252502343, name: '补考', nodeType: 'legacy-exam', examId: '1234000000', deadline, totalScore: 60 },
+      // 显式 examId，但 contentType 被标成了别的值
+      { id: 1234000001, name: '期中考核', examId: '1234000001', contentType: 1, deadline, totalScore: 50 }
+    ] } }
+  };
+  const items = extractHomeworkFromTermDto(payload, { courseId: 'NEU-1001638003', termId: '1487856456' });
+  assert.equal(items.length, 3);
+  assert.deepEqual(items.map((i) => i.type), ['exam', 'exam', 'exam']);
+  assert.ok(items.every((i) => i.deadline && !i.checkedOff));
+});
+
+test('an exam deadline inside parts[] is a signal and is not a separate item', () => {
+  const deadline = new Date('2026-11-06T22:00:00').getTime();
+  const payload = {
+    result: { mocTermDto: { chapters: [], exams: [{
+      id: 1234000002, name: '期末考试', taskType: 'exam', totalScore: 100,
+      parts: [{ id: 1, name: '客观题', deadline, totalScore: 100, usedTryCount: 0 }]
+    }] } }
+  };
+  const items = extractHomeworkFromTermDto(payload, { courseId: 'NEU-1', termId: '2' });
+  assert.equal(items.length, 1, 'parts are sub-papers, not assessments');
+  assert.equal(items[0].type, 'exam');
+  assert.equal(items[0].homeworkId, '1234000002');
+  assert.ok(items[0].deadline);
+});
+
+test('an exam submitted through a part is marked completed', () => {
+  const deadline = new Date('2026-11-06T22:00:00').getTime();
+  const payload = {
+    result: { mocTermDto: { chapters: [], exams: [{
+      // contentType 被复用成 1（内容），也必须按显式考试处理完成判定
+      id: 1234000003, name: '期末考试', taskType: 'exam', contentType: 1, totalScore: 100,
+      deadline, parts: [{ id: 1, name: '客观题', usedTryCount: 1, submitStatus: 2, score: 88 }]
+    }] } }
+  };
+  const items = extractHomeworkFromTermDto(payload, { courseId: 'NEU-1', termId: '3' });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].checkedOff, true, 'a used exam attempt counts as submitted');
+  assert.equal(items[0].score, 88);
+});
+
+test('a non-exam node with examId:-1 is not promoted to an exam', () => {
+  const deadline = new Date('2026-11-06T22:00:00').getTime();
+  const dto = dtoWithUnits([
+    { id: 501, name: '第一章 测验', contentType: 2, examId: '-1', test: { deadline } }
+  ]);
+  const items = extractHomeworkFromTermDto(dto, { courseId: 'NEU-1', termId: '1' });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].type, 'quiz');
+});
+
 

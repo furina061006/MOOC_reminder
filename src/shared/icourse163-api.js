@@ -118,6 +118,41 @@ function firstNumber(obj, fields) {
   return null;
 }
 
+/**
+ * Some assessment payloads (the 2026-10 new learn page especially) keep the
+ * deadline inside `parts[]` (e.g. an exam's 客观题/主观题 sub-papers) instead of
+ * on the assessment node itself. Read it explicitly rather than recursing into
+ * `parts`: those sub-objects are metadata, not separate assessments.
+ */
+function firstPartNumber(node, fields) {
+  if (!node || !Array.isArray(node.parts)) return null;
+  for (const part of node.parts) {
+    if (!part || typeof part !== 'object') continue;
+    const v = firstNumber(part, fields);
+    if (v != null) return v;
+  }
+  return null;
+}
+
+/**
+ * The new learn page types exams as `taskType:'exam'` / `nodeType:'legacy-exam'`
+ * / a real `examId`, and may leave `contentType` empty (or even reuse a content
+ * type). Those are explicit type declarations, not a loosened keyword gate.
+ */
+function isExplicitExam(node) {
+  if (!node || typeof node !== 'object') return false;
+  const task = String(node.taskType || '').toLowerCase();
+  if (task === 'exam') return true;
+  const nodeType = String(node.nodeType || '').toLowerCase();
+  if (nodeType === 'exam' || nodeType === 'legacy-exam') return true;
+  const eid = node.examId;
+  // 测验/内容节点的占位值是 -1 或 0；只认真实的正整数 exam id，避免把
+  // 普通内容节点（字段缺失/字符串垃圾）当成考试。
+  if (typeof eid === 'number' && eid > 0) return true;
+  if (typeof eid === 'string' && /^\d+$/.test(eid) && eid !== '0') return true;
+  return false;
+}
+
 function pad(n) {
   return String(n).padStart(2, '0');
 }
@@ -257,15 +292,23 @@ export function extractHomeworkFromTermDto(input, course) {
     }
 
     const name = node.name || node.title || node.unitName || '';
-    // deadline/score 可能在 node.test 子对象中（SPOC 课程常见）
-    const deadlineMs = firstNumber(node, DEADLINE_FIELDS) || (node.test ? firstNumber(node.test, DEADLINE_FIELDS) : null);
-    const score = firstNumber(node, SCORE_FIELDS) || (node.test ? firstNumber(node.test, SCORE_FIELDS) : null);
-    const totalScore = firstNumber(node, TOTAL_FIELDS) || (node.test ? firstNumber(node.test, TOTAL_FIELDS) : null);
+    // deadline/score 可能在 node.test 子对象中（SPOC 课程常见），也可能在
+    // node.parts[] 里（2026-10 新版学习页的考试）。
+    const deadlineMs = firstNumber(node, DEADLINE_FIELDS)
+      || (node.test ? firstNumber(node.test, DEADLINE_FIELDS) : null)
+      || firstPartNumber(node, DEADLINE_FIELDS);
+    const score = firstNumber(node, SCORE_FIELDS)
+      || (node.test ? firstNumber(node.test, SCORE_FIELDS) : null)
+      || firstPartNumber(node, SCORE_FIELDS);
+    const totalScore = firstNumber(node, TOTAL_FIELDS)
+      || (node.test ? firstNumber(node.test, TOTAL_FIELDS) : null)
+      || firstPartNumber(node, TOTAL_FIELDS);
     const hasSignal = deadlineMs != null || (score != null && totalScore != null);
     var ct = String(node.contentType || '');
     var ctIsAssessed = ct === '2' || ct === '3' || ct === '6';
+    var explicitExam = isExplicitExam(node);
     var isAssessed = typeof name === 'string' && name.trim() && hasSignal &&
-        (ctIsAssessed || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)));
+        (ctIsAssessed || explicitExam || (!ct && /测验|作业|考试|测试|quiz|exam|homework|test/i.test(name)));
     if (isAssessed) {
 
       const homeworkId = String(
@@ -287,8 +330,11 @@ export function extractHomeworkFromTermDto(input, course) {
         const deadline = phaseDeadline != null ? msToLocalIso(phaseDeadline) : null;
 
         // 完成判定：有分数 OR 已提交（非互评中）OR 节点含完成文本
-        const nType = parseInt(node.type || nt2.type || node.contentType, 10);
-        const submitted = parseInt(node.usedTryCount || nt2.usedTryCount, 10) > 0 && (nType === 3 || nType === 6);
+        const nType = explicitExam ? 6 : (parseInt(node.type || nt2.type || node.contentType, 10) || NaN);
+        // 新版考试的 usedTryCount 在 parts[] 上；用 0 兜底，避免 NaN 被当成「已用次数」
+        const usedTryCount = parseInt(node.usedTryCount || nt2.usedTryCount, 10)
+          || (explicitExam ? parseInt(firstPartNumber(node, ['usedTryCount']), 10) : 0) || 0;
+        const submitted = usedTryCount > 0 && (nType === 3 || nType === 6);
         const inPeerReview = phase === 'peerreview';
         const done = (score != null && totalScore != null && score > 0)
           || (submitted && !inPeerReview)
@@ -302,7 +348,7 @@ export function extractHomeworkFromTermDto(input, course) {
           lessonId: lessonId || '',
           homeworkId,
           title: name.trim(),
-          type: classifyType(name, node.contentType || (nt2 && nt2.type) || null),
+          type: classifyType(name, explicitExam ? '6' : (node.contentType || (nt2 && nt2.type) || null)),
           courseName: course.courseName || '',
           schoolName: course.schoolName || '',
           courseType: course.courseType || '',
@@ -348,6 +394,9 @@ export function extractHomeworkFromTermDto(input, course) {
       // happens to collapse identical titles. Everything we need is read through
       // `node.test` explicitly, so skip the sub-tree.
       if (key === 'test') continue;
+      // `parts` are sub-papers of an explicit exam; they are read through
+      // firstPartNumber and must not become separate items.
+      if (explicitExam && key === 'parts') continue;
       const v = node[key];
       if (v && typeof v === 'object') {
         visit(v, nextChapter, nextLesson);

@@ -8,6 +8,7 @@ const browserExtensionGlobals = {
   location: 'readonly',
   history: 'readonly',
   fetch: 'readonly',
+  DOMParser: 'readonly',
   URL: 'readonly',
   URLSearchParams: 'readonly',
   MutationObserver: 'readonly',

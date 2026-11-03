@@ -1284,6 +1284,42 @@ test('the runtime extractor keeps same-named items from different chapters', asy
   assert.equal(res.itemCount, 16, 'the inline copy must not name-dedup across chapters');
 });
 
+// 2026-10 新版学习页把考试放在 React Flight 数据里（issue #15）。main.js 把内联
+// 脚本转给 SW，SW 从这里取出 outline.exams；真机页面形状见 issue 的 DOM dump。
+test('PAGE_RSC_DATA adds exams from the new learn shell Flight payload', async () => {
+  h.storageData.set('homework_items', []);
+  h.storageData.delete('dismissed_completed_uids');
+  seedCourses([{ courseId: 'NEU-1001638003', termId: '1487856456', courseName: '复变函数与积分变换', courseType: 'mooc' }]);
+
+  const deadline = new Date('2026-11-06T22:00:00').getTime();
+  const outline = {
+    termId: '1487856456', courseId: '1001638003', chapters: [],
+    exams: [{
+      id: '1233326285', name: '期末考试', taskType: 'exam', examKind: 'legacy',
+      status: 'submitted', deadline, totalScore: 100,
+      parts: [{ id: '1258593238', name: '客观题', deadline, usedTryCount: 0 }]
+    }]
+  };
+  const flight = '14:["$","$L21",null,{"outline":' + JSON.stringify(outline) + '}]';
+  const script = 'self.__next_f.push([1,' + JSON.stringify(flight) + '])';
+
+  const res = await sendMessage({
+    type: 'PAGE_RSC_DATA',
+    course: { courseId: 'NEU-1001638003', termId: '1487856456', courseName: '复变函数与积分变换', schoolName: '东北大学', courseType: 'mooc' },
+    text: script
+  });
+
+  assert.equal(res.success, true);
+  assert.equal(res.found, true);
+  assert.equal(res.itemCount, 1);
+  const items = h.storageData.get('homework_items');
+  const exam = items.find((i) => i.title === '期末考试');
+  assert.ok(exam, 'the exam must be stored');
+  assert.equal(exam.type, 'exam');
+  assert.equal(exam.checkedOff, false);
+  assert.equal(new Date(exam.deadline).getTime(), deadline, 'deadline keeps the epoch value');
+});
+
 // ── update check (backlog: 客户端插件提醒有更新) ──────────────────────────
 //
 // The running version in the harness stub is 1.0.0 (chrome.runtime.getManifest).
