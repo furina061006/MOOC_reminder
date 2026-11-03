@@ -28,6 +28,7 @@
 | quiz (type:2) | `userScore > 0` | 完成 |
 | exam (type:6) | `userScore > 0` | 完成（标签：手动确认） |
 | exam (type:6) | `usedTryCount > 0` 且有成绩 | 完成 |
+| 显式考试（`taskType`/`nodeType`/`examId`） | `parts[].usedTryCount > 0` | 完成（新版考试的尝试次数在子试卷上） |
 | homework 无互评 | `usedTryCount > 0` | 完成 |
 | homework 互评中 (窗口内) | `scorePubStatus:0` + `now < evaluateEnd` | **未完成** |
 | homework 互评中 (窗口过期) | `scorePubStatus:0` + `now >= evaluateEnd` | 完成 |
@@ -110,6 +111,22 @@ API 提供 `contentType` 字段作为类型标识，优先级高于名字正则�
 **注意**：部分 SPOC 课程的数据是反过来的——**没有 `node.test`，所有字段平铺在节点顶层**（如大学物理使用 `node.type` 而非 `node.contentType`）。此时顶层优先规则自然生效，`apiDetectPhase` 也通过 `node.contentType` 后备来兼容这种结构。
 
 详细实现见 `.dsh/logs/2026-06-28-completion-logic.md`。
+
+## 新版学习页（2026-10）的考试
+
+新版普通课程页（`/mooc/learn/…/exams`）的考试数据可能不在 `getLastLearnedMocTermDto` 的章节树里：章节里的
+`{"name":"期末考试","nodeType":"legacy-exam","contentType":2}` 只是占位节点，**没有 deadline**；完整数据在页面
+内联的 React Flight 数据 `outline.exams[]` 中（见 [platform.md](platform.md) 的「新版学习页的 Flight 数据」）。
+
+提取器的两条补充规则（两份副本同步，不变量 12）：
+
+| 规则 | 原因 |
+|---|---|
+| `taskType:'exam'` / `nodeType:'exam'|'legacy-exam'` / 有效 `examId` 视为显式考试，可绕过 contentType 门槛 | 平台已明确声明类型，不是名字猜测；`examId:'-1'` 是测验占位值，不算 |
+| `parts[].deadline` 可作为 `hasSignal` 的截止时间；考试的 `parts` 子树不再递归 | 新版考试的截止时间可能只写在客观题/主观题子试卷里 |
+
+名字正则仍只在 contentType 缺失时兜底；不要把这条改成「名字含考试就放行」。现有实现见
+`isExplicitExam` / `firstPartNumber`（shared）与 `apiIsExplicitExam` / `apiFirstPartNumber`（SW 内联）。
 
 ## 同名条目的去重（只在同一章内生效）
 

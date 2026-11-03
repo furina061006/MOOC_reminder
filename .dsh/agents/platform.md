@@ -57,6 +57,34 @@ Body: {"termId": 1476504498}
 
 这是**唯一对 SPOC 可用的端点**（需要真实 termId）。
 
+### 新版学习页的 Flight 数据（2026-10）
+
+新版普通课程页是 Next.js 服务端渲染，考试数据不在公开 RPC 里，而是内联在 HTML：
+
+```html
+<script>self.__next_f.push([1,"14:[\"$\",\"$L21\",null,{\"outline\":{…}}"])</script>
+```
+
+解码后的 `outline` 形状：
+
+```js
+{
+  termId: "1487856456",
+  courseId: "1001638003",
+  chapters: [ … ],   // 与新版 assessments 页面同源
+  exams: [{
+    id: "1233326285", name: "期末考试", taskType: "exam",
+    nodeType: "legacy-exam", deadline: 1793973600000, totalScore: 100,
+    parts: [{ id, name: "客观题", deadline, usedTryCount, … }]
+  }]
+}
+```
+
+- `exams[]` 是唯一可靠的新版考试来源；章节树里的 legacy-exam 占位节点没有 deadline。
+- 页面可能预取多门课，**不能只取第一个 `outline`**；必须按 `courseId` + `termId` 匹配当前页。
+- 解析器是 `src/shared/next-flight.js`（纯函数）；`main.js` 只负责把含 `self.__next_f.push` 的脚本文本转给 SW。
+- 这不是公开 API，页面实现变更时可能失效；失败时只是回退到原 RPC 行为，不会报错。
+
 ### 辅助端点: getOpenHomeworkInfo.rpc
 
 ```

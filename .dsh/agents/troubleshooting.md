@@ -91,6 +91,25 @@ hasSignal（有 deadline 或 分数）
    `window.moocTermDto`，2026-09 实测）。改为 DevTools → Network → 筛 `rpc` → 刷新页面 →
    找响应最大的请求 → Copy response，拿原始响应离线分析。
 
+### 新版学习页的考试抓不到（2026-11，issue #15）
+
+症状：新版普通课程（`/mooc/learn/…/exams`）里明明有「期末考试」，作业/测验都在，唯独考试不进列表；SPOC 的考试正常。
+
+先分清数据在哪：
+
+1. 在课程页 Console 看 DOM：新版考试卡片有 `data-legacy-exam-card` / `data-exam-group`，能看到名称与截止时间；
+2. 在同一页面找内联 Flight 数据（不是网络 RPC）：
+   ```js
+   [...document.querySelectorAll('script')]
+     .map(s => s.textContent)
+     .filter(t => t.includes('self.__next_f.push'))
+     .join('').includes('"outline":')
+   ```
+   有 `outline.exams` 就说明考试在页面数据里；再搜 `taskType` / `nodeType` / `examId` 看它是否被明确标成 exam。
+3. 若 `outline.exams` 为空，而章节树里只有 `contentType:2` 的占位节点，**不要放宽名字门槛**——先看页面自己的考试卡片是否真的已发布，以及 Network 里是否有新的考试接口。
+
+现行兜底：`main.js` → `PAGE_RSC_DATA` → SW 解析 `outline.exams`，按当前 `courseId`+`termId` 匹配后走 `COURSE_API_DATA`；当前页（`/content` 等）没有考试数据时，内容脚本会再同源请求一次 `/exams` 路由的 HTML（只一次，不导航标签页）。SW Console 搜 `Embedded learn-shell outline reported` / `PAGE_RSC_DATA` 可确认是否命中。
+
 ### 只抓到几条，而且名字很通用（「本周作业」这类）
 
 症状：DTO 里节点数明显多于界面条数，而留下的名字是「本周作业 / 本周测验 / 本周测试」这种通用名。2026-10-21 的实例：智慧慕课 `NEU-1002123005`（`/mooc/learn/…/assessments?tid=1488158441`）八周共 16 条，界面只剩 3 条。
